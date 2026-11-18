@@ -1,0 +1,107 @@
+package elovaire.music.droidbeauty.app.data.library.network
+
+import java.io.ByteArrayInputStream
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Test
+
+class WebDavMultiStatusTest {
+    @Test
+    fun truncatedOrUnrelatedXmlCannotBecomeAnAuthoritativeEmptyListing() {
+        val source = NetworkLibrarySource("dav", "Library", NetworkLibraryProtocol.WebDav,
+            "https://nas.example", "", "user", "key")
+        val filesystem = WebDavNetworkFileSystem()
+        listOf(
+            "<multistatus><response><href>/track.mp3</href></response>",
+            "<html></html>",
+            "<!DOCTYPE multistatus [<!ENTITY x 'bad'>]><multistatus/>",
+        ).forEach { body ->
+            assertThrows(java.io.IOException::class.java) {
+                filesystem.parseMultiStatus(body.toByteArray(), source, "")
+            }
+        }
+    }
+
+    @Test
+    fun failedPropstatDoesNotSupplyMetadata() {
+        val source = NetworkLibrarySource(
+            id = "dav",
+            name = "Library",
+            protocol = NetworkLibraryProtocol.WebDav,
+            server = "https://nas.example",
+            shareOrPath = "",
+            username = "user",
+            credentialKey = "key",
+        )
+        val body = """
+            <multistatus>
+              <response>
+                <href>https://nas.example/song.mp3</href>
+                <propstat>
+                  <prop><getcontentlength>10</getcontentlength></prop>
+                  <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                <propstat>
+                  <prop><getetag>\"private\"</getetag></prop>
+                  <status>HTTP/1.1 404 Not Found</status>
+                </propstat>
+              </response>
+            </multistatus>
+        """.trimIndent().toByteArray()
+
+        val filesystem = WebDavNetworkFileSystem()
+        assertEquals("song.mp3", filesystem.hrefToPath("https://nas.example/song.mp3", source, ""))
+        val entries = filesystem.parseMultiStatus(body, source, "")
+
+        assertEquals(1, entries.size)
+        assertEquals("song.mp3", entries.single().path)
+        assertEquals(10L, entries.single().sizeBytes)
+        assertNull(entries.single().etag)
+    }
+
+    @Test
+    fun resourceWithOnlyFailedPropstatsIsNotListedAsAFile() {
+        val source = NetworkLibrarySource(
+            id = "dav",
+            name = "Library",
+            protocol = NetworkLibraryProtocol.WebDav,
+            server = "https://nas.example",
+            shareOrPath = "",
+            username = "user",
+            credentialKey = "key",
+        )
+        val body = """
+            <multistatus>
+              <response>
+                <href>https://nas.example/locked.mp3</href>
+                <propstat>
+                  <prop><resourcetype/></prop>
+                  <status>HTTP/1.1 403 Forbidden</status>
+                </propstat>
+              </response>
+            </multistatus>
+        """.trimIndent().toByteArray()
+
+        assertEquals(emptyList<NetworkFileEntry>(), WebDavNetworkFileSystem().parseMultiStatus(body, source, ""))
+    }
+
+    @Test
+    fun zeroLengthReadDoesNotExposeResponseBody() {
+        val input = limitWebDavRead(ByteArrayInputStream(byteArrayOf(1, 2, 3)), 0L)
+
+        assertEquals(-1, input.read())
+        assertEquals(0, input.read(ByteArray(1), 0, 0))
+        assertThrows(IndexOutOfBoundsException::class.java) {
+            input.read(ByteArray(1), -1, 1)
+        }
+    }
+
+    @Test
+    fun boundedReadStopsAtRequestedLength() {
+        val input = limitWebDavRead(ByteArrayInputStream(byteArrayOf(1, 2, 3)), 2L)
+
+        assertArrayEquals(byteArrayOf(1, 2), input.readBytes())
+    }
+}

@@ -1,0 +1,390 @@
+package elovaire.music.droidbeauty.app.data.settings
+
+import androidx.room.Room
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import elovaire.music.droidbeauty.app.core.AppClock
+import elovaire.music.droidbeauty.app.data.library.db.UserPlaylistEntity
+import elovaire.music.droidbeauty.app.data.library.db.ElovaireDatabase
+import elovaire.music.droidbeauty.app.data.library.db.FavoriteSongEntity
+import elovaire.music.droidbeauty.app.data.library.db.PlaybackCollectionStateEntity
+import elovaire.music.droidbeauty.app.data.library.db.RecentPlaybackEntity
+import elovaire.music.droidbeauty.app.data.library.db.SongPlayCountEntity
+import elovaire.music.droidbeauty.app.data.library.db.UserPlaylistEntryEntity
+import elovaire.music.droidbeauty.app.data.playback.PlaybackCollectionKind
+import elovaire.music.droidbeauty.app.data.playback.AudiobookProgress
+import elovaire.music.droidbeauty.app.data.playback.AudiobookProgressRepository
+import elovaire.music.droidbeauty.app.data.playlists.serializePlaylists
+import elovaire.music.droidbeauty.app.domain.model.Playlist
+import elovaire.music.droidbeauty.app.domain.model.SearchHistoryEntry
+import elovaire.music.droidbeauty.app.domain.model.SearchHistoryKind
+import elovaire.music.droidbeauty.app.quality.SharedPreferencesSnapshot
+import android.net.Uri
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class RoomUserDataStoreTest {
+    private val databaseName = "playlist_reliability_test.db"
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val preferences = context.getSharedPreferences(PreferenceStorage.PREFERENCE_FILE_NAME, 0)
+    private var originalPreferences: SharedPreferencesSnapshot? = null
+    private lateinit var database: ElovaireDatabase
+
+    @Before
+    fun setUp() {
+        originalPreferences = SharedPreferencesSnapshot.capture(preferences)
+        assertTrue(preferences.edit().clear().commit())
+        context.deleteDatabase(databaseName)
+        database = Room.databaseBuilder(context, ElovaireDatabase::class.java, databaseName).build()
+    }
+
+    @After
+    fun tearDown() {
+        database.close()
+        context.deleteDatabase(databaseName)
+        originalPreferences?.restore(preferences)
+        originalPreferences = null
+    }
+
+    @Test
+    fun releaseDrainsMandatoryWritesAndRejectsLaterCreates() = runBlocking {
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock, database = database)
+        val results = List(512) { index -> store.createPlaylist("Playlist $index").await() }
+        val ids = results.map { (it as PlaylistMutationResult.Success).playlistId ?: error("missing playlist id") }
+        val drained = CompletableDeferred<Unit>()
+
+        store.release { drained.complete(Unit) }
+        withTimeout(10_000L) { drained.await() }
+
+        assertTrue(results.all { it is PlaylistMutationResult.Success })
+        assertEquals(ids, database.userDataDao().playlists().map { it.playlistId })
+        assertTrue(store.createPlaylist("After release").await() is PlaylistMutationResult.Failure)
+        assertEquals(512, database.userDataDao().playlists().size)
+    }
+
+    @Test
+    fun startupRepairPublishesTheRepairedDurableSnapshotBeforeReady() = runBlocking {
+        database.userDataDao().insertPlaylist(UserPlaylistEntity(41L, "Repair", false))
+        database.openHelper.writableDatabase.execSQL(
+            "INSERT INTO user_playlist_entries(playlistId, songId, position) VALUES(41, 10, -1), (41, 20, 7)",
+        )
+        database.openHelper.writableDatabase.execSQL(
+            "INSERT INTO favorite_songs(songId, position) VALUES(10, -3), (20, 8)",
+        )
+        database.openHelper.writableDatabase.execSQL(
+            "INSERT INTO recent_playback(kind, itemId, position) VALUES('song', 10, -2), ('song', 20, 9)",
+        )
+        database.openHelper.writableDatabase.execSQL(
+            "INSERT INTO song_play_counts(songId, playCount) VALUES(10, -4)",
+        )
+        database.openHelper.writableDatabase.execSQL(
+            "INSERT INTO album_play_counts(albumId, playCount) VALUES(1, -5)",
+        )
+
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock, database = database)
+        withTimeout(10_000L) {
+            store.userDataReadiness.first { it == UserDataReadiness.Ready }
+        }
+
+        assertEquals(listOf(10L to 0, 20L to 1), database.userDataDao().playlistEntries().map { it.songId to it.position })
+        assertEquals(listOf(10L to 0, 20L to 1), database.userDataDao().favorites().map { it.songId to it.position })
+        assertEquals(listOf(10L to 0, 20L to 1), database.userDataDao().recentPlayback().map { it.itemId to it.position })
+        assertEquals(0, database.userDataDao().songPlayCounts().single().playCount)
+        assertEquals(0, database.userDataDao().albumPlayCounts().single().playCount)
+        assertEquals(listOf(10L, 20L), store.playlists.value.single().songIds)
+        assertEquals(listOf(10L, 20L), store.favoriteSongIds.value)
+        assertEquals(listOf(10L, 20L), store.recentSongIds.value)
+        assertEquals(mapOf(10L to 0), store.songPlayCounts.value)
+        assertEquals(mapOf(1L to 0), store.albumPlayCounts.value)
+
+        store.release()
+        Unit
+    }
+
+    @Test
+    fun acknowledgedEditsReadBackExactlyAndStoreContinuesAfterFailure() = runBlocking {
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock)
+        val created = store.createPlaylist("Interaction Test").await() as PlaylistMutationResult.Success
+        val playlistId = created.playlistId ?: error("missing playlist id")
+        val expectedOrder = List(500) { index -> index.toLong() + 1L }
+
+        assertTrue(store.updatePlaylistSongIds(playlistId, expectedOrder + expectedOrder.take(20)).await() is PlaylistMutationResult.Success)
+        assertEquals(expectedOrder, database.userDataDao().playlistEntries(playlistId).map { it.songId })
+        assertEquals((0 until expectedOrder.size).toList(), database.userDataDao().playlistEntries(playlistId).map { it.position })
+
+        assertTrue(store.updatePlaylistSongIds(999_999L, listOf(1L)).await() is PlaylistMutationResult.NotFound)
+        assertTrue(store.renamePlaylist(playlistId, "  Interaction   Test  ").await() is PlaylistMutationResult.Success)
+        assertEquals("Interaction Test", database.userDataDao().playlist(playlistId)?.name)
+
+        val drained = CompletableDeferred<Unit>()
+        store.release { drained.complete(Unit) }
+        withTimeout(10_000L) { drained.await() }
+
+        database.close()
+        database = Room.databaseBuilder(context, ElovaireDatabase::class.java, databaseName).build()
+        assertEquals(expectedOrder, database.userDataDao().playlistEntries(playlistId).map { it.songId })
+        assertEquals("Interaction Test", database.userDataDao().playlist(playlistId)?.name)
+    }
+
+    @Test
+    fun provenMediaRelocationPreservesAllSongReferences() = runBlocking {
+        database.userDataDao().insertPlaylist(UserPlaylistEntity(41L, "Saved", false))
+        database.userDataDao().insertPlaylistEntries(listOf(UserPlaylistEntryEntity(41L, 11L, 0)))
+        database.userDataDao().insertFavorite(FavoriteSongEntity(11L, 0))
+        database.userDataDao().insertSongPlayCounts(listOf(SongPlayCountEntity(11L, 4)))
+        database.userDataDao().replaceRecentPlayback(
+            entries = listOf(RecentPlaybackEntity("song", 11L, 0)),
+            state = PlaybackCollectionStateEntity(kind = null, collectionId = null),
+        )
+
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock)
+        val result = store.relocateSongReferences("test-library-commit", mapOf(11L to 22L)).await()
+
+        assertTrue(result is PlaylistMutationResult.Success)
+        assertEquals(listOf(22L), database.userDataDao().playlistEntries(41L).map(UserPlaylistEntryEntity::songId))
+        assertEquals(listOf(22L), database.userDataDao().favorites().map(FavoriteSongEntity::songId))
+        assertEquals(listOf(22L), database.userDataDao().songPlayCounts().map(SongPlayCountEntity::songId))
+        assertEquals(listOf(22L), database.userDataDao().recentPlayback().map(RecentPlaybackEntity::itemId))
+        assertEquals(listOf(22L), store.playlists.value.single { it.id == 41L }.songIds)
+        assertEquals(listOf(22L), store.favoriteSongIds.value)
+        assertEquals(listOf(22L), store.recentSongIds.value)
+        store.release()
+        Unit
+    }
+
+    @Test
+    fun audiobookProgressIsCoalescedDrainedAndRelocatedWithUserReferences() = runBlocking {
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock, database = database)
+        withTimeout(10_000L) {
+            store.userDataReadiness.first { it == UserDataReadiness.Ready }
+        }
+        val repository = store as AudiobookProgressRepository
+        repository.save(
+            "book-key",
+            AudiobookProgress(songId = 11L, positionMs = 120_000L, completed = false, updatedAtMs = 10L),
+        )
+        repository.save(
+            "book-key",
+            AudiobookProgress(songId = 11L, positionMs = 0L, completed = false, updatedAtMs = 20L),
+            force = true,
+        )
+
+        assertTrue(store.relocateSongReferences("audiobook-relocation", mapOf(11L to 22L)).await() is PlaylistMutationResult.Success)
+        assertEquals(22L, repository.load("book-key")?.songId)
+        assertEquals(0L, repository.load("book-key")?.positionMs)
+        assertEquals(22L, database.userDataDao().audiobookProgressRows().single().songId)
+        assertEquals(0L, database.userDataDao().audiobookProgressRows().single().positionMs)
+
+        store.release().await()
+    }
+
+    @Test
+    fun audiobookProgressPersistsNegativeNetworkSongIds() = runBlocking {
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock, database = database)
+        withTimeout(10_000L) { store.userDataReadiness.first { it == UserDataReadiness.Ready } }
+        val progress = AudiobookProgress(songId = -7L, positionMs = 500L, completed = false, updatedAtMs = 20L)
+        store.save("network-book", progress, force = true)
+        store.release().await()
+
+        assertEquals(-7L, database.userDataDao().audiobookProgressRows().single().songId)
+    }
+
+    @Test
+    fun firstCreateWaitsForInitializationBeforeAllocatingAnId() = runBlocking {
+        database.userDataDao().insertPlaylist(UserPlaylistEntity(1_000L, "Existing", false))
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock)
+
+        val result = store.createPlaylist("Created after initialization").await()
+
+        assertTrue(result is PlaylistMutationResult.Success)
+        val createdId = (result as PlaylistMutationResult.Success).playlistId ?: error("missing playlist id")
+        assertTrue(createdId > 1_000L)
+        assertEquals("Created after initialization", database.userDataDao().playlist(createdId)?.name)
+        assertEquals(
+            "Created after initialization",
+            store.playlists.value.single { it.id == createdId }.name,
+        )
+        store.release()
+        Unit
+    }
+
+    @Test
+    fun userDataRevisionAdvancesOnlyAfterAnAcceptedMutation() = runBlocking {
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock, database = database)
+
+        assertEquals(0L, store.revisionedUserDataSnapshot.value.revision)
+        val result = store.createPlaylist("Revisioned").await()
+
+        assertTrue(result is PlaylistMutationResult.Success)
+        assertEquals(1L, store.revisionedUserDataSnapshot.value.revision)
+        assertEquals(1L, database.userDataDao().userDataRevision())
+
+        val invalid = store.updatePlaylistSongIds(999_999L, listOf(1L)).await()
+        assertTrue(invalid is PlaylistMutationResult.NotFound)
+        assertEquals(1L, store.revisionedUserDataSnapshot.value.revision)
+        assertEquals(1L, database.userDataDao().userDataRevision())
+        store.release()
+        Unit
+    }
+
+    @Test
+    fun legacyPlaylistStateMigratesBeforeNewMutationsAndIsClearedAfterCommit() = runBlocking {
+        val legacyPlaylist = Playlist(
+            id = 37L,
+            name = "Legacy Mix",
+            songIds = listOf(11L, 9L, 9L),
+        )
+        val preferences = context.getSharedPreferences(PreferenceStorage.PREFERENCE_FILE_NAME, 0)
+        assertTrue(
+            preferences.edit()
+                .putString("playlists", serializePlaylists(listOf(legacyPlaylist)))
+                .commit(),
+        )
+
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock)
+        val created = store.createPlaylist("Created after migration").await()
+
+        assertTrue(created is PlaylistMutationResult.Success)
+        assertEquals(
+            listOf("Legacy Mix", "Created after migration"),
+            database.userDataDao().playlists().map(UserPlaylistEntity::name),
+        )
+        assertFalse(preferences.contains("playlists"))
+        store.release()
+        Unit
+    }
+
+    @Test
+    fun acceptedMutationCompletesWhenTheDatabaseOwnerFails() = runBlocking {
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock)
+        database.close()
+
+        val result = withTimeout(10_000L) { store.createPlaylist("Database is closed").await() }
+
+        assertFalse(result is PlaylistMutationResult.Success)
+        store.release()
+        Unit
+    }
+
+    @Test
+    fun bulkFavoriteChangesPreserveOrderWithoutRebuildingTheTable() = runBlocking {
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock)
+        val songIds = (1L..1_000L).toList()
+
+        store.setFavoriteSongs(songIds, favorite = true)
+        store.createPlaylist("Flush").await()
+
+        assertEquals(songIds, database.userDataDao().favorites().map { it.songId })
+
+        val removed = (401L..600L).toSet()
+        store.setFavoriteSongs(removed.toList(), favorite = false)
+        store.createPlaylist("Flush removal").await()
+
+        val remaining = songIds.filterNot(removed::contains)
+        assertEquals(remaining, database.userDataDao().favorites().map { it.songId })
+        assertEquals(0, database.userDataDao().favorites().first().position)
+        assertEquals(999, database.userDataDao().favorites().last().position)
+
+        val drained = CompletableDeferred<Unit>()
+        store.release { drained.complete(Unit) }
+        withTimeout(10_000L) { drained.await() }
+    }
+
+    @Test
+    fun playbackHistoryBatchPersistsCountsAndLatestRecentState() = runBlocking {
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock)
+        store.recordPlaybackTransition(songId = 7L, albumId = 70L)
+        store.recordPlaybackTransition(songId = 7L, albumId = 70L)
+        store.setRecentPlaybackIds(
+            songIds = listOf(7L),
+            albumIds = listOf(70L),
+            lastPlayedCollectionKind = PlaybackCollectionKind.Album,
+            lastPlayedCollectionId = 70L,
+        )
+
+        store.createPlaylist("Flush playback history").await()
+
+        assertEquals(2, database.userDataDao().songPlayCounts().single().playCount)
+        assertEquals(2, database.userDataDao().albumPlayCounts().single().playCount)
+        assertEquals(listOf(7L), database.userDataDao().recentPlayback().filter { it.kind == "song" }.map { it.itemId })
+        assertEquals("Album", database.userDataDao().playbackCollectionState()?.kind)
+        store.release()
+        Unit
+    }
+
+    @Test
+    fun playbackHistoryRetriesWhenRevisionWriteRollsBackTransaction() = runBlocking {
+        val store = RoomUserDataStore(context, database.userDataDao(), FixedClock, database = database)
+        withTimeout(10_000L) { store.userDataReadiness.first { it == UserDataReadiness.Ready } }
+        database.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER fail_revision BEFORE INSERT ON user_data_revision BEGIN SELECT RAISE(ABORT, 'injected failure'); END",
+        )
+        store.recordPlaybackTransition(songId = 7L, albumId = 70L)
+        store.setRecentPlaybackIds(listOf(7L), listOf(70L), PlaybackCollectionKind.Album, 70L)
+        assertTrue(store.createPlaylist("Barrier").await() is PlaylistMutationResult.Failure)
+        assertTrue(database.userDataDao().songPlayCounts().isEmpty())
+        assertTrue(database.userDataDao().recentPlayback().isEmpty())
+
+        database.openHelper.writableDatabase.execSQL("DROP TRIGGER fail_revision")
+        assertTrue(store.createPlaylist("Retry").await() is PlaylistMutationResult.Success)
+        assertEquals(1, database.userDataDao().songPlayCounts().single().playCount)
+        assertEquals(1, database.userDataDao().albumPlayCounts().single().playCount)
+        assertEquals(listOf(7L), database.userDataDao().recentPlayback().filter { it.kind == "song" }.map { it.itemId })
+        val drained = CompletableDeferred<Unit>()
+        store.release { drained.complete(Unit) }
+        withTimeout(10_000L) { drained.await() }
+    }
+
+    @Test
+    fun userDataRecoverySnapshotRoundTripsAndRejectsCorruption() {
+        val fileName = "user_data_recovery_test.json"
+        val file = context.filesDir.resolve(fileName)
+        file.delete()
+        file.resolveSibling("${file.name}.bak").delete()
+        val recovery = UserDataRecoverySnapshot(context, FixedClock, fileName)
+        val expected = UserDataSnapshot(
+            playlists = listOf(Playlist(41L, "Saved", listOf(11L, -22L))),
+            favoriteSongIds = listOf(11L, -22L),
+            songPlayCounts = mapOf(11L to 3, -22L to 2),
+            albumPlayCounts = mapOf(7L to 4, -70L to 1),
+            recentSongIds = listOf(-22L, 11L),
+            recentAlbumIds = listOf(-70L, 7L),
+            lastPlayedCollectionKind = PlaybackCollectionKind.Album,
+            lastPlayedCollectionId = -70L,
+            searchHistory = listOf(
+                SearchHistoryEntry(
+                    key = "album:-70",
+                    kind = SearchHistoryKind.Album,
+                    title = "Saved",
+                    subtitle = "Artist",
+                    artUri = Uri.parse("content://art/-70"),
+                    albumId = -70L,
+                    query = "saved",
+                ),
+            ),
+        )
+
+        assertEquals(null, recovery.read())
+        recovery.write(expected)
+        assertEquals(expected, recovery.read())
+
+        file.writeText(file.readText().replace("\"checksum\":\"", "\"checksum\":\"broken"))
+        assertEquals(null, recovery.read())
+        file.delete()
+    }
+
+    private object FixedClock : AppClock {
+        override fun wallTimeMs(): Long = 1_000L
+        override fun elapsedTimeMs(): Long = 500L
+    }
+}

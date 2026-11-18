@@ -1,0 +1,91 @@
+package elovaire.music.droidbeauty.app.ui.motion
+
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
+import java.util.HashSet
+
+private const val MaxAnimatedRevealIndex = 8
+
+@Stable
+class MotionRevealRegistry {
+    private val revealedKeys = HashSet<Any>()
+    private var revealBudgetExhausted = false
+
+    @Synchronized
+    fun isRevealed(key: Any): Boolean = revealBudgetExhausted || key in revealedKeys
+
+    @Synchronized
+    fun markRevealed(key: Any) {
+        if (revealBudgetExhausted || !revealedKeys.add(key)) return
+        if (revealedKeys.size >= MAX_REVEALED_KEYS) {
+            revealBudgetExhausted = true
+            revealedKeys.clear()
+        }
+    }
+
+    internal val retainedKeyCount: Int
+        @Synchronized get() = revealedKeys.size
+
+}
+
+@Composable
+fun rememberMotionRevealRegistry(): MotionRevealRegistry = remember { MotionRevealRegistry() }
+
+@Composable
+fun Modifier.elovaireListReveal(
+    itemKey: Any,
+    index: Int,
+    registry: MotionRevealRegistry,
+    enabled: Boolean = true,
+): Modifier {
+    val previouslyRevealed = remember(itemKey, registry) { registry.isRevealed(itemKey) }
+    if (!enabled || previouslyRevealed || index > MaxAnimatedRevealIndex || LocalMotionRuntime.current.reduceMotion) return this
+    val specs = rememberMotionSpecs()
+    val density = LocalDensity.current
+    var started by remember(itemKey) { mutableStateOf(false) }
+    LaunchedEffect(itemKey) {
+        withFrameNanos { }
+        started = true
+        registry.markRevealed(itemKey)
+    }
+    val delay = specs.listRevealDelay(index)
+    val transition = updateTransition(
+        targetState = started,
+        label = "elovaireListRevealTransition",
+    )
+    val alpha by transition.animateFloat(
+        transitionSpec = {
+            specs.tween(
+                durationMillis = MotionDuration.ListReveal,
+                delayMillis = delay,
+                easing = MotionEasing.FadeIn,
+            )
+        },
+        label = "elovaireListRevealAlpha",
+    ) { visible -> if (visible) 1f else 0f }
+    val hiddenOffsetPx = with(density) { -8.dp.toPx() }
+    val offsetY by transition.animateFloat(
+        transitionSpec = {
+            specs.listReveal(delayMillis = delay)
+        },
+        label = "elovaireListRevealOffsetY",
+    ) { visible -> if (visible) 0f else hiddenOffsetPx }
+    return graphicsLayer {
+        this.alpha = alpha
+        translationY = offsetY
+    }
+}
+
+private const val MAX_REVEALED_KEYS = 128

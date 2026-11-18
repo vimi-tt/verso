@@ -1,0 +1,118 @@
+package elovaire.music.droidbeauty.app.data.audio
+
+import elovaire.music.droidbeauty.app.domain.model.VolumeNormalizationMetadata
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class CanonicalMetadataTest {
+    @Test
+    fun embeddedValuesWinOverPlatformAndIndexedValues() {
+        val result = CanonicalMetadataResolver.resolve(
+            embedded = MetadataSourceValues(
+                title = "  Embedded title ",
+                artist = "Embedded artist",
+                description = "Embedded description",
+                trackNumber = "03/12",
+            ),
+            platform = MetadataSourceValues(
+                title = "Platform title",
+                artist = "Platform artist",
+                description = "Platform description",
+                trackNumber = "4",
+            ),
+            indexed = MetadataSourceValues(title = "Indexed title"),
+        )
+
+        assertEquals("Embedded title", result.title)
+        assertEquals("Embedded artist", result.artist)
+        assertEquals("Embedded description", result.description)
+        assertEquals(3, result.trackNumber)
+    }
+
+    @Test
+    fun blankAndInvalidValuesFallThroughWithoutInventingMetadata() {
+        val result = CanonicalMetadataResolver.resolve(
+            embedded = MetadataSourceValues(title = "  ", releaseYear = 100_000, trackNumber = "-2"),
+            platform = MetadataSourceValues(title = "Platform", releaseYear = 2024, discNumber = "02/03"),
+        )
+
+        assertEquals("Platform", result.title)
+        assertEquals(2024, result.releaseYear)
+        assertEquals(2, result.discNumber)
+        assertNull(result.trackNumber)
+    }
+
+    @Test
+    fun replayGainFieldsRemainFromOneSource() {
+        val result = CanonicalMetadataResolver.resolve(
+            embedded = MetadataSourceValues(
+                volumeNormalization = VolumeNormalizationMetadata(trackPeak = 0.98f),
+            ),
+            platform = MetadataSourceValues(
+                volumeNormalization = VolumeNormalizationMetadata(
+                    trackGainDb = -7.5f,
+                    albumGainDb = -6.0f,
+                    albumPeak = 0.91f,
+                ),
+            ),
+        )
+
+        assertEquals(VolumeNormalizationMetadata(trackPeak = 0.98f), result.volumeNormalization)
+    }
+
+    @Test
+    fun canonicalTextTrimsUnicodeAndFallsBackForWhitespaceOnlyValues() {
+        val result = CanonicalMetadataResolver.resolve(
+            embedded = MetadataSourceValues(title = " \u0301 "),
+            platform = MetadataSourceValues(title = "  東京 🎵  "),
+        )
+
+        assertEquals("東京 🎵", result.title)
+    }
+
+    @Test
+    fun oversizedTextFallsThroughToTheNextMetadataSource() {
+        val result = CanonicalMetadataResolver.resolve(
+            embedded = MetadataSourceValues(title = "x".repeat(4_097)),
+            platform = MetadataSourceValues(title = "Platform title"),
+        )
+
+        assertEquals("Platform title", result.title)
+    }
+
+    @Test
+    fun nonFiniteNormalizationValuesNeverReachCanonicalMetadata() {
+        val result = CanonicalMetadataResolver.resolve(
+            embedded = MetadataSourceValues(
+                volumeNormalization = VolumeNormalizationMetadata(
+                    trackGainDb = Float.NaN,
+                    trackPeak = Float.POSITIVE_INFINITY,
+                ),
+            ),
+            platform = MetadataSourceValues(
+                volumeNormalization = VolumeNormalizationMetadata(trackGainDb = -6f, trackPeak = 0.9f),
+            ),
+        )
+
+        assertEquals(
+            VolumeNormalizationMetadata(trackGainDb = -6f, trackPeak = 0.9f),
+            result.volumeNormalization,
+        )
+    }
+
+    @Test
+    fun canonicalTextRemovesControlsWithoutChangingLegitimateUnicode() {
+        val result = CanonicalMetadataResolver.resolve(
+            embedded = MetadataSourceValues(title = "\u0000  東京\u200F  👨‍👩‍👧‍👦\n🎵  "),
+        )
+
+        assertEquals("東京  👨‍👩‍👧‍👦 🎵", result.title)
+        assertEquals(
+            result.title,
+            CanonicalMetadataResolver.resolve(
+                embedded = MetadataSourceValues(title = result.title),
+            ).title,
+        )
+    }
+}

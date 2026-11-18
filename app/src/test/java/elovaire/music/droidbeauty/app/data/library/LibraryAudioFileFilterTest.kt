@@ -1,0 +1,507 @@
+package elovaire.music.droidbeauty.app.data.library
+
+import android.net.TestUri
+import elovaire.music.droidbeauty.app.data.audio.AudioContainerFormat
+import elovaire.music.droidbeauty.app.data.audio.AudioFormatPolicy
+import elovaire.music.droidbeauty.app.data.audio.DetectedAudioFormat
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class LibraryAudioFileFilterTest {
+    @Test
+    fun evaluate_includesDefaultMusicRelativePathWhenAbsolutePathMissing() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music"),
+            libraryRootPaths = emptySet(),
+        )
+
+        assertTrue(
+            filter.evaluate(
+                candidate(
+                    absolutePath = null,
+                    relativePath = "Music/",
+                    isMusic = false,
+                ),
+            ) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_includesDefaultMusicSubfolderWithTrailingSlashDifferences() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music"),
+            libraryRootPaths = emptySet(),
+        )
+
+        assertTrue(
+            filter.evaluate(
+                candidate(
+                    absolutePath = null,
+                    relativePath = "/Music/Subfolder",
+                    extension = "flac",
+                    mimeType = "audio/flac",
+                    detectedFormat = detected(AudioContainerFormat.Flac, "flac", "audio/flac", "audio/flac"),
+                ),
+            ) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_excludesPodcastUnderDefaultRoot() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = emptySet(),
+            libraryRootPaths = setOf("/storage/emulated/0/Music"),
+        )
+
+        assertTrue(
+            filter.evaluate(candidate("/storage/emulated/0/Music/Podcasts/song.mp3")) is AudioFileFilterDecision.Exclude,
+        )
+    }
+
+    @Test
+    fun evaluate_allowsExplicitCustomFolderWithExcludedFragment() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = emptySet(),
+            libraryRootPaths = setOf("/storage/emulated/0/Music/Podcasts"),
+            explicitCustomRootPaths = setOf("/storage/emulated/0/Music/Podcasts"),
+        )
+
+        assertTrue(
+            filter.evaluate(candidate("/storage/emulated/0/Music/Podcasts/song.mp3")) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_excludesOutsideSelectedRootsWhenOnlyRelativePathIsAvailable() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music"),
+            libraryRootPaths = emptySet(),
+        )
+
+        assertExcludedReason(
+            expectedReason = "Outside selected library folders",
+            decision = filter.evaluate(candidate(absolutePath = null, relativePath = "Download/")),
+        )
+    }
+
+    @Test
+    fun evaluate_includesShortFilesWhenAudioEvidenceIsValid() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music"),
+            libraryRootPaths = emptySet(),
+        )
+
+        assertTrue(
+            filter.evaluate(candidate(absolutePath = null, durationMs = 10_000L)) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_requiresContainerEvidenceForExtensionlessRows() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music"),
+            libraryRootPaths = emptySet(),
+        )
+
+        assertExcludedReason(
+            expectedReason = "Container could not be validated",
+            decision = filter.evaluate(
+                candidate(
+                    absolutePath = null,
+                    extension = "",
+                    mimeType = "audio/mpeg",
+                    detectedFormat = detected(
+                        AudioContainerFormat.Mp3,
+                        "",
+                        "audio/mpeg",
+                        "audio/mpeg",
+                        detectionSucceeded = false,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun evaluate_includesExtensionlessRowWhenContainerIsDetected() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music"),
+            libraryRootPaths = emptySet(),
+        )
+
+        assertTrue(
+            filter.evaluate(
+                candidate(
+                    absolutePath = null,
+                    extension = "",
+                    mimeType = "audio/mpeg",
+                    detectedFormat = detected(
+                        AudioContainerFormat.Mp3,
+                        "",
+                        "audio/mpeg",
+                        "audio/mpeg",
+                    ),
+                ),
+        ) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_includesAudioWhenProviderDoesNotReportDuration() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music"),
+            libraryRootPaths = emptySet(),
+        )
+
+        assertTrue(
+            filter.evaluate(candidate(absolutePath = null, durationMs = 0L)) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_usesAudioMimeWhenUnknownExtensionHasNoContainerResult() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music"),
+            libraryRootPaths = emptySet(),
+        )
+
+        assertTrue(
+            filter.evaluate(
+                candidate(
+                    absolutePath = null,
+                    extension = "bin",
+                    mimeType = "audio/mpeg",
+                    detectedFormat = null,
+                ),
+            ) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_unscopedFallbackAcceptsAudioOnlyWhenLocationEvidenceIsUnavailable() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = emptySet(),
+            libraryRootPaths = emptySet(),
+            allowUnscopedMediaStoreRows = true,
+        )
+
+        assertTrue(
+            filter.evaluate(
+                candidate(
+                    absolutePath = null,
+                    relativePath = null,
+                    isMusic = true,
+                ),
+            ) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_doesNotUseUnscopedFallbackForAnExplicitCustomFolder() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = emptySet(),
+            libraryRootPaths = emptySet(),
+            explicitCustomRootPaths = setOf("/storage/emulated/0/Music/FLAC"),
+            allowUnscopedMediaStoreRows = false,
+        )
+
+        assertExcludedReason(
+            expectedReason = "Outside selected library folders",
+            decision = filter.evaluate(candidate(absolutePath = null, relativePath = null)),
+        )
+    }
+
+    @Test
+    fun evaluate_keepsCaseSensitiveFolderBoundaries() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = emptySet(),
+            libraryRootPaths = emptySet(),
+            explicitCustomRootPaths = setOf("/storage/emulated/0/Music/FLAC"),
+        )
+
+        assertExcludedReason(
+            expectedReason = "Outside selected library folders",
+            decision = filter.evaluate(candidate("/storage/emulated/0/Music/flac/track.mp3")),
+        )
+    }
+
+    @Test
+    fun evaluate_excludesKnownOutOfScopeRelativePathEvenWhenUnscopedFallbackIsEnabled() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music"),
+            libraryRootPaths = emptySet(),
+            allowUnscopedMediaStoreRows = true,
+        )
+
+        assertExcludedReason(
+            expectedReason = "Outside selected library folders",
+            decision = filter.evaluate(
+                candidate(
+                    absolutePath = null,
+                    relativePath = "Download/Elovaire/track.mp3",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun evaluate_doesNotLetIsMusicFalseHideExplicitAudio() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = emptySet(),
+            libraryRootPaths = setOf("/storage/emulated/0/Downloads/Music"),
+            explicitCustomRootPaths = setOf("/storage/emulated/0/Downloads/Music"),
+        )
+
+        val decision = filter.evaluate(
+            candidate(
+                absolutePath = "/storage/emulated/0/Downloads/Music/track.mp3",
+                isMusic = false,
+            ),
+        )
+        assertTrue("decision=$decision", decision is AudioFileFilterDecision.Include)
+    }
+
+    @Test
+    fun evaluate_excludesUnsupportedExtensions() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music"),
+            libraryRootPaths = emptySet(),
+        )
+
+        assertExcludedReason(
+            expectedReason = "Unsupported extension",
+            decision = filter.evaluate(
+                candidate(
+                    absolutePath = null,
+                    extension = "txt",
+                    mimeType = "text/plain",
+                    detectedFormat = detected(AudioContainerFormat.Unknown, "txt", null, "text/plain"),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun evaluate_matchesRelativePathWhenAbsolutePathMissing() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music/Custom"),
+            libraryRootPaths = emptySet(),
+            explicitCustomRelativeRoots = setOf("Music/Custom"),
+        )
+
+        assertTrue(
+            filter.evaluate(candidate(absolutePath = null, relativePath = "Music/Custom/")) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_allowsNonMusicMediaStoreRowsInsideExplicitRelativeRoot() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = setOf("Music/FLAC Archive"),
+            libraryRootPaths = emptySet(),
+            explicitCustomRelativeRoots = setOf("Music/FLAC Archive"),
+        )
+
+        assertTrue(
+            filter.evaluate(
+                candidate(
+                    absolutePath = null,
+                    relativePath = "Music/FLAC Archive/",
+                    extension = "flac",
+                    mimeType = "audio/x-flac",
+                    isMusic = false,
+                    detectedFormat = detected(AudioContainerFormat.Flac, "flac", "audio/flac", "audio/x-flac"),
+                ),
+            ) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_includesKnownAudioExtensionWhenContainerProbeFails() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = emptySet(),
+            libraryRootPaths = setOf("/storage/emulated/0/Music/Custom"),
+            explicitCustomRootPaths = setOf("/storage/emulated/0/Music/Custom"),
+        )
+
+        assertTrue(
+            filter.evaluate(
+                candidate(
+                    absolutePath = "/storage/emulated/0/Music/Custom/song.m4a",
+                    extension = "m4a",
+                    mimeType = "audio/mp4",
+                    detectedFormat = detected(
+                        container = AudioContainerFormat.Mp4Audio,
+                        extension = "m4a",
+                        codecMimeType = null,
+                        mimeType = "audio/mp4",
+                        detectionSucceeded = false,
+                        hasAudioTrack = false,
+                    ),
+                ),
+            ) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_allowsValidatedM4aInsideExplicitCustomRoot() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = emptySet(),
+            libraryRootPaths = setOf("/storage/emulated/0/Music/Custom"),
+            explicitCustomRootPaths = setOf("/storage/emulated/0/Music/Custom"),
+        )
+
+        assertTrue(
+            filter.evaluate(
+                candidate(
+                    absolutePath = "/storage/emulated/0/Music/Custom/song.m4a",
+                    extension = "m4a",
+                    mimeType = "audio/mp4",
+                    isMusic = false,
+                    detectedFormat = detected(AudioContainerFormat.Mp4Audio, "m4a", "audio/mp4a-latm", "audio/mp4"),
+                ),
+            ) is AudioFileFilterDecision.Include,
+        )
+    }
+
+    @Test
+    fun evaluate_rejectsValidatedMp4Video() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = emptySet(),
+            libraryRootPaths = setOf("/storage/emulated/0/Music/Custom"),
+            explicitCustomRootPaths = setOf("/storage/emulated/0/Music/Custom"),
+        )
+
+        assertTrue(
+            filter.evaluate(
+                candidate(
+                    absolutePath = "/storage/emulated/0/Music/Custom/video.mp4",
+                    extension = "mp4",
+                    mimeType = "video/mp4",
+                    detectedFormat = detected(
+                        container = AudioContainerFormat.Mp4Audio,
+                        extension = "mp4",
+                        codecMimeType = "audio/mp4a-latm",
+                        mimeType = "video/mp4",
+                        hasVideoTrack = true,
+                    ),
+                ),
+            ) is AudioFileFilterDecision.Exclude,
+        )
+    }
+
+    @Test
+    fun evaluate_rejectsMissingAudioTrack() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = emptySet(),
+            libraryRootPaths = setOf("/storage/emulated/0/Music/Custom"),
+            explicitCustomRootPaths = setOf("/storage/emulated/0/Music/Custom"),
+        )
+
+        assertExcludedReason(
+            expectedReason = "No detectable audio track",
+            decision = filter.evaluate(
+                candidate(
+                    absolutePath = "/storage/emulated/0/Music/Custom/song.m4a",
+                    extension = "m4a",
+                    mimeType = "audio/mp4",
+                    detectedFormat = detected(
+                        container = AudioContainerFormat.Mp4Audio,
+                        extension = "m4a",
+                        codecMimeType = null,
+                        mimeType = "audio/mp4",
+                        hasAudioTrack = false,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun evaluate_rejectsDecoderUnavailable() {
+        val filter = LibraryAudioFileFilter(
+            selectedRelativeRoots = emptySet(),
+            libraryRootPaths = setOf("/storage/emulated/0/Music/Custom"),
+            explicitCustomRootPaths = setOf("/storage/emulated/0/Music/Custom"),
+        )
+
+        assertExcludedReason(
+            expectedReason = "No compatible audio decoder",
+            decision = filter.evaluate(
+                candidate(
+                    absolutePath = "/storage/emulated/0/Music/Custom/song.m4a",
+                    extension = "m4a",
+                    mimeType = "audio/mp4",
+                    detectedFormat = detected(
+                        container = AudioContainerFormat.Mp4Audio,
+                        extension = "m4a",
+                        codecMimeType = "audio/alac",
+                        mimeType = "audio/mp4",
+                        decoderAvailable = false,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    private fun candidate(
+        absolutePath: String?,
+        relativePath: String? = "Music/",
+        extension: String = "mp3",
+        mimeType: String = "audio/mpeg",
+        isMusic: Boolean? = true,
+        detectedFormat: DetectedAudioFormat? = detected(AudioContainerFormat.Mp3, extension, mimeType, mimeType),
+        durationMs: Long = 180_000L,
+    ): AudioScanCandidate {
+        return AudioScanCandidate(
+            id = 1L,
+            uri = TestUri("content://media/song"),
+            displayName = "song.$extension",
+            title = "Song",
+            artist = "Artist",
+            album = "Album",
+            durationMs = durationMs,
+            mimeType = mimeType,
+            relativePath = relativePath,
+            absolutePath = absolutePath,
+            extension = extension,
+            isMusic = isMusic,
+            detectedFormat = detectedFormat,
+        )
+    }
+
+    private fun detected(
+        container: AudioContainerFormat,
+        extension: String,
+        codecMimeType: String?,
+        mimeType: String?,
+        detectionSucceeded: Boolean = true,
+        hasAudioTrack: Boolean = true,
+        hasVideoTrack: Boolean = false,
+        decoderAvailable: Boolean = true,
+    ): DetectedAudioFormat {
+        return DetectedAudioFormat(
+            container = container,
+            displayName = AudioFormatPolicy.displayName(container, extension, codecMimeType),
+            mimeType = mimeType,
+            codecMimeType = codecMimeType,
+            detectionSucceeded = detectionSucceeded,
+            hasAudioTrack = hasAudioTrack,
+            hasVideoTrack = hasVideoTrack,
+            decoderAvailable = decoderAvailable,
+            sampleRate = null,
+            channelCount = null,
+            bitrate = null,
+            bitDepth = null,
+        )
+    }
+
+    private fun assertExcludedReason(
+        expectedReason: String,
+        decision: AudioFileFilterDecision,
+    ) {
+        assertTrue(decision is AudioFileFilterDecision.Exclude)
+        assertEquals(expectedReason, (decision as AudioFileFilterDecision.Exclude).reason)
+    }
+}

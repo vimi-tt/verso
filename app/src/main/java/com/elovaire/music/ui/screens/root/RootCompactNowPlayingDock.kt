@@ -1,0 +1,849 @@
+package elovaire.music.droidbeauty.app.ui.screens
+import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.pauseLabel
+import elovaire.music.droidbeauty.app.ui.i18n.playLabel
+import elovaire.music.droidbeauty.app.ui.i18n.localizedArtistName
+
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.MarqueeAnimationMode
+import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableFloatState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import elovaire.music.droidbeauty.app.R
+import elovaire.music.droidbeauty.app.data.playback.PlaybackProgressConsumer
+import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
+import elovaire.music.droidbeauty.app.domain.model.NowPlayingBarStyle
+import elovaire.music.droidbeauty.app.ui.components.rememberArtworkBitmap
+import elovaire.music.droidbeauty.app.ui.components.rememberArtworkGradient
+import elovaire.music.droidbeauty.app.ui.components.ArtworkPaletteShadow
+import elovaire.music.droidbeauty.app.ui.interaction.CompactBarGestureActions
+import elovaire.music.droidbeauty.app.ui.interaction.compactBarGestures
+import elovaire.music.droidbeauty.app.ui.interaction.elovairePressScale
+import elovaire.music.droidbeauty.app.ui.interaction.rememberElovaireInteractionSource
+import elovaire.music.droidbeauty.app.ui.motion.ElovaireAnimatedVisibility
+import elovaire.music.droidbeauty.app.ui.motion.LocalMotionRuntime
+import elovaire.music.droidbeauty.app.ui.motion.MotionDuration
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionTransitions
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
+import elovaire.music.droidbeauty.app.ui.theme.ForceDarkColorScheme
+import elovaire.music.droidbeauty.app.ui.theme.InkText
+import kotlinx.coroutines.delay
+
+private data class PlayerArtworkFrame(
+    val songId: Long,
+    val bitmap: ImageBitmap?,
+)
+
+@Composable
+internal fun CompactNowPlayingDockHost(
+    viewModel: NowPlayingViewModel,
+    song: Song,
+    style: NowPlayingBarStyle,
+    transportShowsPause: Boolean,
+    visible: Boolean,
+    suppressEnterAnimation: Boolean,
+    onOpenPlayer: (NowPlayingTransitionSnapshot?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val motionRuntime = LocalMotionRuntime.current
+    var keepProgressActive by remember(song.id) { mutableStateOf(visible) }
+    val progressState = remember(song.id) { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(visible, song.id, motionRuntime.reduceMotion) {
+        if (visible) {
+            keepProgressActive = true
+        } else {
+            delay(
+                motionRuntime.duration(MotionDuration.Standard.toLong())
+                    .coerceAtLeast(if (motionRuntime.reduceMotion) 0L else 120L),
+            )
+            keepProgressActive = false
+        }
+    }
+    DisposableEffect(viewModel, keepProgressActive) {
+        viewModel.setProgressConsumerActive(PlaybackProgressConsumer.CompactDock, keepProgressActive)
+        onDispose {
+            viewModel.setProgressConsumerActive(PlaybackProgressConsumer.CompactDock, false)
+        }
+    }
+
+    if (keepProgressActive) {
+        LaunchedEffect(viewModel, song.id) {
+            viewModel.progressState().collect { playbackProgress ->
+                progressState.floatValue = if (playbackProgress.durationMs > 0L) {
+                    (playbackProgress.displayPositionMs.toFloat() / playbackProgress.durationMs.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+            }
+        }
+    }
+
+    StandaloneNowPlayingDock(
+        song = song,
+        style = style,
+        isPlaying = transportShowsPause,
+        progressState = progressState,
+        visible = visible,
+        suppressEnterAnimation = suppressEnterAnimation,
+        onOpenPlayer = onOpenPlayer,
+        onTogglePlayback = viewModel::togglePlayback,
+        onSkipPrevious = viewModel::skipPrevious,
+        onSkipNext = viewModel::skipNext,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun StandaloneNowPlayingDock(
+    song: Song,
+    style: NowPlayingBarStyle,
+    isPlaying: Boolean,
+    progressState: MutableFloatState,
+    visible: Boolean,
+    suppressEnterAnimation: Boolean,
+    onOpenPlayer: (NowPlayingTransitionSnapshot?) -> Unit,
+    onTogglePlayback: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (style == NowPlayingBarStyle.Compact) {
+        CompactNowPlayingBar(
+            song = song,
+            isPlaying = isPlaying,
+            progressState = progressState,
+            visible = visible,
+            suppressEnterAnimation = suppressEnterAnimation,
+            onOpenPlayer = onOpenPlayer,
+            onTogglePlayback = onTogglePlayback,
+            onSkipPrevious = onSkipPrevious,
+            onSkipNext = onSkipNext,
+            modifier = modifier,
+        )
+        return
+    }
+    val motionTransitions = rememberMotionTransitions()
+    val artwork = rememberArtworkBitmap(song.artUri, size = 256)
+    val gradient = rememberArtworkGradient(song.artUri).value
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val baseTint = if (darkTheme) Color(0xFF141414).copy(alpha = 0.82f) else Color.White.copy(alpha = 0.82f)
+    val albumTint = gradient.first().copy(alpha = 0.5f)
+    val resolvedSurface = albumTint.compositeOver(baseTint)
+    val contentColor = if (resolvedSurface.luminance() > 0.42f) InkText else Color.White
+    val secondaryContentColor = contentColor.copy(alpha = 0.72f)
+    ForceDarkColorScheme {
+        ElovaireAnimatedVisibility(
+            visible = visible,
+            modifier = modifier,
+            enter = motionTransitions.compactBarEnter(suppressEnterAnimation),
+            exit = motionTransitions.compactBarExit(),
+            label = "CompactNowPlayingDockVisibility",
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(ElovaireRadii.card))
+                    .background(baseTint)
+                    .border(
+                        width = 1.dp,
+                        color = Color.White.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.05f else 0.04f),
+                        shape = RoundedCornerShape(ElovaireRadii.card),
+                    ),
+            ) {
+                val artworkBitmap = artwork.value
+                if (artworkBitmap != null) {
+                    Image(
+                        bitmap = artworkBitmap,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(72.dp)
+                            .blur(48.dp),
+                        alpha = 1f,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp)
+                        .background(albumTint),
+                )
+                NowPlayingBar(
+                    song = song,
+                    isPlaying = isPlaying,
+                    progressState = progressState,
+                    visible = visible,
+                    onOpenPlayer = onOpenPlayer,
+                    onTogglePlayback = onTogglePlayback,
+                    onSkipPrevious = onSkipPrevious,
+                    onSkipNext = onSkipNext,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+@Suppress("LongMethod")
+private fun CompactNowPlayingBar(
+    song: Song,
+    isPlaying: Boolean,
+    progressState: MutableFloatState,
+    visible: Boolean,
+    suppressEnterAnimation: Boolean,
+    onOpenPlayer: (NowPlayingTransitionSnapshot?) -> Unit,
+    onTogglePlayback: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val motionTransitions = rememberMotionTransitions()
+    val motionSpecs = rememberMotionSpecs()
+    val artwork = rememberArtworkBitmap(song.artUri, size = 192)
+    val barGradient = rememberArtworkGradient(song.artUri).value
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val baseTint = if (darkTheme) Color(0xFF141414).copy(alpha = 0.82f) else Color.White.copy(alpha = 0.82f)
+    val albumTint = barGradient.first().copy(alpha = 0.5f)
+    val controlBaseTint = if (darkTheme) {
+        barGradient.last().copy(alpha = 0.28f).compositeOver(Color.Black.copy(alpha = 0.16f))
+    } else {
+        barGradient.last().copy(alpha = 0.22f).compositeOver(Color.White.copy(alpha = 0.16f))
+    }
+    val controlIconTint by animateColorAsState(
+        targetValue = if (controlBaseTint.luminance() > 0.42f) InkText else Color.White,
+        animationSpec = motionSpecs.tween(durationMillis = MotionDuration.Fast),
+        label = "MiniPlayerButtonIconTint",
+    )
+    val contentColor = controlIconTint
+    val secondaryContentColor = controlIconTint.copy(alpha = 0.72f)
+    val interactionSource = rememberElovaireInteractionSource()
+
+    ForceDarkColorScheme {
+        ElovaireAnimatedVisibility(
+            visible = visible,
+            modifier = modifier,
+            enter = motionTransitions.compactBarEnter(suppressEnterAnimation),
+            exit = motionTransitions.compactBarExit(),
+            label = "CompactNowPlayingDockVisibility",
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .background(baseTint),
+            ) {
+                val artworkBitmap = artwork.value
+                if (artworkBitmap != null) {
+                    Image(
+                        bitmap = artworkBitmap,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp)
+                            .blur(48.dp),
+                        alpha = 1f,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .background(albumTint),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .background(controlIconTint.copy(alpha = 0.18f)),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(progressState.floatValue.coerceIn(0f, 1f))
+                        .height(2.dp)
+                        .background(controlIconTint),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .padding(start = 12.dp, end = 14.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp)
+                            .padding(end = 92.dp)
+                            .compactBarGestures(
+                                enabled = visible,
+                                actions = CompactBarGestureActions(
+                                    onTap = { onOpenPlayer(null) },
+                                    onSwipePrevious = {},
+                                    onSwipeNext = {},
+                                ),
+                            ),
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    RoundedCornerShape(ElovaireRadii.artworkSmall),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            AnimatedContent(
+                                targetState = PlayerArtworkFrame(song.id, artwork.value),
+                                contentKey = { it.songId },
+                                transitionSpec = {
+                                    (
+                                        (
+                                            fadeIn(
+                                                animationSpec = motionSpecs.tween(
+                                                    durationMillis = 300,
+                                                    delayMillis = 25,
+                                                    easing = FastOutSlowInEasing,
+                                                ),
+                                            ) +
+                                                scaleIn(
+                                                    initialScale = 0.96f,
+                                                    animationSpec = motionSpecs.tween(
+                                                        durationMillis = 300,
+                                                        easing = FastOutSlowInEasing,
+                                                    ),
+                                                )
+                                        ) togetherWith (
+                                            fadeOut(
+                                                animationSpec = motionSpecs.tween(
+                                                    durationMillis = 170,
+                                                    easing = FastOutSlowInEasing,
+                                                ),
+                                            ) +
+                                                scaleOut(
+                                                    targetScale = 1.04f,
+                                                    animationSpec = motionSpecs.tween(
+                                                        durationMillis = 220,
+                                                        easing = FastOutSlowInEasing,
+                                                    ),
+                                                )
+                                        )
+                                    ).using(SizeTransform(clip = false))
+                                },
+                                label = "compact_player_artwork_transition",
+                            ) { frame ->
+                                val artworkBitmap = frame.bitmap
+                                if (artworkBitmap != null) {
+                                    Box(Modifier.fillMaxSize()) {
+                                        ArtworkPaletteShadow(
+                                            cornerRadius = ElovaireRadii.artworkSmall,
+                                            tint = barGradient.first(),
+                                            blurRadius = 10.dp,
+                                            verticalOffset = 3.dp,
+                                        )
+                                        Image(
+                                            bitmap = artworkBitmap,
+                                            contentDescription = elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText(song.title, song.id, LocalAppLanguage.current),
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .align(Alignment.Center)
+                                                .clip(RoundedCornerShape(ElovaireRadii.artworkSmall)),
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        painter = painterResource(id = if (song.mediaKind == AudioMediaKind.Audiobook) R.drawable.ic_lucide_book_headphones else R.drawable.ic_lucide_music),
+                                        contentDescription = elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText(song.title, song.id, LocalAppLanguage.current),
+                                        tint = contentColor.copy(alpha = 0.72f),
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+                        ) {
+                            Text(
+                                text = elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText(song.title, song.id, LocalAppLanguage.current),
+                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                                maxLines = 1,
+                                color = contentColor,
+                                overflow = TextOverflow.Clip,
+                                modifier = Modifier.basicMarquee(
+                                    iterations = Int.MAX_VALUE,
+                                    animationMode = MarqueeAnimationMode.Immediately,
+                                    repeatDelayMillis = 2500,
+                                    initialDelayMillis = 2500,
+                                    velocity = 24.dp,
+                                ),
+                            )
+                            Text(
+                                text = localizedArtistName(song.artist, LocalAppLanguage.current),
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                color = secondaryContentColor,
+                                maxLines = 1,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .elovairePressScale(
+                                    enabled = visible,
+                                    pressedScale = 0.88f,
+                                    animationSpec = motionSpecs.chromeRelease(),
+                                    interactionSource = interactionSource,
+                                    label = "CompactMiniPlayerButtonScale",
+                                )
+                                .clickable(
+                                    enabled = visible,
+                                    interactionSource = interactionSource,
+                                    indication = null,
+                                    onClick = onTogglePlayback,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            AnimatedContent(
+                                targetState = isPlaying,
+                                transitionSpec = {
+                                    (
+                                        fadeIn(animationSpec = motionSpecs.fadeIn(MotionDuration.ScreenFade)) +
+                                            scaleIn(
+                                                initialScale = 0.9f,
+                                                animationSpec = motionSpecs.spring(
+                                                    dampingRatio = 0.82f,
+                                                    stiffness = 560f,
+                                                ),
+                                            )
+                                        ) togetherWith (
+                                        fadeOut(animationSpec = motionSpecs.fadeOut(MotionDuration.Quick)) +
+                                            scaleOut(
+                                                targetScale = 1.04f,
+                                                animationSpec = motionSpecs.fadeOut(MotionDuration.Quick),
+                                            )
+                                        )
+                                },
+                                label = "compact_mini_player_play_pause_icon",
+                            ) { playing ->
+                                Icon(
+                                    painter = painterResource(
+                                        id = if (playing) R.drawable.ic_lucide_pause else R.drawable.ic_lucide_play,
+                                    ),
+                                    contentDescription = if (playing) pauseLabel(LocalAppLanguage.current) else playLabel(LocalAppLanguage.current),
+                                    tint = contentColor,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
+                        }
+                        val nextInteraction = rememberElovaireInteractionSource()
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .elovairePressScale(
+                                    enabled = visible,
+                                    pressedScale = 0.88f,
+                                    animationSpec = motionSpecs.chromeRelease(),
+                                    interactionSource = nextInteraction,
+                                    label = "CompactMiniPlayerNextButtonScale",
+                                )
+                                .clickable(
+                                    enabled = visible,
+                                    interactionSource = nextInteraction,
+                                    indication = null,
+                                    onClick = onSkipNext,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_elovaire_forward_filled),
+                                contentDescription = elovaire.music.droidbeauty.app.ui.i18n.playbackNavigationAccessibilityCopy(LocalAppLanguage.current).next,
+                                tint = contentColor,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingBar(
+    song: Song,
+    isPlaying: Boolean,
+    progressState: MutableFloatState,
+    visible: Boolean,
+    onOpenPlayer: (NowPlayingTransitionSnapshot?) -> Unit,
+    onTogglePlayback: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
+) {
+    val motionSpecs = rememberMotionSpecs()
+    val artwork = rememberArtworkBitmap(song.artUri, size = 192)
+    val barGradient = rememberArtworkGradient(song.artUri).value
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val controlBaseTint = if (darkTheme) {
+        barGradient.last().copy(alpha = 0.28f).compositeOver(Color.Black.copy(alpha = 0.16f))
+    } else {
+        barGradient.last().copy(alpha = 0.22f).compositeOver(Color.White.copy(alpha = 0.16f))
+    }
+    val controlIconTint = if (controlBaseTint.luminance() > 0.42f) InkText else Color.White
+    val resolvedPrimaryTextColor = controlIconTint
+    val resolvedSecondaryTextColor = controlIconTint.copy(alpha = 0.72f)
+    val compactControlBackground = controlIconTint.copy(alpha = 0.2f)
+    val interactionSource = rememberElovaireInteractionSource()
+    var dragOffsetX by remember(song.id) { mutableFloatStateOf(0f) }
+    var isDragging by remember(song.id) { mutableStateOf(false) }
+    var barBounds by remember(song.id) { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    var artworkBounds by remember(song.id) { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val animatedDragOffsetX by animateFloatAsState(
+        targetValue = if (isDragging) dragOffsetX else 0f,
+        animationSpec = motionSpecs.spring(
+            dampingRatio = 0.82f,
+            stiffness = 380f,
+        ),
+        label = "MiniPlayerDragOffsetX",
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(ElovaireRadii.card))
+            .onGloballyPositioned { barBounds = it.boundsInRoot() }
+            .background(Color.Transparent)
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.08f else 0.05f),
+                shape = RoundedCornerShape(ElovaireRadii.card),
+            ),
+    ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .padding(end = 104.dp)
+                .compactBarGestures(
+                    enabled = visible,
+                    actions = CompactBarGestureActions(
+                        onTap = {
+                            val validSnapshot = if (
+                                barBounds != null &&
+                                artworkBounds != null &&
+                                barBounds!!.isValidTransitionBounds &&
+                                artworkBounds!!.isValidTransitionBounds
+                            ) {
+                                NowPlayingTransitionSnapshot(
+                                    songId = song.id,
+                                    barBounds = barBounds!!,
+                                    artworkBounds = artworkBounds!!,
+                                )
+                            } else {
+                                null
+                            }
+                            onOpenPlayer(validSnapshot)
+                        },
+                        onSwipePrevious = {},
+                        onSwipeNext = {},
+                        onDragStarted = {},
+                        onDragDelta = {},
+                        onGestureFinished = {},
+                    ),
+                ),
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                    modifier = Modifier
+                        .weight(1f)
+                    .graphicsLayer {
+                        translationX = (if (isDragging) dragOffsetX else animatedDragOffsetX) * 0.18f
+                    },
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .onGloballyPositioned { artworkBounds = it.boundsInRoot() }
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(ElovaireRadii.artworkSmall),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AnimatedContent(
+                        targetState = PlayerArtworkFrame(song.id, artwork.value),
+                        contentKey = { it.songId },
+                        transitionSpec = {
+                            (
+                                (
+                                    fadeIn(
+                                        animationSpec = motionSpecs.tween(
+                                            durationMillis = 300,
+                                            delayMillis = 25,
+                                            easing = FastOutSlowInEasing,
+                                        ),
+                                    ) +
+                                        scaleIn(
+                                            initialScale = 0.96f,
+                                            animationSpec = motionSpecs.tween(
+                                                durationMillis = 300,
+                                                easing = FastOutSlowInEasing,
+                                            ),
+                                        )
+                                ) togetherWith (
+                                    fadeOut(
+                                        animationSpec = motionSpecs.tween(
+                                            durationMillis = 170,
+                                            easing = FastOutSlowInEasing,
+                                        ),
+                                    ) +
+                                        scaleOut(
+                                            targetScale = 1.04f,
+                                            animationSpec = motionSpecs.tween(
+                                                durationMillis = 220,
+                                                easing = FastOutSlowInEasing,
+                                            ),
+                                        )
+                                    )
+                                ).using(SizeTransform(clip = false))
+                        },
+                        label = "mini_player_artwork_transition",
+                    ) { frame ->
+                        val artworkBitmap = frame.bitmap
+                        if (artworkBitmap != null) {
+                            Box(Modifier.fillMaxSize()) {
+                                ArtworkPaletteShadow(
+                                    cornerRadius = ElovaireRadii.artworkSmall,
+                                    tint = barGradient.first(),
+                                    blurRadius = 12.dp,
+                                    verticalOffset = 4.dp,
+                                )
+                                Image(
+                                    bitmap = artworkBitmap,
+                                    contentDescription = elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText(song.title, song.id, LocalAppLanguage.current),
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .align(Alignment.Center)
+                                        .clip(RoundedCornerShape(ElovaireRadii.artworkSmall)),
+                                )
+                            }
+                        } else {
+                            Icon(
+                                painter = painterResource(id = if (song.mediaKind == AudioMediaKind.Audiobook) R.drawable.ic_lucide_book_headphones else R.drawable.ic_lucide_music),
+                                contentDescription = elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText(song.title, song.id, LocalAppLanguage.current),
+                                tint = controlIconTint.copy(alpha = 0.72f),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+                ) {
+                    Text(
+                        text = elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText(song.title, song.id, LocalAppLanguage.current),
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1,
+                        color = resolvedPrimaryTextColor,
+                        overflow = TextOverflow.Clip,
+                        modifier = Modifier.basicMarquee(
+                            iterations = Int.MAX_VALUE,
+                            animationMode = MarqueeAnimationMode.Immediately,
+                            repeatDelayMillis = 2500,
+                            initialDelayMillis = 2500,
+                            velocity = 24.dp,
+                        ),
+                    )
+                    Text(
+                        text = localizedArtistName(song.artist, LocalAppLanguage.current),
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                        color = resolvedSecondaryTextColor,
+                        maxLines = 1,
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .elovairePressScale(
+                        enabled = visible,
+                        pressedScale = 0.9f,
+                        animationSpec = motionSpecs.chromeRelease(),
+                        interactionSource = interactionSource,
+                        label = "MiniPlayerPlayButtonScale",
+                    )
+                    .clip(CircleShape)
+                    .background(compactControlBackground)
+                    .clickable(
+                        enabled = visible,
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onTogglePlayback,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(
+                    modifier = Modifier.matchParentSize(),
+                ) {
+                    val strokeWidth = size.minDimension * 0.1f
+                    val arcInset = strokeWidth / 2f + 2.2f
+                    val arcStart = -90f
+                    val arcSweep = 360f
+                    drawArc(
+                        color = controlIconTint.copy(alpha = 0.18f),
+                        startAngle = arcStart,
+                        sweepAngle = arcSweep,
+                        useCenter = false,
+                        topLeft = Offset(arcInset, arcInset),
+                        size = Size(size.width - (arcInset * 2f), size.height - (arcInset * 2f)),
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                    )
+                    drawArc(
+                        color = controlIconTint,
+                        startAngle = arcStart,
+                        sweepAngle = arcSweep * progressState.floatValue.coerceIn(0f, 1f),
+                        useCenter = false,
+                        topLeft = Offset(arcInset, arcInset),
+                        size = Size(size.width - (arcInset * 2f), size.height - (arcInset * 2f)),
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                    )
+                }
+                AnimatedContent(
+                    targetState = isPlaying,
+                    transitionSpec = {
+                        (
+                            fadeIn(animationSpec = motionSpecs.fadeIn(MotionDuration.ScreenFade)) +
+                                scaleIn(
+                                    initialScale = 0.9f,
+                                    animationSpec = motionSpecs.spring(
+                                        dampingRatio = 0.82f,
+                                        stiffness = 560f,
+                                    ),
+                                )
+                            ) togetherWith
+                            (
+                                fadeOut(animationSpec = motionSpecs.fadeOut(MotionDuration.Quick)) +
+                                    scaleOut(
+                                        targetScale = 1.04f,
+                                        animationSpec = motionSpecs.fadeOut(MotionDuration.Quick),
+                                    )
+                                )
+                    },
+                    label = "mini_player_play_pause_icon",
+                ) { playing ->
+                    Icon(
+                        painter = painterResource(
+                            id = if (playing) R.drawable.ic_lucide_pause else R.drawable.ic_lucide_play,
+                        ),
+                        contentDescription = if (playing) pauseLabel(LocalAppLanguage.current) else playLabel(LocalAppLanguage.current),
+                        tint = controlIconTint,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+            val nextInteraction = rememberElovaireInteractionSource()
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .elovairePressScale(
+                        enabled = visible,
+                        pressedScale = 0.9f,
+                        animationSpec = motionSpecs.chromeRelease(),
+                        interactionSource = nextInteraction,
+                        label = "MiniPlayerNextButtonScale",
+                    )
+                    .clip(CircleShape)
+                    .background(compactControlBackground)
+                    .clickable(
+                        enabled = visible,
+                        interactionSource = nextInteraction,
+                        indication = null,
+                        onClick = onSkipNext,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_elovaire_forward_filled),
+                    contentDescription = elovaire.music.droidbeauty.app.ui.i18n.playbackNavigationAccessibilityCopy(LocalAppLanguage.current).next,
+                    tint = controlIconTint,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}

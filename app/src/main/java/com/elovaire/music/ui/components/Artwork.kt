@@ -1,0 +1,378 @@
+package elovaire.music.droidbeauty.app.ui.components
+
+import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.artworkPlaceholderLabel
+
+import android.content.Context
+import android.graphics.Bitmap
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
+import android.net.Uri
+import androidx.palette.graphics.Palette
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import elovaire.music.droidbeauty.app.R
+import elovaire.music.droidbeauty.app.data.artwork.ArtworkPurpose
+import elovaire.music.droidbeauty.app.data.artwork.ArtworkBitmapCache
+import elovaire.music.droidbeauty.app.data.artwork.ArtworkGradientCache
+import elovaire.music.droidbeauty.app.data.artwork.artworkRequestKey
+import elovaire.music.droidbeauty.app.data.artwork.invalidateArtworkCaches as invalidateDataArtworkCaches
+import elovaire.music.droidbeauty.app.data.artwork.loadArtworkBitmapAwaitingAdmission
+import elovaire.music.droidbeauty.app.data.artwork.normalizeArtworkRequestSize
+import elovaire.music.droidbeauty.app.ui.LocalBackendResourceTracker
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
+import androidx.compose.ui.res.painterResource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+@Composable
+fun ArtworkImage(
+    uri: Uri?,
+    modifier: Modifier = Modifier,
+    title: String = "",
+    cornerRadius: Dp = ElovaireRadii.artwork,
+    requestedSizePx: Int = 384,
+    placeholderIconSize: Dp = 30.dp,
+    @DrawableRes placeholderIconResId: Int = R.drawable.ic_lucide_music,
+    showArtworkGlow: Boolean = false,
+    overlay: (@Composable BoxScope.() -> Unit)? = null,
+) {
+    val image = rememberArtworkBitmap(uri = uri, size = requestedSizePx)
+    val artworkBitmap = image.value
+    val shadowTint = if (showArtworkGlow) {
+        rememberArtworkPaletteAccent(uri, requestedSizePx).value
+    } else {
+        null
+    }
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+
+    Box(
+        modifier = modifier,
+    ) {
+        ArtworkPaletteShadow(
+            cornerRadius = cornerRadius,
+            tint = shadowTint,
+            blurRadius = if (showArtworkGlow) 22.dp else 18.dp,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(shape)
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            MaterialTheme.colorScheme.surface,
+                        ),
+                    ),
+                ),
+        ) {
+            if (artworkBitmap != null) {
+                Image(
+                    bitmap = artworkBitmap,
+                    contentDescription = title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(id = placeholderIconResId),
+                        contentDescription = title.ifBlank { artworkPlaceholderLabel(LocalAppLanguage.current) },
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                        modifier = Modifier.size(placeholderIconSize),
+                    )
+                }
+            }
+
+            overlay?.invoke(this)
+        }
+    }
+}
+
+@Composable
+internal fun BoxScope.ArtworkPaletteShadow(
+    cornerRadius: Dp,
+    tint: Color?,
+    blurRadius: Dp = 18.dp,
+    verticalOffset: Dp = 6.dp,
+) {
+    if (tint != null) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxSize()
+                .offset(y = verticalOffset)
+                .drawWithCache {
+                    val center = Offset(size.width / 2f, size.height * 0.82f)
+                    val radius = maxOf(size.width, size.height) * 0.52f +
+                        blurRadius.toPx() + cornerRadius.toPx() * 0.1f
+                    val shadow = Brush.radialGradient(
+                        0f to tint.copy(alpha = 0.28f),
+                        0.5f to tint.copy(alpha = 0.13f),
+                        1f to Color.Transparent,
+                        center = center,
+                        radius = radius,
+                    )
+                    onDrawBehind {
+                        scale(scaleX = 1f, scaleY = 0.55f, pivot = center) {
+                            drawCircle(shadow, radius = radius, center = center)
+                        }
+                    }
+                },
+        )
+    }
+}
+
+@Composable
+fun rememberArtworkBitmap(
+    uri: Uri?,
+    size: Int,
+): State<ImageBitmap?> {
+    val context = LocalContext.current
+    val resourceTracker = LocalBackendResourceTracker.current
+    val invalidationRevision = ArtworkGradientCache.invalidationRevision.collectAsStateWithLifecycle().value
+    val normalizedSize = normalizeArtworkRequestSize(size)
+    val requestKey = artworkRequestKey(
+        uri = uri,
+        targetPx = normalizedSize,
+        purpose = artworkPurposeForSize(normalizedSize),
+    )
+    val cachedImage = requestKey?.let { ArtworkBitmapCache[it.cacheKey]?.asImageBitmap() }
+    val fallbackImage = if (cachedImage == null) requestKey?.let {
+        ArtworkBitmapCache.bestForUri(it.uri, it.targetPx, it.purpose)?.asImageBitmap()
+    } else null
+    return produceState<ImageBitmap?>(
+        initialValue = cachedImage ?: fallbackImage,
+        key1 = requestKey,
+        key2 = resourceTracker,
+        key3 = invalidationRevision,
+    ) {
+        if (requestKey == null) {
+            value = null
+            return@produceState
+        }
+        val cached = ArtworkBitmapCache[requestKey.cacheKey]
+        if (cached != null) {
+            value = cached.asImageBitmap()
+            return@produceState
+        }
+        value = fallbackImage
+        val loaded = withContext(Dispatchers.IO) {
+            loadArtworkBitmapAwaitingAdmission(context, requestKey, resourceTracker)?.also { bitmap ->
+                bitmap.prepareToDraw()
+            }?.asImageBitmap()
+        }
+        if (loaded != null || value == null) value = loaded
+    }
+}
+
+@Composable
+fun rememberArtworkGradient(uri: Uri?): State<List<Color>> {
+    val context = LocalContext.current
+    val resourceTracker = LocalBackendResourceTracker.current
+    val invalidationRevision = ArtworkGradientCache.invalidationRevision.collectAsStateWithLifecycle().value
+    val fallbackColor = MaterialTheme.colorScheme.primary
+    val foundation = MaterialTheme.colorScheme.background
+    val cacheKey = rememberGradientCacheKey(uri, 512, fallbackColor, foundation)
+    return produceState(
+        initialValue = ArtworkGradientCache.gradient(cacheKey)?.toComposeColors()
+            ?: defaultArtworkGradient(fallbackColor, foundation),
+        key1 = cacheKey,
+        key2 = resourceTracker,
+        key3 = invalidationRevision,
+    ) {
+        if (uri == null) {
+            value = defaultArtworkGradient(fallbackColor, foundation)
+            return@produceState
+        }
+        val cached = ArtworkGradientCache.gradient(cacheKey)
+        if (cached != null) {
+            value = cached.toComposeColors()
+            return@produceState
+        }
+        value = defaultArtworkGradient(fallbackColor, foundation)
+        value = withContext(Dispatchers.IO) {
+            val bitmap = loadArtworkBitmapAwaitingAdmission(context, uri, 512, resourceTracker = resourceTracker)
+            (bitmap?.let { paletteFromBitmap(it, foundation) } ?: defaultArtworkGradient(fallbackColor, foundation)).also { gradient ->
+                ArtworkGradientCache.putGradient(cacheKey, gradient.map { it.toArgb() }, invalidationRevision)
+            }
+        }
+    }
+}
+
+@Composable
+fun rememberArtworkPaletteAccent(
+    uri: Uri?,
+    size: Int = 512,
+): State<Color?> {
+    val context = LocalContext.current
+    val resourceTracker = LocalBackendResourceTracker.current
+    val invalidationRevision = ArtworkGradientCache.invalidationRevision.collectAsStateWithLifecycle().value
+    val normalizedSize = normalizeArtworkRequestSize(size)
+    val cacheKey = rememberPaletteAccentCacheKey(uri, normalizedSize)
+    val cachedAccent = cacheKey?.let { ArtworkGradientCache.accent(it) }
+    return produceState<Color?>(
+        initialValue = cachedAccent?.let(::Color),
+        key1 = cacheKey,
+        key2 = resourceTracker,
+        key3 = invalidationRevision,
+    ) {
+        if (cacheKey == null) {
+            value = null
+            return@produceState
+        }
+        val cached = ArtworkGradientCache.accent(cacheKey)
+        if (cached != null) {
+            value = Color(cached)
+            return@produceState
+        }
+        val bitmap = withContext(Dispatchers.IO) {
+            loadArtworkBitmapAwaitingAdmission(context, uri, normalizedSize, resourceTracker = resourceTracker)
+        }
+        val accent = bitmap?.let {
+            withContext(Dispatchers.Default) {
+                val palette = Palette.from(it).generate()
+                val swatch = palette.darkMutedSwatch
+                    ?: palette.mutedSwatch
+                    ?: palette.dominantSwatch
+                    ?: palette.darkVibrantSwatch
+                    ?: palette.vibrantSwatch
+                swatch?.rgb?.let(::mutedPaletteColor)
+            }
+        }
+        value = accent
+        if (accent != null) {
+            ArtworkGradientCache.putAccent(cacheKey, accent.toArgb(), invalidationRevision)
+        }
+    }
+}
+
+private fun mutedPaletteColor(rgb: Int): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(rgb, hsv)
+    hsv[1] = (hsv[1] * 0.58f).coerceAtMost(0.62f)
+    hsv[2] = hsv[2].coerceAtMost(0.78f)
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}
+
+internal fun invalidateArtworkCaches(uris: Collection<Uri?>) {
+    invalidateDataArtworkCaches(uris)
+}
+
+private fun List<Int>.toComposeColors(): List<Color> = map(::Color)
+
+private fun rememberGradientCacheKey(
+    uri: Uri?,
+    size: Int,
+    fallbackColor: Color,
+    foundation: Color,
+): String {
+    val requestKey = artworkRequestKey(
+        uri = uri,
+        targetPx = size,
+        purpose = ArtworkPurpose.UiLarge,
+    )?.cacheKey.orEmpty()
+    return "$requestKey|gradient|${fallbackColor.toArgb()}|${foundation.toArgb()}"
+}
+
+private fun rememberPaletteAccentCacheKey(
+    uri: Uri?,
+    size: Int,
+): String? {
+    return artworkRequestKey(
+        uri = uri,
+        targetPx = size,
+        purpose = artworkPurposeForSize(size),
+    )?.let { "${it.cacheKey}|accent" }
+}
+
+private fun artworkPurposeForSize(size: Int): ArtworkPurpose {
+    return if (size <= 256) ArtworkPurpose.UiGrid else ArtworkPurpose.UiLarge
+}
+
+private fun paletteFromBitmap(
+    bitmap: Bitmap,
+    foundation: Color,
+): List<Color> {
+    var red = 0L
+    var green = 0L
+    var blue = 0L
+    var samples = 0L
+    val stepX = (bitmap.width / 18).coerceAtLeast(1)
+    val stepY = (bitmap.height / 18).coerceAtLeast(1)
+
+    for (x in 0 until bitmap.width step stepX) {
+        for (y in 0 until bitmap.height step stepY) {
+            val color = bitmap.getPixel(x, y)
+            red += android.graphics.Color.red(color)
+            green += android.graphics.Color.green(color)
+            blue += android.graphics.Color.blue(color)
+            samples++
+        }
+    }
+
+    if (samples == 0L) return defaultArtworkGradient(Color(0xFF6F5840), foundation)
+
+    val base = Color(
+        android.graphics.Color.argb(
+            255,
+            (red / samples).toInt(),
+            (green / samples).toInt(),
+            (blue / samples).toInt(),
+        ),
+    )
+    return defaultArtworkGradient(base, foundation)
+}
+
+private fun defaultArtworkGradient(
+    base: Color,
+    foundation: Color,
+): List<Color> {
+    val softened = base.copy(alpha = 0.16f).compositeOver(foundation)
+    val accent = base.copy(alpha = 0.08f).compositeOver(foundation)
+    return listOf(softened, foundation, accent)
+}

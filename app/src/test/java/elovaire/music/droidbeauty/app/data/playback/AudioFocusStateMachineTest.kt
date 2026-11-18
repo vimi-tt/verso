@@ -1,0 +1,75 @@
+package elovaire.music.droidbeauty.app.data.playback
+
+import android.media.AudioManager
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AudioFocusStateMachineTest {
+    @Test
+    fun mapsPlatformCallbacksToStableActions() {
+        assertEquals(AudioFocusAction.Gain, AudioFocusStateMachine.actionFor(AudioManager.AUDIOFOCUS_GAIN))
+        assertEquals(
+            AudioFocusAction.TransientLoss,
+            AudioFocusStateMachine.actionFor(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT),
+        )
+        assertEquals(
+            AudioFocusAction.Duck,
+            AudioFocusStateMachine.actionFor(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK),
+        )
+        assertEquals(
+            AudioFocusAction.PermanentLoss,
+            AudioFocusStateMachine.actionFor(AudioManager.AUDIOFOCUS_LOSS),
+        )
+        assertEquals(AudioFocusAction.Ignore, AudioFocusStateMachine.actionFor(Int.MIN_VALUE))
+    }
+
+    @Test
+    fun duplicateCallbacksAreSuppressedUntilStateChangesOrResets() {
+        val filter = AudioFocusChangeFilter()
+
+        assertTrue(filter.accept(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT))
+        assertFalse(filter.accept(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT))
+        assertTrue(filter.accept(AudioManager.AUDIOFOCUS_GAIN))
+        assertFalse(filter.accept(AudioManager.AUDIOFOCUS_GAIN))
+
+        filter.reset()
+
+        assertTrue(filter.accept(AudioManager.AUDIOFOCUS_GAIN))
+    }
+
+    @Test
+    fun pausingFadeIsNotMistakenForSuccessfulAutoResume() {
+        assertFalse(
+            isPlaybackAlreadyResumed(
+                isPlaying = true,
+                playWhenReady = true,
+                isPauseTransitioningToStopped = true,
+            ),
+        )
+        assertTrue(
+            isPlaybackAlreadyResumed(
+                isPlaying = true,
+                playWhenReady = false,
+                isPauseTransitioningToStopped = false,
+            ),
+        )
+    }
+
+    @Test
+    fun transientFocusGainDoesNotWaitOnCoarseExternalActivityFlag() {
+        assertFalse(
+            shouldWaitForExternalMediaBeforeAutoResume(
+                isTransientFocusInterruption = true,
+                hasActiveExternalMedia = true,
+            ),
+        )
+        assertTrue(
+            shouldWaitForExternalMediaBeforeAutoResume(
+                isTransientFocusInterruption = false,
+                hasActiveExternalMedia = true,
+            ),
+        )
+    }
+}

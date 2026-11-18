@@ -1,0 +1,480 @@
+package elovaire.music.droidbeauty.app.domain.search
+
+import android.net.TestUri
+import elovaire.music.droidbeauty.app.domain.model.Album
+import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
+import elovaire.music.droidbeauty.app.domain.model.Audiobook
+import elovaire.music.droidbeauty.app.domain.model.AudiobookPart
+import elovaire.music.droidbeauty.app.domain.model.Song
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.util.Locale
+
+class SearchIndexTest {
+    @Test
+    fun previewPreservesInputOrderWhenDifferentSongsHaveEqualSortKeys() {
+        val base = song(id = 1L, title = "Track", artist = "Artist", albumArtist = null)
+        val songs = (0 until 30).map { index -> base.copy(uri = TestUri("content://songs/$index")) }
+        val index = buildSearchIndex(songs, emptyList())
+        val query = NormalizedSearchQuery.from("track")
+        val full = buildSearchResults(query, SearchSortMode.Title, index)
+        val preview = buildSearchResults(query, SearchSortMode.Title, index, includeAllSongs = false)
+        assertEquals(full.matchingSongs, preview.matchingSongs)
+    }
+
+    @Test
+    fun librarySnapshotIndexesOnlyMusicWithoutBuildingAFilteredSongList() {
+        val music = song(id = 1L, title = "Music", artist = "Singer", albumArtist = null)
+        val audiobook = song(id = 2L, title = "Book", artist = "Author", albumArtist = null)
+            .copy(mediaKind = AudioMediaKind.Audiobook)
+
+        val index = SearchLibrarySnapshot(
+            songs = listOf(music, audiobook),
+            albums = emptyList(),
+        ).toSearchIndex(revision = "library")
+
+        assertEquals(listOf(music), index.songs.map(SearchableSong::song))
+        assertEquals(listOf("Singer"), index.artists.map(SearchableArtist::displayName))
+    }
+
+    @Test
+    fun fallbackSnapshotSignatureTracksPlaybackMetadataAndLocation() {
+        val original = song(id = 1L, title = "Track", artist = "Artist", albumArtist = null)
+        val before = SearchLibrarySnapshot(listOf(original), emptyList()).signature()
+        val changedDuration = SearchLibrarySnapshot(listOf(original.copy(durationMs = 999L)), emptyList()).signature()
+        val changedUri = SearchLibrarySnapshot(listOf(original.copy(uri = TestUri("content://other/1"))), emptyList()).signature()
+        assertFalse(before == changedDuration)
+        assertFalse(before == changedUri)
+    }
+
+    @Test
+    fun previewPreservesRankingAcrossTiesSortModesAndInputOrders() {
+        val songs = (1L..200L).map { id ->
+            song(
+                id = id,
+                title = if (id % 2 == 0L) "Dréam" else "Dream Song",
+                artist = "Dream Artist ${id % 3}",
+                albumArtist = null,
+            ).copy(album = "Album ${id % 5}")
+        }
+        for (input in listOf(songs, songs.reversed(), songs.shuffled(kotlin.random.Random(17)))) {
+            val index = buildSearchIndex(input, emptyList())
+            for (sort in SearchSortMode.entries) {
+                for (rawQuery in listOf("dream", "drem", "dream artist", "dréam", "zzzzzz")) {
+                    val query = NormalizedSearchQuery.from(rawQuery)
+                    val full = buildSearchResults(query, sort, index)
+                    val preview = buildSearchResults(query, sort, index, false)
+                    assertEquals(full.allMatchingSongs.take(20), preview.matchingSongs)
+                    assertEquals(full.totalSongMatchCount, preview.totalSongMatchCount)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun normalizeSearchText_isLocaleIndependent() {
+        val previousLocale = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"))
+
+            assertEquals("istanbul", normalizeSearchText("ISTANBUL"))
+        } finally {
+            Locale.setDefault(previousLocale)
+        }
+    }
+
+    @Test
+    fun queryNormalization_preservesMetadataNoiseWordsAsUserInput() {
+        assertEquals("remastered", NormalizedSearchQuery.from("Remastered").value)
+        assertEquals("official audio", NormalizedSearchQuery.from("official audio").value)
+        assertEquals("feat", NormalizedSearchQuery.from("feat").value)
+        assertEquals("", normalizeSearchText("Remastered"))
+    }
+
+    @Test
+    fun queryNormalization_boundsPastedInputWithoutSplittingCodePoints() {
+        val normalized = NormalizedSearchQuery.from("😀".repeat(MAX_SEARCH_QUERY_CODE_POINTS + 8))
+
+        assertEquals(MAX_SEARCH_QUERY_CODE_POINTS, normalized.value.codePointCount(0, normalized.value.length))
+        assertFalse(normalized.value.contains('\uFFFD'))
+    }
+
+    @Test
+    fun fallbackSnapshotSignatureChangesWhenArtworkChanges() {
+        val song = song(id = 1L, title = "Track", artist = "Artist", albumArtist = null)
+
+        val before = SearchLibrarySnapshot(songs = listOf(song), albums = emptyList()).signature()
+        val after = SearchLibrarySnapshot(
+            songs = listOf(song.copy(artUri = TestUri("content://art/updated"))),
+            albums = emptyList(),
+        ).signature()
+
+        assertFalse(before == after)
+    }
+
+    @Test
+    fun scoreMatch_keepsScoreWithPrecomputedComposite() {
+        val query = NormalizedSearchQuery.from("glass harbor awake")
+        val normalizedTitle = normalizeSearchText("Awake")
+        val normalizedArtist = normalizeSearchText("Glass Harbor")
+        val normalizedAlbum = normalizeSearchText("Awake")
+        val composite = listOf(normalizedTitle, normalizedArtist, normalizedAlbum).joinToString(" ")
+
+        val computedScore = scoreMatch(
+            query = query,
+            normalizedTitle = normalizedTitle,
+            normalizedArtist = normalizedArtist,
+            normalizedAlbum = normalizedAlbum,
+        )
+        val precomputedScore = scoreMatch(
+            query = query,
+            normalizedTitle = normalizedTitle,
+            normalizedArtist = normalizedArtist,
+            normalizedAlbum = normalizedAlbum,
+            normalizedComposite = composite,
+        )
+
+        assertEquals(computedScore, precomputedScore)
+        assertNotNull(precomputedScore)
+    }
+
+    @Test
+    fun scoreMatch_matchesTokensAcrossFields() {
+        val score = scoreMatch(
+            query = NormalizedSearchQuery.from("kind north blue"),
+            normalizedTitle = normalizeSearchText("Kind of Blue"),
+            normalizedArtist = normalizeSearchText("Miles North"),
+            normalizedAlbum = "",
+            normalizedComposite = normalizeSearchText("Kind of Blue Miles North"),
+        )
+
+        assertNotNull(score)
+    }
+
+    @Test
+    fun scoreMatch_matchesAlbumArtistAsAnExplicitSearchField() {
+        val song = song(
+            id = 1L,
+            title = "Compilation Track",
+            artist = "Featured Performer",
+            albumArtist = "Various Artists",
+        )
+        val result = buildSearchResults(
+            query = NormalizedSearchQuery.from("various artists"),
+            sortMode = SearchSortMode.Title,
+            index = buildSearchIndex(listOf(song), emptyList()),
+        )
+
+        assertEquals(listOf(song), result.allMatchingSongs)
+    }
+
+    @Test
+    fun searchSongArtistSortUsesAlbumArtistAndKeepsTrackArtistOnSongs() {
+        val songs = listOf(
+            song(id = 1L, title = "Track", artist = "Track Artist Z", albumArtist = "Album Artist A"),
+            song(id = 2L, title = "Track", artist = "Track Artist A", albumArtist = "Album Artist Z"),
+        )
+
+        val result = buildSearchResults(
+            query = NormalizedSearchQuery.from("track"),
+            sortMode = SearchSortMode.Artist,
+            index = buildSearchIndex(songs, emptyList()),
+        )
+
+        assertEquals(listOf(1L, 2L), result.allMatchingSongs.map(Song::id))
+        assertEquals(listOf("Track Artist Z", "Track Artist A"), result.allMatchingSongs.map(Song::artist))
+    }
+
+    @Test
+    fun buildSearchResults_honorsCooperativeCancellationChecks() {
+        val index = buildSearchIndex(
+            songs = (1L..1_000L).map {
+                id -> song(id = id, title = "Track $id", artist = "Artist", albumArtist = null)
+            },
+            albums = emptyList(),
+        )
+        val cancellation = CancellationMarker()
+        var checks = 0
+
+        try {
+            buildSearchResults(
+                query = NormalizedSearchQuery.from("track"),
+                sortMode = SearchSortMode.Title,
+                index = index,
+                cancellationCheck = {
+                    checks++
+                    if (checks == 2) throw cancellation
+                },
+            )
+        } catch (failure: CancellationMarker) {
+            assertSame(cancellation, failure)
+            assertTrue(checks >= 2)
+            return
+        }
+        throw AssertionError("Search did not honor the cancellation check")
+    }
+
+    @Test
+    fun scoreMatch_matchesArtistAcronym() {
+        val score = scoreMatch(
+            query = NormalizedSearchQuery.from("rhcp"),
+            normalizedTitle = normalizeSearchText("Californication"),
+            normalizedArtist = normalizeSearchText("River Hills City Players"),
+            normalizedAlbum = normalizeSearchText("Californication"),
+        )
+
+        assertNotNull(score)
+    }
+
+    @Test
+    fun scoreMatch_allowsConservativeSingleCharacterTypoForLongTokens() {
+        val score = scoreMatch(
+            query = NormalizedSearchQuery.from("californicaton"),
+            normalizedTitle = normalizeSearchText("Californication"),
+            normalizedArtist = normalizeSearchText("River Hills City Players"),
+            normalizedAlbum = normalizeSearchText("Californication"),
+        )
+
+        assertNotNull(score)
+    }
+
+    @Test
+    fun scoreMatch_rejectsQueryWhenAnyTokenIsMissing() {
+        val score = scoreMatch(
+            query = NormalizedSearchQuery.from("kind coltrane blue"),
+            normalizedTitle = normalizeSearchText("Kind of Blue"),
+            normalizedArtist = normalizeSearchText("Miles North"),
+            normalizedAlbum = "",
+            normalizedComposite = normalizeSearchText("Kind of Blue Miles North"),
+        )
+
+        assertNull(score)
+    }
+
+    @Test
+    fun buildSearchIndex_groupsArtistsByAlbumArtist() {
+        val index = buildSearchIndex(
+            songs = listOf(
+                song(id = 1L, artist = "Main Artist feat. Guest", albumArtist = "Main Artist"),
+                song(id = 2L, artist = "Main Artist", albumArtist = "Main Artist"),
+            ),
+            albums = emptyList(),
+        )
+
+        assertEquals(listOf("Main Artist"), index.artists.map { it.displayName })
+        assertEquals(2, index.artists.single().songCount)
+    }
+
+    @Test
+    fun buildSearchIndex_selectsMostCommonArtistSpellingAndFirstArtwork() {
+        val firstArtwork = TestUri("content://art/first")
+        val index = buildSearchIndex(
+            songs = listOf(
+                song(id = 1L, artist = "Main Artist", albumArtist = "main artist"),
+                song(id = 2L, artist = "Main Artist", albumArtist = "Main Artist").copy(artUri = firstArtwork),
+                song(id = 3L, artist = "Main Artist", albumArtist = "Main Artist").copy(artUri = TestUri("content://art/later")),
+            ),
+            albums = emptyList(),
+        )
+
+        val artist = index.artists.single()
+        assertEquals("Main Artist", artist.displayName)
+        assertEquals(3, artist.songCount)
+        assertEquals(firstArtwork, artist.artUri)
+    }
+
+    @Test
+    fun buildSearchResults_previewDoesNotRetainFullSongList() {
+        val songs = (1L..30L).map { id ->
+            song(
+                id = id,
+                title = "Dream Song $id",
+                artist = "Dream Artist",
+                albumArtist = "Dream Artist",
+            )
+        }
+        val index = buildSearchIndex(
+            songs = songs,
+            albums = listOf(album(songs)),
+        )
+
+        val results = buildSearchResults(
+            query = NormalizedSearchQuery.from("dream"),
+            sortMode = SearchSortMode.Title,
+            index = index,
+            includeAllSongs = false,
+        )
+
+        assertEquals(30, results.totalSongMatchCount)
+        assertEquals(20, results.matchingSongs.size)
+        assertEquals(emptyList<Song>(), results.allMatchingSongs)
+    }
+
+    @Test
+    fun buildSearchResults_previewMatchesTheTopSongsFromFullResults() {
+        val songs = (1L..60L).map { id ->
+            song(
+                id = id,
+                title = if (id % 2 == 0L) "Dream Song $id" else "Dream Alternate $id",
+                artist = if (id % 3 == 0L) "Dream Artist" else "Other Artist",
+                albumArtist = null,
+            )
+        }
+        val index = buildSearchIndex(songs = songs, albums = emptyList())
+        val query = NormalizedSearchQuery.from("dream")
+
+        val fullResults = buildSearchResults(
+            query = query,
+            sortMode = SearchSortMode.Artist,
+            index = index,
+            includeAllSongs = true,
+        )
+        val previewResults = buildSearchResults(
+            query = query,
+            sortMode = SearchSortMode.Artist,
+            index = index,
+            includeAllSongs = false,
+        )
+
+        assertEquals(fullResults.totalSongMatchCount, previewResults.totalSongMatchCount)
+        assertEquals(fullResults.matchingSongs.take(20), previewResults.matchingSongs)
+        assertEquals(emptyList<Song>(), previewResults.allMatchingSongs)
+    }
+
+    @Test
+    fun buildSearchResults_keepsTopCategoryResultsEquivalentToFullRanking() {
+        val songs = (1L..40L).map { id ->
+            song(
+                id = id,
+                title = "Result Track $id",
+                artist = "Result Artist $id",
+                albumArtist = null,
+            )
+        }
+        val albums = songs.map { song ->
+            Album(
+                id = song.id,
+                title = "Result Album ${song.id}",
+                artist = "Result Artist ${song.id}",
+                artUri = null,
+                songCount = 1,
+                durationMs = song.durationMs,
+                songs = listOf(song),
+            )
+        }
+        val audiobooks = songs.map { song ->
+            Audiobook(
+                stableKey = "book-${song.id}",
+                title = "Result Book ${song.id}",
+                author = "Result Author ${song.id}",
+                artUri = null,
+                durationMs = song.durationMs,
+                parts = listOf(AudiobookPart(song, 1)),
+            )
+        }
+        val index = buildSearchIndex(songs, albums, audiobooks)
+        val query = NormalizedSearchQuery.from("result")
+        val result = buildSearchResults(query, SearchSortMode.Title, index, includeAllSongs = false)
+
+        val expectedAlbums = index.albums
+            .rankMatching(
+                query = query,
+                normalizedTitle = SearchableAlbum::normalizedTitle,
+                normalizedArtist = SearchableAlbum::normalizedArtist,
+                normalizedComposite = SearchableAlbum::normalizedComposite,
+            )
+            .sortedWith(
+                compareByDescending<RankedResult<SearchableAlbum>> { it.score }
+                    .thenBy { it.value.normalizedArtist }
+                    .thenBy { it.value.normalizedTitle }
+                    .thenBy { it.value.album.id },
+            )
+            .take(12)
+            .map { it.value.album }
+        val expectedArtists = index.artists
+            .rankMatching(
+                query = query,
+                normalizedTitle = SearchableArtist::normalizedName,
+                normalizedArtist = { "" },
+                normalizedComposite = SearchableArtist::normalizedName,
+            )
+            .sortedWith(
+                compareByDescending<RankedResult<SearchableArtist>> { it.score }
+                    .thenByDescending { it.value.songCount }
+                    .thenBy { it.value.normalizedName },
+            )
+            .take(6)
+            .map { ranked ->
+                SearchArtistResult(
+                    name = ranked.value.displayName,
+                    songCount = ranked.value.songCount,
+                    artUri = ranked.value.artUri,
+                )
+            }
+        val expectedAudiobooks = index.audiobooks
+            .rankMatching(
+                query = query,
+                normalizedTitle = SearchableAudiobook::normalizedTitle,
+                normalizedArtist = SearchableAudiobook::normalizedAuthor,
+                normalizedComposite = SearchableAudiobook::normalizedComposite,
+            )
+            .sortedWith(
+                compareByDescending<RankedResult<SearchableAudiobook>> { it.score }
+                    .thenBy { it.value.normalizedTitle }
+                    .thenBy { it.value.normalizedAuthor },
+            )
+            .take(6)
+            .map { it.value.audiobook }
+
+        assertEquals(expectedAlbums, result.matchingAlbums)
+        assertEquals(expectedArtists, result.matchingArtists)
+        assertEquals(expectedAudiobooks, result.matchingAudiobooks)
+    }
+
+    private fun song(
+        id: Long,
+        title: String = "Song $id",
+        artist: String,
+        albumArtist: String?,
+    ): Song {
+        return Song(
+            id = id,
+            title = title,
+            isExplicit = false,
+            artist = artist,
+            album = "Album",
+            releaseYear = null,
+            genre = "",
+            audioFormat = "MP3",
+            audioQuality = null,
+            fileName = "$id.mp3",
+            albumId = 1L,
+            durationMs = 180_000L,
+            trackNumber = id.toInt(),
+            discNumber = 1,
+            dateAddedSeconds = id,
+            uri = TestUri(),
+            artUri = null,
+            albumArtist = albumArtist,
+        )
+    }
+
+    private fun album(songs: List<Song>): Album {
+        return Album(
+            id = 1L,
+            title = "Dream Album",
+            artist = "Dream Artist",
+            artUri = null,
+            songCount = songs.size,
+            durationMs = songs.sumOf(Song::durationMs),
+            songs = songs,
+        )
+    }
+
+    private class CancellationMarker : RuntimeException()
+}

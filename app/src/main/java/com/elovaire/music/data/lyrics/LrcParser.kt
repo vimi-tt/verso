@@ -1,0 +1,237 @@
+package elovaire.music.droidbeauty.app.data.lyrics
+
+import java.nio.charset.Charset
+import java.util.Locale
+
+private val LRC_TIME_REGEX = Regex("""\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?]""")
+private val LRC_METADATA_REGEX = Regex("""^\s*\[([a-zA-Z]+):(.*)]\s*$""")
+private val METADATA_ONLY_LINE_REGEX = Regex("""^\s*\[?\s*(by|ar|ti|al|offset|length)\s*[:：].*\]?\s*$""", RegexOption.IGNORE_CASE)
+private val SECTION_HEADER_REGEX = Regex("""^\s*\[[^\]]+]\s*$""")
+private val HTML_TAG_REGEX = Regex("""<[^>]+>""")
+private val HTML_AMP_REGEX = Regex("""&amp;""", RegexOption.IGNORE_CASE)
+private val HTML_QUOTE_REGEX = Regex("""&quot;""", RegexOption.IGNORE_CASE)
+private val HTML_APOSTROPHE_REGEX = Regex("""&#39;|&apos;""", RegexOption.IGNORE_CASE)
+private val REPEATED_WHITESPACE_REGEX = Regex("""\s{2,}""")
+private val ESCAPED_BREAK_REGEX = Regex("""(?i)<\s*br\s*/?\s*>""")
+private val CLOSING_PARAGRAPH_REGEX = Regex("""(?i)</\s*p\s*>""")
+private val BLOCK_TAG_REGEX = Regex("""(?i)<\s*/?\s*(div|p|span)[^>]*>""")
+private val EXCESS_BREAKS_REGEX = Regex("""\n{3,}""")
+
+internal fun parseLrcOrPlain(raw: String): LyricsPayload? {
+    if (raw.isBlank() || raw.length > MAX_LYRICS_CHARACTERS) return null
+
+    val normalizedRaw = raw.normalizeLyricBreaks()
+    if (!normalizedRaw.isLyricsTextWithinBounds()) return null
+    val rawLines = normalizedRaw.lineSequence().take(MAX_LYRICS_LINES + 1).toList()
+    val offsetMs = rawLines
+        .asSequence()
+        .mapNotNull { line ->
+            LRC_METADATA_REGEX.matchEntire(line.trim())
+                ?.takeIf { it.groupValues[1].equals("offset", ignoreCase = true) }
+                ?.groupValues
+                ?.get(2)
+                ?.trim()
+                ?.toLongOrNull()
+                ?.takeIf { it in -MAX_LRC_OFFSET_MS..MAX_LRC_OFFSET_MS }
+        }
+        .lastOrNull()
+        ?: 0L
+    val timed = mutableListOf<LyricsLine>()
+    val plain = mutableListOf<String>()
+
+    rawLines.forEach { rawLine ->
+        val metadataMatch = LRC_METADATA_REGEX.matchEntire(rawLine.trim())
+        if (metadataMatch != null) {
+            return@forEach
+        }
+
+        val matches = LRC_TIME_REGEX.findAll(rawLine)
+        val rawText = rawLine.replace(LRC_TIME_REGEX, "").trim()
+        val text = sanitizeLyricLine(rawText).orEmpty()
+
+        if (matches.firstOrNull() == null) {
+            if (text.isNotBlank()) plain += text
+            return@forEach
+        }
+
+        if (text.isBlank() && rawText.isNotBlank()) return@forEach
+
+        var hasValidTimestamp = false
+        matches.forEach { match ->
+            match.toTimeMs(offsetMs)?.let { startTimeMs ->
+                hasValidTimestamp = true
+                timed += LyricsLine(text = text, startTimeMs = startTimeMs)
+            }
+        }
+        if (!hasValidTimestamp && text.isNotBlank()) plain += text
+    }
+
+    if (timed.none { it.text.isNotBlank() }) {
+        val plainLines = plain
+            .mapIndexed { index, text -> LyricsLine(text = text, startTimeMs = null, index = index) }
+        return plainLines.takeIf { it.isNotEmpty() }?.let { lines ->
+            LyricsPayload(
+                lines = lines,
+                isSynced = false,
+                sourceTextForEmbedding = normalizedRaw.canonicalEmbeddedLyricsTextAfterBreakNormalization(),
+            )
+        }
+    }
+
+    val sorted = timed.sortedBy { it.startTimeMs ?: Long.MAX_VALUE }
+    val nextDistinctStarts = arrayOfNulls<Long>(sorted.size)
+    var nextDistinctStart: Long? = null
+    var currentGroupStart: Long? = null
+    var currentGroupNext: Long? = null
+    for (index in sorted.indices.reversed()) {
+        val start = sorted[index].startTimeMs
+        if (start != currentGroupStart) {
+            currentGroupNext = nextDistinctStart
+            nextDistinctStart = start
+            currentGroupStart = start
+        }
+        nextDistinctStarts[index] = currentGroupNext
+    }
+    val indexed = buildList {
+        sorted.forEachIndexed { index, line ->
+            if (line.text.isNotBlank()) {
+                add(line.copy(
+                    index = size,
+                    endTimeMs = nextDistinctStarts[index]?.let { it - 1L },
+                ))
+            }
+        }
+    }
+
+    return LyricsPayload(
+        lines = indexed,
+        isSynced = true,
+        sourceTextForEmbedding = normalizedRaw.canonicalEmbeddedLyricsTextAfterBreakNormalization(),
+    )
+}
+
+internal fun sanitizeLyricLine(line: String): String? {
+    val withoutTags = line
+        .replace(HTML_TAG_REGEX, " ")
+        .replace(HTML_AMP_REGEX, "&")
+        .replace(HTML_QUOTE_REGEX, "\"")
+        .replace(HTML_APOSTROPHE_REGEX, "'")
+
+    val cleaned = withoutTags
+        .replace('\u00A0', ' ')
+        .replace(REPEATED_WHITESPACE_REGEX, " ")
+        .trim()
+
+    if (cleaned.isBlank()) return null
+    val normalized = cleaned.lowercase(Locale.US)
+    if (normalized == "null") return null
+    if (normalized == "embed") return null
+    if (normalized.startsWith("translations")) return null
+    if (normalized.startsWith("you might also like")) return null
+    if (normalized.startsWith("submit corrections")) return null
+    if (normalized.startsWith("contributors")) return null
+    if (SECTION_HEADER_REGEX.matches(cleaned)) return null
+    if (METADATA_ONLY_LINE_REGEX.matches(cleaned)) return null
+    return cleaned
+}
+
+internal fun String.normalizeLyricBreaks(): String {
+    return removeBom()
+        .replace("\r\n", "\n")
+        .replace('\r', '\n')
+        .replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace(ESCAPED_BREAK_REGEX, "\n")
+        .replace(CLOSING_PARAGRAPH_REGEX, "\n")
+        .replace(BLOCK_TAG_REGEX, "\n")
+}
+
+internal fun String.canonicalEmbeddedLyricsText(): String =
+    normalizeLyricBreaks()
+        .replace(EXCESS_BREAKS_REGEX, "\n\n")
+        .trimEnd()
+
+private fun String.canonicalEmbeddedLyricsTextAfterBreakNormalization(): String =
+    replace(EXCESS_BREAKS_REGEX, "\n\n")
+        .trimEnd()
+
+internal fun LyricsPayload.toEmbeddedLyricsText(): String =
+    (sourceTextForEmbedding ?: lines.joinToString("\n") { it.text })
+        .canonicalEmbeddedLyricsText()
+
+internal fun LyricsPayload.toDisplayPayload(): LyricsPayload {
+    val displayLines = lines
+        .mapNotNull { line ->
+            sanitizeLyricLine(line.text.replace(LRC_TIME_REGEX, "").trim())
+                ?.let { displayText -> line.copy(text = displayText) }
+        }
+    return copy(lines = displayLines)
+}
+
+internal fun decodeBestEffortText(bytes: ByteArray): String {
+    if (bytes.isEmpty()) return ""
+    if (bytes.startsWith(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))) {
+        return bytes.copyOfRange(3, bytes.size).toString(Charsets.UTF_8)
+    }
+    if (bytes.startsWith(byteArrayOf(0xFF.toByte(), 0xFE.toByte()))) {
+        return bytes.copyOfRange(2, bytes.size).toString(Charsets.UTF_16LE)
+    }
+    if (bytes.startsWith(byteArrayOf(0xFE.toByte(), 0xFF.toByte()))) {
+        return bytes.copyOfRange(2, bytes.size).toString(Charsets.UTF_16BE)
+    }
+    val utf8 = bytes.toString(Charsets.UTF_8)
+    val replacementCount = utf8.count { it == '\uFFFD' }
+    return if (replacementCount > maxOf(6, utf8.length / 10)) {
+        bytes.toString(Charset.forName("windows-1252"))
+    } else {
+        utf8
+    }
+}
+
+private fun MatchResult.toTimeMs(offsetMs: Long): Long? {
+    val min = groupValues[1].toLong()
+    val sec = groupValues[2].toLong()
+    if (sec !in 0L..59L) return null
+    val frac = groupValues.getOrNull(3).orEmpty()
+    val ms = when (frac.length) {
+        0 -> 0L
+        1 -> frac.toLong() * 100L
+        2 -> frac.toLong() * 10L
+        else -> frac.take(3).toLong()
+    }
+    val baseMs = min * 60_000L + sec * 1_000L + ms
+    val adjusted = if (offsetMs >= 0L && baseMs > Long.MAX_VALUE - offsetMs) {
+        Long.MAX_VALUE
+    } else if (offsetMs < 0L && baseMs < Long.MIN_VALUE - offsetMs) {
+        Long.MIN_VALUE
+    } else {
+        baseMs + offsetMs
+    }
+    return adjusted.coerceAtLeast(0L)
+}
+
+private fun ByteArray.startsWith(other: ByteArray): Boolean {
+    if (size < other.size) return false
+    return other.indices.all { index -> this[index] == other[index] }
+}
+
+private fun String.removeBom(): String = removePrefix("\uFEFF")
+
+internal fun String.isLyricsTextWithinBounds(): Boolean {
+    if (length > MAX_LYRICS_CHARACTERS) return false
+    var lineCount = 0
+    for (line in lineSequence()) {
+        lineCount += 1
+        if (lineCount > MAX_LYRICS_LINES || line.length > MAX_LYRIC_LINE_CHARACTERS) return false
+        if (LRC_TIME_REGEX.findAll(line).take(MAX_TIMESTAMPS_PER_LINE + 1).count() > MAX_TIMESTAMPS_PER_LINE) {
+            return false
+        }
+    }
+    return true
+}
+
+internal const val MAX_LYRICS_CHARACTERS = 512 * 1024
+internal const val MAX_LYRICS_LINES = 20_000
+private const val MAX_LYRIC_LINE_CHARACTERS = 16 * 1024
+private const val MAX_TIMESTAMPS_PER_LINE = 64
+private const val MAX_LRC_OFFSET_MS = 24L * 60L * 60L * 1_000L

@@ -1,0 +1,2822 @@
+package elovaire.music.droidbeauty.app.data.playback
+
+import elovaire.music.droidbeauty.app.domain.model.UpscalerSettings
+import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.hardware.usb.UsbManager
+import android.database.ContentObserver
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
+import elovaire.music.droidbeauty.app.BuildConfig
+import elovaire.music.droidbeauty.app.core.safeOutputDevices
+import elovaire.music.droidbeauty.app.core.safeActiveRoutedOutputDevicesForAttributes
+import elovaire.music.droidbeauty.app.core.AndroidCapabilities
+import elovaire.music.droidbeauty.app.core.AndroidAppClock
+import elovaire.music.droidbeauty.app.core.AppClock
+import elovaire.music.droidbeauty.app.core.allowStrictModeDiskReads
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceKind
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceRegistry
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceTracker
+import elovaire.music.droidbeauty.app.data.audio.AudioFormatPolicy
+import elovaire.music.droidbeauty.app.data.audio.PlaybackFailureClassifier
+import elovaire.music.droidbeauty.app.data.library.AudiobookCatalog
+import elovaire.music.droidbeauty.app.domain.model.Album
+import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
+import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.domain.model.AppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.localizedAlbumTitle
+import elovaire.music.droidbeauty.app.ui.i18n.localizedArtistName
+import elovaire.music.droidbeauty.app.ui.i18n.localizedGenreName
+import elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText
+import elovaire.music.droidbeauty.app.domain.model.VolumeNormalizationMetadata
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.io.Closeable
+import java.util.IdentityHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.ceil
+import kotlin.math.roundToInt
+
+enum class PlaybackRepeatMode {
+    Off,
+    One,
+    All,
+}
+
+enum class PlaybackCollectionKind {
+    Album,
+    Playlist,
+}
+
+enum class PlaybackCommand {
+    Play,
+    Pause,
+    Toggle,
+}
+
+enum class PlaybackCommandOrigin {
+    InApp,
+    ExternalController,
+    AudioInterruption,
+    BecomingNoisy,
+}
+
+internal enum class InterruptionResumeReason {
+    None,
+    TransientFocusLoss,
+    PermanentLossWithActiveExternalPlayback,
+}
+
+internal data class InterruptionResumeState(
+    val shouldResume: Boolean = false,
+    val reason: InterruptionResumeReason = InterruptionResumeReason.None,
+    val startedAtElapsedMs: Long = 0L,
+) {
+    val isActive: Boolean get() = shouldResume
+}
+
+internal fun shouldWaitForExternalMediaBeforeAutoResume(
+    isTransientFocusInterruption: Boolean,
+    hasActiveExternalMedia: Boolean,
+): Boolean {
+    return !isTransientFocusInterruption && hasActiveExternalMedia
+}
+
+private enum class PauseFadeReason {
+    Manual,
+    AudioInterruption,
+}
+
+private enum class ResumeFadeReason {
+    Manual,
+    AudioInterruption,
+    Recovery,
+}
+
+data class PlaybackUiState(
+    val queue: List<Song> = emptyList(),
+    val currentIndex: Int = -1,
+    val isPlaying: Boolean = false,
+    val transportShowsPause: Boolean = false,
+    val repeatMode: PlaybackRepeatMode = PlaybackRepeatMode.Off,
+    val shuffleEnabled: Boolean = false,
+    val sourceLabel: String? = null,
+    val volume: Float = 1f,
+    val audioSessionId: Int = 0,
+    val recentSongIds: List<Long> = emptyList(),
+    val recentAlbumIds: List<Long> = emptyList(),
+    val sourcePlaylistId: Long? = null,
+    val lastPlayedCollectionKind: PlaybackCollectionKind? = null,
+    val lastPlayedCollectionId: Long? = null,
+) {
+    val currentSong: Song?
+        get() = queue.getOrNull(currentIndex)
+}
+
+data class PlaybackNowPlayingState(
+    val currentSong: Song? = null,
+    val sourceLabel: String? = null,
+    val audioSessionId: Int = 0,
+)
+
+data class PlaybackTransportState(
+    val isPlaying: Boolean = false,
+    val transportShowsPause: Boolean = false,
+    val repeatMode: PlaybackRepeatMode = PlaybackRepeatMode.Off,
+    val shuffleEnabled: Boolean = false,
+)
+
+data class PlaybackQueueState(
+    val queue: List<Song> = emptyList(),
+    val currentIndex: Int = -1,
+    val sourcePlaylistId: Long? = null,
+)
+
+data class PlaybackVolumeState(
+    val volume: Float = 1f,
+)
+
+data class RecentPlaybackState(
+    val recentSongIds: List<Long> = emptyList(),
+    val recentAlbumIds: List<Long> = emptyList(),
+    val lastPlayedCollectionKind: PlaybackCollectionKind? = null,
+    val lastPlayedCollectionId: Long? = null,
+)
+
+data class PlaybackFormatFailure(
+    val songId: Long,
+    val fileName: String,
+    val format: String,
+    val reason: String,
+)
+
+@SuppressLint("UnsafeOptInUsageError")
+@Suppress("LargeClass", "TooManyFunctions")
+internal class PlaybackManager internal constructor(
+    context: Context,
+    scope: CoroutineScope,
+    private val audiobookProgressRepository: AudiobookProgressRepository = AudiobookProgressStore(context),
+    private val audiobookPlaybackSpeedPreferences: StateFlow<Float> = MutableStateFlow(1f),
+    private val appLanguage: StateFlow<AppLanguage> = MutableStateFlow(AppLanguage.English),
+    private val onAudiobookPlaybackSpeedChanged: (Float) -> Unit = {},
+    audioProcessorsProvider: () -> Array<AudioProcessor> = { emptyArray() },
+    hasSignalAlteringEffects: () -> Boolean = { false },
+    private val upscalerSettingsProvider: () -> UpscalerSettings =
+        { UpscalerSettings() },
+    initialRecentSongIds: List<Long> = emptyList(),
+    initialRecentAlbumIds: List<Long> = emptyList(),
+    initialLastPlayedCollectionKind: PlaybackCollectionKind? = null,
+    initialLastPlayedCollectionId: Long? = null,
+    playbackDataSourceFactory: DataSource.Factory? = null,
+    onRecentPlaybackChanged: (
+        songIds: List<Long>,
+        albumIds: List<Long>,
+        lastPlayedCollectionKind: PlaybackCollectionKind?,
+        lastPlayedCollectionId: Long?,
+    ) -> Unit = { _, _, _, _ -> },
+    private val clock: AppClock = AndroidAppClock,
+    private val resourceTracker: BackendResourceTracker = BackendResourceRegistry,
+) : NowPlayingPlayback, PlaybackIntegrationPort, PlaybackQueueMutationPort {
+    private val scope = scope
+    private val appContext = context.applicationContext
+    private val audioProcessorsProvider = audioProcessorsProvider
+    private val hasSignalAlteringEffects = hasSignalAlteringEffects
+    private var appliedUpscalerSettings = upscalerSettingsProvider()
+    private val onRecentPlaybackChanged = onRecentPlaybackChanged
+    private var audiobookPlaybackSpeed = audiobookPlaybackSpeedPreferences.value.coerceIn(0.5f, 2.5f)
+    @Volatile
+    private var activeAudiobookContext: AudiobookPlaybackContext? = null
+    private var lastAudiobookCheckpointElapsedMs = 0L
+    private val _audiobookProgressRevision = MutableStateFlow(0L)
+    override val audiobookProgressRevision: StateFlow<Long> = _audiobookProgressRevision.asStateFlow()
+    private val audioManager = context.getSystemService(AudioManager::class.java)
+    private val usbManager = context.getSystemService(UsbManager::class.java)
+    private val playbackAudioAttributes = AudioAttributes.Builder()
+        .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+        .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
+        .build()
+    private val platformPlaybackAudioAttributes = android.media.AudioAttributes.Builder()
+        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+        .build()
+    private val audioOutputController = PlaybackAudioOutputController(
+        context = appContext,
+        audioManager = audioManager,
+        usbManager = usbManager,
+        scope = scope,
+        playbackAudioAttributes = platformPlaybackAudioAttributes,
+    )
+    private var userVolume: Float
+        get() = audioOutputController.userVolume
+        set(value) { audioOutputController.userVolume = value }
+    private var volumeFineGain: Float
+        get() = audioOutputController.volumeFineGain
+        set(value) { audioOutputController.volumeFineGain = value }
+    private var ignoreObservedSystemVolumeStep: Int?
+        get() = audioOutputController.ignoreObservedSystemVolumeStep
+        set(value) { audioOutputController.ignoreObservedSystemVolumeStep = value }
+    private val usbDacHardwareVolumeManager get() = audioOutputController.usbDacHardwareVolumeManager
+    private val bitPerfectUsbManager get() = audioOutputController.bitPerfectUsbManager
+    private val extractorsFactory = DefaultExtractorsFactory()
+        .setConstantBitrateSeekingEnabled(true)
+    private val dataSourceFactory: DataSource.Factory = playbackDataSourceFactory ?: DefaultDataSource.Factory(appContext)
+    private val crossfadeCueAnalyzer = CrossfadeCueAnalyzer(
+        context = appContext,
+        scope = scope,
+        clock = clock,
+    )
+    private val audioSinkRecoveryGuard = AudioSinkRecoveryGuard()
+    private val playerFactory = PlaybackPlayerFactory(
+        context = appContext,
+        dataSourceFactory = dataSourceFactory,
+        extractorsFactory = extractorsFactory,
+        playbackAudioAttributes = playbackAudioAttributes,
+        audioProcessorsProvider = {
+            val processors = audioProcessorsProvider()
+            if (audioSinkRecoveryGuard.isSoftwareFallbackActive(currentAudioRouteSnapshot.generation)) {
+                processors.filterNot { it is UpscalerAudioProcessor }.toTypedArray()
+            } else processors
+        },
+        preferredOutputDevice = bitPerfectUsbManager::preferredOutputDevice,
+        offloadPolicyProvider = ::currentOffloadPolicy,
+    )
+    private val playbackHandler = Handler(Looper.getMainLooper())
+    private val audiobookPlaybackSpeedSyncJob = scope.launch {
+        audiobookPlaybackSpeedPreferences.collect { speed ->
+            playbackHandler.post {
+                if (released.get()) return@post
+                val normalized = speed.coerceIn(0.5f, 2.5f)
+                if (audiobookPlaybackSpeed == normalized) return@post
+                audiobookPlaybackSpeed = normalized
+                if (currentSong()?.mediaKind == AudioMediaKind.Audiobook) {
+                    player.playbackParameters = PlaybackParameters(normalized)
+                }
+            }
+        }
+    }
+    private var pendingAudioPathReason: String? = null
+    private var isDirectPlaybackActive: Boolean
+        get() = audioOutputController.isDirectPlaybackActive
+        set(value) { audioOutputController.isDirectPlaybackActive = value }
+    private val runtimeStateMachine = PlaybackRuntimeStateMachine()
+    private val runtimeTransition: PlaybackRuntimeTransition
+        get() = runtimeStateMachine.state
+    private var lastAppliedPreferredDeviceKey: PreferredAudioDeviceKey?
+        get() = audioOutputController.lastAppliedPreferredDeviceKey
+        set(value) { audioOutputController.lastAppliedPreferredDeviceKey = value }
+    private var lastAppliedAudioPathDecisionKey: AudioPathDecisionKey?
+        get() = audioOutputController.lastAppliedAudioPathDecisionKey
+        set(value) { audioOutputController.lastAppliedAudioPathDecisionKey = value }
+    private var crossfadeEnabled = false
+    private var crossfadeDurationMs = CrossfadeDurationPolicy.DEFAULT_DURATION_MS
+    private var crossfadeSilenceThresholdDb = CrossfadeSilencePolicy.BASE_LEVEL_DB
+    private var volumeNormalizationEnabled = false
+    private var outputCapabilities: AudioOutputCapabilitySnapshot
+        get() = audioOutputController.outputCapabilities
+        set(value) { audioOutputController.outputCapabilities = value }
+    private var audioRouteGeneration: Long
+        get() = audioOutputController.audioRouteGeneration
+        set(value) { audioOutputController.audioRouteGeneration = value }
+    private var audioRouteIdentity: List<AudioRouteDeviceIdentity>
+        get() = audioOutputController.audioRouteIdentity
+        set(value) { audioOutputController.audioRouteIdentity = value }
+    private var currentAudioRouteSnapshot: AudioOutputRouteSnapshot
+        get() = audioOutputController.currentAudioRouteSnapshot
+        set(value) { audioOutputController.currentAudioRouteSnapshot = value }
+    private val playerResourceLeases = IdentityHashMap<ExoPlayer, Closeable>()
+    private var player = createPlayer(enableSignalProcessing = true)
+    private val playerGenerationGate = PlaybackPlayerGenerationGate<ExoPlayer>()
+    private val playerObserverBindings = IdentityHashMap<ExoPlayer, Player.Listener>()
+    private val playerAnalyticsBindings = IdentityHashMap<ExoPlayer, AnalyticsListener>()
+    private val crossfadeController = PlaybackCrossfadeController(
+        handler = playbackHandler,
+        scope = scope,
+        cueAnalyzer = crossfadeCueAnalyzer,
+        createPlayer = { createPlayer(enableSignalProcessing = true) },
+        releasePlayer = ::releasePlayer,
+        onPromote = { outgoing, incoming -> promoteCrossfadePlayer(outgoing, incoming) },
+        onFailed = { scheduleStatePublish() },
+        clock = clock,
+        language = { appLanguage.value },
+    )
+    private val sleepTimerController = PlaybackSleepTimerController(
+        scope = scope,
+        elapsedRealtimeMs = clock::elapsedTimeMs,
+        onTimerFired = ::stopAndClearQueue,
+        setPauseAtEndOfMediaItems = { enabled -> player.setPauseAtEndOfMediaItems(enabled) },
+    )
+    private var commandGatewayPlayer: Player = PlaybackExternalCommandGateway(
+        delegate = player,
+        dispatchPlaybackCommand = ::dispatchPlaybackCommand,
+        seek = ::seekTo,
+        skipNext = ::skipNext,
+        skipPrevious = ::skipPrevious,
+    )
+    private val audioFocusController = PlaybackAudioFocusController(
+        audioManager = audioManager,
+        audioAttributes = platformPlaybackAudioAttributes,
+        onFocusChange = ::handleAudioFocusChange,
+    )
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            if (released.get()) return
+            if (addedDevices.hasUsbOutputDeviceChange()) {
+                refreshUsbAudioOutputState()
+                scheduleAudioPathReevaluation("audio-device-added", AUDIO_PATH_REEVALUATION_DELAY_MS)
+            }
+            syncFromObservedSystemVolume()
+        }
+
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            if (released.get()) return
+            if (removedDevices.hasUsbOutputDeviceChange()) {
+                refreshUsbAudioOutputState()
+                scheduleAudioPathReevaluation("audio-device-removed", AUDIO_PATH_REEVALUATION_DELAY_MS)
+            }
+            syncFromObservedSystemVolume()
+        }
+    }
+    private val becomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (released.get()) return
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                dispatchPlaybackCommand(PlaybackCommand.Pause, PlaybackCommandOrigin.BecomingNoisy)
+            }
+        }
+    }
+    private val interruptionController = PlaybackInterruptionController()
+    private var duckedForAudioFocus: Boolean
+        get() = interruptionController.duckedForAudioFocus
+        set(value) { interruptionController.duckedForAudioFocus = value }
+    private var isPauseTransitioningToStopped = false
+    private var isManualPausePending: Boolean
+        get() = interruptionController.isManualPausePending
+        set(value) { interruptionController.isManualPausePending = value }
+    private var shouldResumeAfterTransientFocusLoss: Boolean
+        get() = interruptionController.shouldResumeAfterTransientFocusLoss
+        set(value) { interruptionController.shouldResumeAfterTransientFocusLoss = value }
+    private var pausedForAudioFocusLoss: Boolean
+        get() = interruptionController.pausedForAudioFocusLoss
+        set(value) { interruptionController.pausedForAudioFocusLoss = value }
+    private var pendingResumeAfterExternalInterruption: Boolean
+        get() = interruptionController.pendingResumeAfterExternalInterruption
+        set(value) { interruptionController.pendingResumeAfterExternalInterruption = value }
+    private var interruptionResumeState: InterruptionResumeState
+        get() = interruptionController.interruptionResumeState
+        set(value) { interruptionController.interruptionResumeState = value }
+    private var isStoppingQueue = false
+    private val released = AtomicBoolean(false)
+    private var playbackOperationRevision = 0L
+    private val failedPlaybackSongIds = mutableSetOf<Long>()
+    private var unexpectedIdleRecoveryCount = 0
+    private var lastUnexpectedIdleRecoveryElapsedMs = 0L
+    private val playbackProgressController = PlaybackProgressController()
+    private var progressMediaItemOccurrence = 0L
+    private val progressDemandController = PlaybackProgressDemandController()
+    private val playbackProgressTicker = PlaybackProgressTicker(
+        scope = scope,
+        intervalMs = progressDemandController::pollingIntervalMs,
+        onTick = {
+            publishProgressSnapshot()
+            shouldPollProgress()
+        },
+        elapsedTimeMs = clock::elapsedTimeMs,
+    )
+    private val queueMetadataRefresher = PlaybackQueueMetadataRefresher()
+    private val stateReducer = PlaybackStateReducer(
+        playerProvider = { player },
+        onRecentPlaybackChanged = onRecentPlaybackChanged,
+    )
+    private var pauseFadeJob: Job? = null
+    private var externalInterruptionResumeJob: Job?
+        get() = interruptionController.externalInterruptionResumeJob
+        set(value) { interruptionController.externalInterruptionResumeJob = value }
+    private var pendingAutoResumeRetryJob: Job?
+        get() = interruptionController.pendingAutoResumeRetryJob
+        set(value) { interruptionController.pendingAutoResumeRetryJob = value }
+    private var statePublishScheduled = false
+    private val _playerInstanceVersion = MutableStateFlow(0L)
+    val playerInstanceVersion: StateFlow<Long> = _playerInstanceVersion.asStateFlow()
+    private val uiSharing = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000L)
+    private val audioPathReevaluationRunnable = Runnable {
+        if (released.get()) {
+            pendingAudioPathReason = null
+            return@Runnable
+        }
+        val reason = pendingAudioPathReason ?: "unspecified"
+        pendingAudioPathReason = null
+        applyPreferredAudioDeviceIfNeeded()
+        maybeRebuildPlayerForAudioPath(reason)
+    }
+    private val statePublishRunnable = Runnable {
+        statePublishScheduled = false
+        if (!released.get()) updateState()
+    }
+    private val playerListener = object : Player.Listener {
+        override fun onMediaItemTransition(
+            mediaItem: MediaItem?,
+            reason: Int,
+        ) {
+            if (released.get()) return
+            progressMediaItemOccurrence += 1L
+            resetUnexpectedIdleRecoveryGuard()
+            crossfadeController.cancel()
+            bitPerfectUsbManager.updateEffectsActive(hasActiveSignalAlteringEffects())
+            scheduleAudioPathReevaluation("media-item-transition", audioPathReevaluationDelayForTransition())
+            sleepTimerController.updateEndOfSongTarget(currentSong()?.id)
+            applyPlaybackSpeedForCurrentSong()
+            player.volume = targetPlayerOutputGain()
+            scheduleStatePublish()
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            if (released.get()) return
+            if (oldPosition.mediaItemIndex != newPosition.mediaItemIndex) {
+                checkpointAudiobookProgressAt(
+                    queueIndex = oldPosition.mediaItemIndex,
+                    positionMs = oldPosition.positionMs,
+                    durationMs = _state.value.queue.getOrNull(oldPosition.mediaItemIndex)?.durationMs ?: 0L,
+                    force = true,
+                )
+            }
+            sleepTimerController.updateEndOfSongTarget(currentSong()?.id)
+            scheduleStatePublish()
+        }
+
+        override fun onPlayWhenReadyChanged(
+            playWhenReady: Boolean,
+            reason: Int,
+        ) {
+            if (released.get()) return
+            checkpointAudiobookProgress(force = true)
+            if (!playWhenReady && sleepTimerState.value.option == SleepTimerOption.EndOfSong && isPausedAtEndOfCurrentSong()) {
+                sleepTimerController.onEndOfSongReached(currentSong()?.id)
+            } else {
+                scheduleStatePublish()
+            }
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (released.get()) return
+            if (isPlaying) {
+                prepareCrossfadeIfPossible()
+            } else if (crossfadeController.state !in setOf(CrossfadeState.Fading, CrossfadeState.PromotingNext)) {
+                crossfadeController.cancel()
+            }
+            scheduleStatePublish()
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (released.get()) return
+            if (sleepTimerState.value.option == SleepTimerOption.EndOfSong && isPausedAtEndOfCurrentSong()) {
+                sleepTimerController.onEndOfSongReached(currentSong()?.id)
+            } else if (
+                playbackState == Player.STATE_ENDED &&
+                player.repeatMode == Player.REPEAT_MODE_OFF &&
+                crossfadeController.state !in setOf(CrossfadeState.Fading, CrossfadeState.PromotingNext)
+            ) {
+                stopAndClearQueue()
+            } else if (
+                playbackState == Player.STATE_IDLE &&
+                !isStoppingQueue &&
+                _state.value.queue.isNotEmpty() &&
+                runtimeTransition !is PlaybackRuntimeTransition.Recovering
+            ) {
+                recoverUnexpectedIdleState(shouldAutoPlay = shouldAutoResumeAfterUnexpectedIdle())
+            } else {
+                if (playbackState != Player.STATE_IDLE) {
+                    resetUnexpectedIdleRecoveryGuard()
+                }
+                prepareCrossfadeIfPossible()
+                scheduleStatePublish()
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            if (released.get()) return
+            crossfadeController.cancel()
+            if (error.isUnsupportedFormatError() && handleUnsupportedPlaybackFormat(error)) {
+                return
+            }
+            if (_state.value.queue.isNotEmpty() && !isStoppingQueue && runtimeTransition !is PlaybackRuntimeTransition.Recovering) {
+                recoverUnexpectedIdleState(shouldAutoPlay = shouldAutoResumeAfterUnexpectedIdle())
+            } else {
+                scheduleStatePublish()
+            }
+        }
+
+        override fun onEvents(player: Player, events: Player.Events) {
+            if (released.get()) return
+            scheduleStatePublish()
+        }
+    }
+    private val playerAnalyticsListener = object : AnalyticsListener {
+        override fun onAudioTrackInitialized(
+            eventTime: AnalyticsListener.EventTime,
+            audioTrackConfig: androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig,
+        ) {
+            if (released.get()) return
+            bitPerfectUsbManager.updateCurrentAudioTrackConfig(audioTrackConfig)
+            scheduleAudioPathReevaluation("audio-track-initialized")
+            player.volume = effectivePlayerGain()
+            syncFromObservedSystemVolume()
+        }
+
+        override fun onAudioSinkError(
+            eventTime: AnalyticsListener.EventTime,
+            audioSinkError: Exception,
+        ) {
+            if (released.get()) return
+            if (
+                hasActiveQueue() &&
+                (player.isPlaying || player.playWhenReady) &&
+                runtimeTransition is PlaybackRuntimeTransition.Idle
+            ) {
+                recoverFromAudioSinkError(audioSinkError)
+            }
+            player.volume = effectivePlayerGain()
+            scheduleStatePublish()
+        }
+    }
+    private val systemVolumeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            syncFromObservedSystemVolume()
+        }
+
+        override fun onChange(
+            selfChange: Boolean,
+            uri: android.net.Uri?,
+        ) {
+            syncFromObservedSystemVolume()
+        }
+    }
+    private val runtimeResources = PlaybackRuntimeResources(
+        context = appContext,
+        audioManager = audioManager,
+        handler = playbackHandler,
+        volumeObserver = systemVolumeObserver,
+        audioDeviceCallback = audioDeviceCallback,
+        noisyReceiver = becomingNoisyReceiver,
+        resourceTracker = resourceTracker,
+    )
+
+    private val _state = MutableStateFlow(
+        PlaybackUiState(
+            volume = userVolume,
+            recentSongIds = initialRecentSongIds.distinct(),
+            recentAlbumIds = initialRecentAlbumIds.distinct(),
+            lastPlayedCollectionKind = initialLastPlayedCollectionKind,
+            lastPlayedCollectionId = initialLastPlayedCollectionId,
+        ),
+    )
+    private var persistenceQueueReference: List<Song>? = null
+    private var persistenceQueueSongIds: List<Long> = emptyList()
+    val state: StateFlow<PlaybackUiState> = _state.asStateFlow()
+    override val nowPlayingState: StateFlow<PlaybackNowPlayingState> = state
+        .map { snapshot ->
+            PlaybackNowPlayingState(
+                currentSong = snapshot.currentSong,
+                sourceLabel = snapshot.sourceLabel,
+                audioSessionId = snapshot.audioSessionId,
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(
+            scope = scope,
+            started = uiSharing,
+            initialValue = PlaybackNowPlayingState(
+                currentSong = _state.value.currentSong,
+                sourceLabel = _state.value.sourceLabel,
+                audioSessionId = _state.value.audioSessionId,
+            ),
+        )
+    override val transportState: StateFlow<PlaybackTransportState> = state
+        .map { snapshot ->
+            PlaybackTransportState(
+                isPlaying = snapshot.isPlaying,
+                transportShowsPause = snapshot.transportShowsPause,
+                repeatMode = snapshot.repeatMode,
+                shuffleEnabled = snapshot.shuffleEnabled,
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(
+            scope = scope,
+            started = uiSharing,
+            initialValue = PlaybackTransportState(
+                isPlaying = _state.value.isPlaying,
+                transportShowsPause = _state.value.transportShowsPause,
+                repeatMode = _state.value.repeatMode,
+                shuffleEnabled = _state.value.shuffleEnabled,
+            ),
+        )
+    override val queueState: StateFlow<PlaybackQueueState> = state
+        .map { snapshot ->
+            PlaybackQueueState(
+                queue = snapshot.queue,
+                currentIndex = snapshot.currentIndex,
+                sourcePlaylistId = snapshot.sourcePlaylistId,
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(
+            scope = scope,
+            started = uiSharing,
+            initialValue = PlaybackQueueState(
+                queue = _state.value.queue,
+                currentIndex = _state.value.currentIndex,
+                sourcePlaylistId = _state.value.sourcePlaylistId,
+            ),
+        )
+    override val volumeState: StateFlow<PlaybackVolumeState> = state
+        .map { snapshot -> PlaybackVolumeState(volume = snapshot.volume) }
+        .distinctUntilChanged()
+        .stateIn(
+            scope = scope,
+            started = uiSharing,
+            initialValue = PlaybackVolumeState(volume = _state.value.volume),
+        )
+    override val recentPlaybackState: StateFlow<RecentPlaybackState> = state
+        .map { snapshot ->
+            RecentPlaybackState(
+                recentSongIds = snapshot.recentSongIds,
+                recentAlbumIds = snapshot.recentAlbumIds,
+                lastPlayedCollectionKind = snapshot.lastPlayedCollectionKind,
+                lastPlayedCollectionId = snapshot.lastPlayedCollectionId,
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(
+            scope = scope,
+            started = uiSharing,
+            initialValue = RecentPlaybackState(
+                recentSongIds = _state.value.recentSongIds,
+                recentAlbumIds = _state.value.recentAlbumIds,
+                lastPlayedCollectionKind = _state.value.lastPlayedCollectionKind,
+                lastPlayedCollectionId = _state.value.lastPlayedCollectionId,
+            ),
+        )
+    private val _progressState = MutableStateFlow(PlaybackProgressState())
+    override val progressState: StateFlow<PlaybackProgressState> = _progressState.asStateFlow()
+    private val _playbackFormatFailure = MutableStateFlow<PlaybackFormatFailure?>(null)
+    val playbackFormatFailure: StateFlow<PlaybackFormatFailure?> = _playbackFormatFailure.asStateFlow()
+    private val _manualPlaybackStartVersion = MutableStateFlow(0L)
+    private var hasManualPlaybackStarted = false
+    val manualPlaybackStartVersion: StateFlow<Long> = _manualPlaybackStartVersion.asStateFlow()
+    override val sleepTimerState: StateFlow<PlaybackSleepTimerState> = sleepTimerController.state
+    val playerInstance: Player
+        get() = commandGatewayPlayer
+    val mediaSessionToken
+        get() = sessionOwner.mediaSessionToken
+    val platformMediaSessionToken
+        get() = sessionOwner.platformMediaSessionToken
+    internal val mediaLibrarySession: MediaLibrarySession
+        get() = sessionOwner.mediaLibrarySession
+    private val sessionOwner = PlaybackSessionOwner(context, commandGatewayPlayer, resourceTracker)
+    internal fun setMediaLibrarySessionCallback(callback: MediaLibrarySession.Callback) {
+        sessionOwner.setMediaLibrarySessionCallback(callback)
+    }
+
+    private val playerSwitcher = PlaybackPlayerSwitcher(
+        createPlayer = ::createPlayer,
+        releasePlayer = ::releasePlayer,
+        attachPlayerObservers = ::attachPlayerObservers,
+        detachPlayerObservers = ::detachPlayerObservers,
+        onPlayerReplaced = { replacementPlayer ->
+            player = replacementPlayer
+            replacementPlayer.setPauseAtEndOfMediaItems(sleepTimerState.value.option == SleepTimerOption.EndOfSong)
+            commandGatewayPlayer = PlaybackExternalCommandGateway(
+                delegate = replacementPlayer,
+                dispatchPlaybackCommand = ::dispatchPlaybackCommand,
+                seek = ::seekTo,
+                skipNext = ::skipNext,
+                skipPrevious = ::skipPrevious,
+            )
+            sessionOwner.setPlayer(commandGatewayPlayer)
+            _playerInstanceVersion.value += 1L
+        },
+        applyPreferredAudioDevice = ::applyPreferredAudioDeviceIfNeeded,
+        targetPlayerOutputGain = ::targetPlayerOutputGain,
+        language = { appLanguage.value },
+    )
+    private val queueController = PlaybackQueueController(
+        runtime = object : PlaybackQueueRuntime {
+            override val player: Player
+                get() = this@PlaybackManager.player
+            override val state: PlaybackUiState
+                get() = _state.value
+
+            override fun publishState(state: PlaybackUiState) {
+                publishPlaybackState(state)
+            }
+
+            override fun updateState() = this@PlaybackManager.updateState()
+            override fun requestAudioFocus(): Boolean = this@PlaybackManager.requestAudioFocus()
+            override fun effectivePlayerGain(): Float = this@PlaybackManager.effectivePlayerGain()
+            override fun cancelPauseFade(resetVolume: Boolean) = this@PlaybackManager.cancelPauseFade(resetVolume)
+            override fun clearInterruptionResumeState() = this@PlaybackManager.clearInterruptionResumeState()
+            override fun recordManualPlaybackStart() = this@PlaybackManager.recordManualPlaybackStart()
+            override fun stopAndClearQueue() = this@PlaybackManager.stopAndClearQueue()
+
+            override fun resetAudioPathState() {
+                _playbackFormatFailure.value = null
+                isManualPausePending = false
+                isPauseTransitioningToStopped = false
+                bitPerfectUsbManager.clearPlaybackFormat()
+                lastAppliedAudioPathDecisionKey = null
+            }
+
+            override fun resetUnexpectedIdleRecoveryGuard() = this@PlaybackManager.resetUnexpectedIdleRecoveryGuard()
+            override fun onQueueReplaced(songs: List<Song>) = queueMetadataRefresher.onQueueReplaced(songs)
+            override fun resolveCurrentQueueIndex(state: PlaybackUiState): Int =
+                stateReducer.resolveCurrentQueueIndex(state)
+
+            override fun scheduleAudioPathReevaluation(reason: String, delayMs: Long) =
+                this@PlaybackManager.scheduleAudioPathReevaluation(reason, delayMs)
+
+            override fun requestFormatFailureReset() {
+                _playbackFormatFailure.value = null
+            }
+
+            override fun clearFailedPlaybackSongIds() {
+                failedPlaybackSongIds.clear()
+            }
+        },
+        queueMetadataRefresher = queueMetadataRefresher,
+        language = { appLanguage.value },
+    )
+
+    init {
+        bitPerfectUsbManager.updateEffectsActive(hasActiveSignalAlteringEffects())
+        refreshUsbAudioOutputState()
+        applyPreferredAudioDeviceIfNeeded(force = true)
+        attachPlayerObservers(player)
+        syncFromObservedSystemVolume()
+        player.volume = effectivePlayerGain()
+        syncRuntimeObservers()
+        syncProgressUpdateLoop()
+    }
+
+    override fun reevaluateAudioOutputPath() {
+        if (released.get()) return
+        if (!hasActiveQueue() && !shouldReconfigureUpscaler()) return
+        bitPerfectUsbManager.updateEffectsActive(hasActiveSignalAlteringEffects())
+        refreshUsbAudioOutputState()
+        scheduleAudioPathReevaluation("effects-updated", AUDIO_PATH_REEVALUATION_DELAY_MS)
+        player.volume = targetPlayerOutputGain()
+        updateState()
+    }
+
+    override fun hasActiveQueue(): Boolean {
+        if (released.get()) return false
+        return _state.value.queue.isNotEmpty() || player.mediaItemCount > 0
+    }
+
+    internal fun hasPendingInterruptionResume(): Boolean {
+        return !released.get() && shouldKeepInterruptionResumeIntent()
+    }
+
+    override fun currentPositionForPersistence(): Long {
+        return player.currentPosition.coerceAtLeast(0L)
+    }
+
+    override fun capturePersistenceSnapshot(): PlaybackPersistenceSnapshot {
+        val snapshot = _state.value
+        val queueSongIds = if (snapshot.queue === persistenceQueueReference) {
+            persistenceQueueSongIds
+        } else {
+            snapshot.queue.map(Song::id).also {
+                persistenceQueueReference = snapshot.queue
+                persistenceQueueSongIds = it
+            }
+        }
+        return PlaybackPersistenceSnapshot(
+            queueSongIds = queueSongIds,
+            currentSongId = snapshot.queue.getOrNull(snapshot.currentIndex)?.id,
+            currentIndex = snapshot.currentIndex,
+            positionMs = player.currentPosition.coerceAtLeast(0L),
+            repeatMode = snapshot.repeatMode,
+            shuffleEnabled = snapshot.shuffleEnabled,
+            sourcePlaylistId = snapshot.sourcePlaylistId,
+            wasPlaying = snapshot.isPlaying || snapshot.transportShowsPause,
+        )
+    }
+
+    internal fun updateCurrentArtworkData(
+        songId: Long,
+        artworkData: ByteArray,
+    ) {
+        if (released.get() || artworkData.isEmpty()) return
+        playbackHandler.post {
+            if (released.get()) return@post
+            val currentSong = currentSong() ?: return@post
+            if (currentSong.id != songId) return@post
+            // Media3 permits a seamless replacement, but does not guarantee it for every
+            // renderer/device. Artwork is ancillary metadata and must never interrupt an
+            // actively playing source. The notification bitmap is already supplied through
+            // the description adapter; embed it when playback is settled instead.
+            if (player.isPlaying || player.playWhenReady) return@post
+            val currentIndex = player.currentMediaItemIndex
+            val currentItem = player.currentMediaItem ?: return@post
+            if (currentItem.mediaId != songId.toString() || currentItem.mediaMetadata.artworkData != null) {
+                return@post
+            }
+            val updatedMetadata = currentItem.mediaMetadata.buildUpon()
+                .setArtworkData(artworkData, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                .build()
+            player.replaceMediaItem(
+                currentIndex,
+                currentItem.buildUpon()
+                    .setMediaMetadata(updatedMetadata)
+                    .build(),
+            )
+        }
+    }
+
+    override fun restorePausedQueue(
+        songs: List<Song>,
+        currentIndex: Int,
+        positionMs: Long,
+        sourceLabel: String,
+    ) {
+        if (songs.isEmpty()) return
+        val index = currentIndex.coerceIn(songs.indices)
+        restoreSession(
+            songs = songs,
+            currentIndex = index,
+            persisted = PersistedPlaybackSession(
+                queueSongIds = songs.map { it.id },
+                currentSongId = songs[index].id,
+                currentIndex = index,
+                positionMs = positionMs,
+                repeatMode = PlaybackRepeatMode.Off,
+                shuffleEnabled = false,
+                sourcePlaylistId = null,
+                wasPlaying = false,
+                savedAtWallTimeMs = 0L,
+            ),
+        )
+    }
+
+    override fun restoreSession(
+        songs: List<Song>,
+        currentIndex: Int,
+        persisted: PersistedPlaybackSession,
+    ) {
+        if (released.get() || hasActiveQueue() || songs.isEmpty()) return
+        val index = currentIndex.coerceIn(songs.indices)
+        allowStrictModeDiskReads {
+            player.setMediaItems(
+                songs.mapTo(ArrayList(songs.size)) { it.toPlaybackMediaItem(appLanguage.value) },
+                index,
+                persisted.positionMs.coerceAtLeast(0L),
+            )
+        }
+        player.repeatMode = persisted.repeatMode.toPlayerRepeatMode()
+        player.shuffleModeEnabled = persisted.shuffleEnabled && songs.none { it.mediaKind == AudioMediaKind.Audiobook }
+        player.playWhenReady = false
+        player.prepare()
+        queueMetadataRefresher.onQueueReplaced(songs)
+        _state.value = _state.value.copy(
+            queue = songs,
+            currentIndex = index,
+            isPlaying = false,
+            transportShowsPause = false,
+            repeatMode = persisted.repeatMode,
+            shuffleEnabled = persisted.shuffleEnabled,
+            sourceLabel = songs[index].album,
+            sourcePlaylistId = null,
+        )
+        activeAudiobookContext = null
+        val currentSong = songs.getOrNull(index)
+        if (currentSong?.mediaKind == AudioMediaKind.Audiobook) {
+            val audiobook = AudiobookCatalog.findContaining(songs, currentSong)
+            activeAudiobookContext = audiobook?.let { book ->
+                AudiobookPlaybackContext(
+                    bookKey = book.stableKey,
+                    orderedSongIds = book.parts.map { it.song.id },
+                    bookDurationMs = book.durationMs,
+                    orderedSongDurationsMs = book.parts.map { it.song.durationMs },
+                )
+            }
+        }
+        applyPlaybackSpeedForCurrentSong()
+        ExternalAudioStageUsage.setActivePlaybackUris(songs.map(Song::uri))
+        publishProgressSnapshot(force = true)
+        syncRuntimeObservers()
+        syncProgressUpdateLoop()
+    }
+
+    override fun hydrateRecentPlayback(
+        songIds: List<Long>,
+        albumIds: List<Long>,
+        lastPlayedCollectionKind: PlaybackCollectionKind?,
+        lastPlayedCollectionId: Long?,
+    ) {
+        if (released.get() || hasManualPlaybackStarted) return
+        val current = _state.value
+        val hydrated = current.copy(
+            recentSongIds = songIds.distinct(),
+            recentAlbumIds = albumIds.distinct(),
+            lastPlayedCollectionKind = lastPlayedCollectionKind,
+            lastPlayedCollectionId = lastPlayedCollectionId,
+        )
+        if (hydrated != current) _state.value = hydrated
+    }
+
+    override fun setProgressConsumerActive(
+        consumer: PlaybackProgressConsumer,
+        active: Boolean,
+    ) {
+        if (released.get()) return
+        if (progressDemandController.setActive(consumer, active)) {
+            if (active) {
+                publishProgressSnapshot(force = true)
+            }
+            syncProgressUpdateLoop()
+        }
+    }
+
+    override fun playSong(
+        song: Song,
+        collection: List<Song>,
+        sourceLabel: String?,
+        shuffleEnabled: Boolean,
+        sourcePlaylistId: Long?,
+    ) {
+        if (released.get()) return
+        playSongAtPosition(
+            song = song,
+            collection = collection,
+            positionMs = 0L,
+            sourceLabel = sourceLabel,
+            shuffleEnabled = shuffleEnabled,
+            sourcePlaylistId = sourcePlaylistId,
+        )
+    }
+
+    override fun playSongAtPosition(
+        song: Song,
+        collection: List<Song>,
+        positionMs: Long,
+        sourceLabel: String?,
+        shuffleEnabled: Boolean,
+        sourcePlaylistId: Long?,
+        audiobookContext: AudiobookPlaybackContext?,
+    ) {
+        if (released.get()) return
+        recordManualPlaybackStart()
+        val startIndex = collection.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
+        setQueue(
+            collection,
+            startIndex,
+            sourceLabel,
+            shuffleEnabled,
+            sourcePlaylistId,
+            libraryBacked = true,
+            startPositionMs = positionMs,
+            audiobookContext = audiobookContext,
+        )
+    }
+
+    internal fun playExternalSong(song: Song) {
+        if (released.get()) return
+        recordManualPlaybackStart()
+        setQueue(
+            songs = listOf(song),
+            startIndex = 0,
+            sourceLabel = "External audio",
+            shuffleEnabled = false,
+            sourcePlaylistId = null,
+            libraryBacked = false,
+            audiobookContext = null,
+        )
+    }
+
+    internal fun stageExternalQueue(
+        songs: List<Song>,
+        startIndex: Int,
+        sourceLabel: String?,
+        sourcePlaylistId: Long?,
+        audiobookContext: AudiobookPlaybackContext? = null,
+    ) {
+        if (released.get() || songs.isEmpty()) return
+        activeAudiobookContext = audiobookContext
+            ?.takeIf {
+                it.bookKey.isNotBlank() &&
+                    it.normalizedSongIds.isNotEmpty() &&
+                    songs.getOrNull(startIndex)?.id in it.normalizedSongIds
+            }
+        queueController.stageExternalQueue(
+            songs = songs,
+            startIndex = startIndex,
+            sourceLabel = sourceLabel,
+            sourcePlaylistId = sourcePlaylistId,
+            audioPathDelayMs = AUDIO_PATH_REEVALUATION_DELAY_MS,
+        )
+    }
+
+    private fun createPlayer(enableSignalProcessing: Boolean): ExoPlayer {
+        return playerFactory.create(enableSignalProcessing).also { created ->
+            playerResourceLeases[created] = resourceTracker.acquire(BackendResourceKind.ActivePlayer)
+        }
+    }
+
+    private fun releasePlayer(target: ExoPlayer) {
+        playerResourceLeases.remove(target)?.close()
+        runCatching { target.release() }
+    }
+
+    private fun currentOffloadPolicy(): PlaybackOffloadPolicy {
+        if (audioSinkRecoveryGuard.isSoftwareFallbackActive(currentAudioRouteSnapshot.generation)) {
+            return PlaybackOffloadPolicy.Disabled
+        }
+        val decision = AudioOutputPolicy.decide(
+            capabilities = outputCapabilities,
+            requirements = AudioProcessingRequirements(
+                signalAlteringEffectsActive = hasActiveSignalAlteringEffects(),
+                normalizationActive = volumeNormalizationEnabled,
+                crossfadeActive = false,
+            ),
+            directPathActive = isDirectPlaybackActive,
+        )
+        return PlaybackOffloadPolicy(enabled = decision.offloadAllowed)
+    }
+
+    private fun attachPlayerObservers(target: ExoPlayer) {
+        if (playerObserverBindings.containsKey(target)) return
+        val generation = playerGenerationGate.activate(target)
+        val guardedListener = GuardedPlaybackPlayerListener(
+            target = target,
+            generation = generation,
+            gate = playerGenerationGate,
+            delegate = playerListener,
+            isAuthoritative = { player === target },
+        )
+        val guardedAnalyticsListener = GuardedPlaybackAnalyticsListener(
+            target = target,
+            generation = generation,
+            gate = playerGenerationGate,
+            delegate = playerAnalyticsListener,
+            isAuthoritative = { player === target },
+        )
+        playerObserverBindings[target] = guardedListener
+        playerAnalyticsBindings[target] = guardedAnalyticsListener
+        target.addAnalyticsListener(guardedAnalyticsListener)
+        target.addListener(guardedListener)
+    }
+
+    private fun detachPlayerObservers(target: ExoPlayer) {
+        playerAnalyticsBindings.remove(target)?.let(target::removeAnalyticsListener)
+        playerObserverBindings.remove(target)?.let(target::removeListener)
+        playerGenerationGate.invalidate(target)
+    }
+
+    override fun playAlbum(
+        album: Album,
+        startSongId: Long?,
+        sourceLabel: String?,
+        shuffleEnabled: Boolean,
+        sourcePlaylistId: Long?,
+    ) {
+        if (released.get()) return
+        recordManualPlaybackStart()
+        val startIndex = if (startSongId == null) {
+            0
+        } else {
+            album.songs.indexOfFirst { it.id == startSongId }.coerceAtLeast(0)
+        }
+        setQueue(
+            album.songs,
+            startIndex,
+            sourceLabel,
+            shuffleEnabled,
+            sourcePlaylistId,
+            libraryBacked = true,
+        )
+    }
+
+    override fun audiobookProgress(bookKey: String, songId: Long): Long {
+        return audiobookProgressRepository.load(bookKey)
+            ?.takeIf { it.songId == songId }
+            ?.positionMs
+            ?: 0L
+    }
+
+    override fun audiobookResumeSongId(bookKey: String): Long? {
+        return audiobookProgressRepository.load(bookKey)?.songId
+    }
+
+    override fun audiobookProgress(bookKey: String): AudiobookProgress? {
+        return audiobookProgressRepository.load(bookKey)
+    }
+
+    override fun checkpointAudiobookProgress(force: Boolean) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            playbackHandler.post { checkpointAudiobookProgress(force) }
+            return
+        }
+        val queueIndex = player.currentMediaItemIndex
+        if (_state.value.queue.getOrNull(queueIndex) == null) return
+        checkpointAudiobookProgressAt(
+            queueIndex = queueIndex,
+            positionMs = player.currentPosition,
+            durationMs = player.duration,
+            force = force,
+        )
+    }
+
+    private fun checkpointAudiobookProgressAt(
+        queueIndex: Int,
+        positionMs: Long,
+        durationMs: Long,
+        force: Boolean = false,
+    ) {
+        val song = _state.value.queue.getOrNull(queueIndex) ?: return
+        if (song.mediaKind != AudioMediaKind.Audiobook) return
+        val context = activeAudiobookContext ?: return
+        val nowElapsedMs = clock.elapsedTimeMs()
+        if (!force && nowElapsedMs - lastAudiobookCheckpointElapsedMs < AUDIOBOOK_CHECKPOINT_INTERVAL_MS) return
+        val bookElapsedMs = resolveAudiobookBookElapsed(
+            context = context,
+            queue = _state.value.queue,
+            songId = song.id,
+            positionMs = positionMs,
+        )
+        val progress = AudiobookProgressStore.snapshot(
+            songId = song.id,
+            positionMs = positionMs,
+            durationMs = durationMs,
+            nowMs = clock.wallTimeMs(),
+            bookElapsedMs = bookElapsedMs,
+            bookDurationMs = context.bookDurationMs,
+        )
+        audiobookProgressRepository.save(
+            bookKey = context.bookKey,
+            progress = progress,
+            force = force || progress.completed || progress.positionMs == 0L,
+        )
+        lastAudiobookCheckpointElapsedMs = nowElapsedMs
+        _audiobookProgressRevision.update { revision -> revision + 1L }
+    }
+
+    internal suspend fun remapAudiobookProgressKey(oldBookKey: String, newBookKey: String) {
+        audiobookProgressRepository.remapBookKey(oldBookKey, newBookKey).await()
+        if (activeAudiobookContext?.bookKey == oldBookKey) {
+            activeAudiobookContext = activeAudiobookContext?.copy(bookKey = newBookKey)
+        }
+        _audiobookProgressRevision.update { revision -> revision + 1L }
+    }
+
+    override fun togglePlayback() {
+        dispatchPlaybackCommand(PlaybackCommand.Toggle, PlaybackCommandOrigin.InApp)
+    }
+
+    fun dispatchPlaybackCommand(
+        command: PlaybackCommand,
+        origin: PlaybackCommandOrigin = PlaybackCommandOrigin.InApp,
+    ) {
+        if (released.get()) return
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            playbackHandler.post { dispatchPlaybackCommand(command, origin) }
+            return
+        }
+        beginPlaybackOperation()
+        val resolvedCommand = if (command == PlaybackCommand.Toggle) {
+            if (isManualPausePending) {
+                PlaybackCommand.Play
+            } else if (player.isPlaying || player.playWhenReady) {
+                PlaybackCommand.Pause
+            } else {
+                PlaybackCommand.Play
+            }
+        } else {
+            command
+        }
+        when (resolvedCommand) {
+            PlaybackCommand.Play -> {
+                if (origin != PlaybackCommandOrigin.AudioInterruption) {
+                    clearInterruptionResumeState()
+                }
+                cancelPauseFade()
+                isManualPausePending = false
+                isPauseTransitioningToStopped = false
+                if (origin == PlaybackCommandOrigin.InApp || origin == PlaybackCommandOrigin.ExternalController) {
+                    recordManualPlaybackStart()
+                }
+                if (origin == PlaybackCommandOrigin.AudioInterruption) {
+                    startPlaybackAfterInterruptionWithFadeIn()
+                } else {
+                    resumePlayback()
+                }
+            }
+
+            PlaybackCommand.Pause -> {
+                if (origin != PlaybackCommandOrigin.AudioInterruption) {
+                    clearInterruptionResumeState()
+                }
+                if (origin == PlaybackCommandOrigin.BecomingNoisy) {
+                    cancelPauseFade(resetVolume = false)
+                    clearInterruptionResumeState()
+                    player.playWhenReady = false
+                    player.pause()
+                    abandonAudioFocus()
+                    isManualPausePending = false
+                    isPauseTransitioningToStopped = false
+                } else if (origin != PlaybackCommandOrigin.InApp) {
+                    isManualPausePending = false
+                    isPauseTransitioningToStopped = true
+                    beginPauseFadeOut(PauseFadeReason.AudioInterruption)
+                } else if (!isManualPausePending && (player.isPlaying || player.playWhenReady)) {
+                    isPauseTransitioningToStopped = true
+                    isManualPausePending = true
+                    beginPauseFadeOut(PauseFadeReason.Manual)
+                } else if (!player.isPlaying && !player.playWhenReady) {
+                    cancelPauseFade(resetVolume = false)
+                    isManualPausePending = false
+                    isPauseTransitioningToStopped = false
+                    player.pause()
+                }
+            }
+
+            PlaybackCommand.Toggle -> Unit
+        }
+        updateState()
+    }
+
+    override fun seekTo(positionMs: Long) {
+        if (released.get()) return
+        crossfadeController.cancel()
+        _progressState.value = playbackProgressController.cancelScrub()
+        progressDemandController.setActive(PlaybackProgressConsumer.Scrubbing, false)
+        player.seekTo(positionMs.coerceAtLeast(0L))
+        checkpointAudiobookProgress(force = true)
+        publishProgressSnapshot(force = true)
+        updateState()
+    }
+
+    override fun setPlaybackSpeed(speed: Float) {
+        if (released.get()) return
+        if (currentSong()?.mediaKind != AudioMediaKind.Audiobook) return
+        audiobookPlaybackSpeed = speed.coerceIn(0.5f, 2.5f)
+        onAudiobookPlaybackSpeedChanged(audiobookPlaybackSpeed)
+        player.playbackParameters = PlaybackParameters(audiobookPlaybackSpeed)
+    }
+
+    override fun beginScrub() {
+        if (released.get()) return
+        progressDemandController.setActive(PlaybackProgressConsumer.Scrubbing, true)
+        _progressState.value = playbackProgressController.beginScrub()
+        syncProgressUpdateLoop()
+    }
+
+    override fun updateScrubPosition(positionMs: Long) {
+        if (released.get()) return
+        _progressState.value = playbackProgressController.updateScrubPosition(positionMs)
+    }
+
+    override fun finishScrub(positionMs: Long) {
+        if (released.get()) return
+        val result = playbackProgressController.finishScrub(positionMs)
+        _progressState.value = result.state
+        result.seekPositionMs?.let(player::seekTo)
+        progressDemandController.setActive(PlaybackProgressConsumer.Scrubbing, false)
+        syncProgressUpdateLoop()
+    }
+
+    override fun cancelScrub() {
+        if (released.get()) return
+        _progressState.value = playbackProgressController.cancelScrub()
+        progressDemandController.setActive(PlaybackProgressConsumer.Scrubbing, false)
+        syncProgressUpdateLoop()
+    }
+
+    override fun setVolume(volume: Float) {
+        if (released.get()) return
+        val requestedVolume = volume.quantizedVolume()
+        if (usbDacHardwareVolumeManager.shouldOwnVolumeControls()) {
+            val handled = usbDacHardwareVolumeManager.setHardwareVolume(requestedVolume)
+            if (handled || usbDacHardwareVolumeManager.shouldOwnVolumeControls()) {
+                userVolume = usbDacHardwareVolumeManager.currentHardwareVolume() ?: requestedVolume
+                player.volume = effectivePlayerGain()
+                updateState()
+                return
+            }
+        }
+        if (shouldBypassSystemStreamVolume()) {
+            userVolume = requestedVolume
+            volumeFineGain = userVolume
+            player.volume = effectivePlayerGain()
+            updateState()
+            return
+        }
+        applyFineGrainedVolume(requestedVolume)
+        player.volume = effectivePlayerGain()
+        updateState()
+    }
+
+    override fun cycleRepeatMode() {
+        if (released.get()) return
+        crossfadeController.cancel()
+        player.repeatMode = when (_state.value.repeatMode) {
+            PlaybackRepeatMode.Off -> Player.REPEAT_MODE_ONE
+            PlaybackRepeatMode.One -> Player.REPEAT_MODE_ALL
+            PlaybackRepeatMode.All -> Player.REPEAT_MODE_OFF
+        }
+        updateState()
+    }
+
+    override fun toggleShuffle() {
+        if (released.get()) return
+        if (_state.value.queue.any { it.mediaKind == AudioMediaKind.Audiobook }) return
+        crossfadeController.cancel()
+        player.shuffleModeEnabled = !player.shuffleModeEnabled
+        updateState()
+    }
+
+    override fun skipNext() {
+        if (released.get()) return
+        crossfadeController.cancel()
+        cancelPauseFade()
+        clearInterruptionResumeState()
+        if (player.hasNextMediaItem()) {
+            player.seekToNextMediaItem()
+        } else {
+            stopAndClearQueue()
+        }
+        updateState()
+    }
+
+    override fun skipPrevious() {
+        if (released.get()) return
+        crossfadeController.cancel()
+        cancelPauseFade()
+        clearInterruptionResumeState()
+        if (player.currentPosition > PREVIOUS_SEEK_THRESHOLD_MS) {
+            player.seekTo(0)
+        } else if (player.hasPreviousMediaItem()) {
+            player.seekToPreviousMediaItem()
+        } else {
+            stopAndClearQueue()
+        }
+        updateState()
+    }
+
+    override fun playQueueIndex(index: Int) {
+        if (released.get()) return
+        queueController.playQueueIndex(index)
+    }
+
+    override fun enqueueSong(song: Song) {
+        if (released.get()) return
+        crossfadeController.cancel()
+        queueController.enqueueSong(song)
+    }
+
+    override fun removeQueueIndex(index: Int) {
+        if (released.get()) return
+        crossfadeController.cancel()
+        queueController.removeQueueIndex(index)
+    }
+
+    override fun removeSongsFromQueue(songIds: Set<Long>) {
+        if (released.get()) return
+        crossfadeController.cancel()
+        queueController.removeSongsFromQueue(songIds)
+    }
+
+    override fun refreshQueuedLibraryMetadataIfNeeded(
+        updatedSongs: List<Song>,
+        authoritative: Boolean,
+    ) {
+        if (released.get()) return
+        queueController.refreshQueuedLibraryMetadataIfNeeded(updatedSongs, authoritative)
+        bitPerfectUsbManager.updateEffectsActive(hasActiveSignalAlteringEffects())
+        scheduleAudioPathReevaluation("queue-metadata-refreshed", AUDIO_PATH_REEVALUATION_DELAY_MS)
+        player.volume = targetPlayerOutputGain()
+    }
+
+    override fun setCrossfadeEnabled(enabled: Boolean) {
+        if (released.get()) return
+        if (crossfadeEnabled == enabled) return
+        crossfadeEnabled = enabled
+        if (!enabled) crossfadeController.cancel()
+        if (enabled) prepareCrossfadeIfPossible()
+        scheduleAudioPathReevaluation("crossfade-setting-updated", AUDIO_PATH_REEVALUATION_DELAY_MS)
+    }
+
+    override fun setCrossfadeDurationMs(value: Long) {
+        if (released.get()) return
+        val durationMs = CrossfadeDurationPolicy.sanitizeSettingsDuration(value)
+        if (crossfadeDurationMs == durationMs) return
+        crossfadeDurationMs = durationMs
+        crossfadeController.updateSettings(
+            primary = player,
+            fadeDurationMs = durationMs,
+            silenceLevelDb = crossfadeSilenceThresholdDb,
+        )
+        if (crossfadeEnabled && crossfadeController.state == CrossfadeState.Idle) {
+            prepareCrossfadeIfPossible()
+        }
+    }
+
+    override fun setCrossfadeSilenceThresholdDb(value: Float) {
+        if (released.get()) return
+        val thresholdDb = CrossfadeSilencePolicy.sanitizeLevelDb(value)
+        if (crossfadeSilenceThresholdDb == thresholdDb) return
+        crossfadeSilenceThresholdDb = thresholdDb
+        crossfadeController.updateSettings(
+            primary = player,
+            fadeDurationMs = crossfadeDurationMs,
+            silenceLevelDb = thresholdDb,
+        )
+        if (crossfadeEnabled && crossfadeController.state == CrossfadeState.Idle) {
+            prepareCrossfadeIfPossible()
+        }
+    }
+
+    override fun setVolumeNormalizationEnabled(enabled: Boolean) {
+        if (released.get()) return
+        if (volumeNormalizationEnabled == enabled) return
+        volumeNormalizationEnabled = enabled
+        bitPerfectUsbManager.updateEffectsActive(hasActiveSignalAlteringEffects())
+        scheduleAudioPathReevaluation("volume-normalization-updated", AUDIO_PATH_REEVALUATION_DELAY_MS)
+        player.volume = targetPlayerOutputGain()
+    }
+
+    override fun setSleepTimer(option: SleepTimerOption) {
+        if (released.get()) return
+        sleepTimerController.setTimer(
+            option = option,
+            currentSongId = currentSong()?.id,
+        )
+    }
+
+    fun clearSleepTimer() {
+        if (released.get()) return
+        sleepTimerController.clear()
+    }
+
+    fun release() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            playbackHandler.post(::release)
+            return
+        }
+        if (!released.compareAndSet(false, true)) return
+        checkpointAudiobookProgress(force = true)
+        beginPlaybackOperation()
+        runtimeStateMachine.release()
+        pauseFadeJob?.cancel()
+        audiobookPlaybackSpeedSyncJob.cancel()
+        crossfadeController.release()
+        sleepTimerController.release()
+        progressDemandController.clear()
+        playbackProgressTicker.stop()
+        interruptionController.release()
+        playbackHandler.removeCallbacks(audioPathReevaluationRunnable)
+        playbackHandler.removeCallbacks(statePublishRunnable)
+        statePublishScheduled = false
+        usbDacHardwareVolumeManager.release()
+        abandonAudioFocus()
+        runtimeResources.release()
+        detachPlayerObservers(player)
+        sessionOwner.release()
+        releasePlayer(player)
+        ExternalAudioStageUsage.setActivePlaybackUris(emptyList())
+    }
+
+    private fun scheduleAudioPathReevaluation(
+        reason: String,
+        delayMs: Long = 0L,
+    ) {
+        if (released.get()) return
+        pendingAudioPathReason = pendingAudioPathReason
+            ?.takeIf { it == reason }
+            ?: reason
+        playbackHandler.removeCallbacks(audioPathReevaluationRunnable)
+        playbackHandler.postDelayed(audioPathReevaluationRunnable, delayMs.coerceAtLeast(0L))
+    }
+
+    private fun refreshUsbAudioOutputState() {
+        if (released.get()) return
+        runCatching {
+            outputCapabilities = AudioOutputCapabilityReader.read(
+                audioManager = audioManager,
+                attributes = platformPlaybackAudioAttributes,
+            )
+            currentAudioRouteSnapshot = resolveAudioRouteSnapshot()
+            usbDacHardwareVolumeManager.updateAudioOutputDevice(
+                currentAudioRouteSnapshot.usbOutput,
+                currentAudioRouteSnapshot.generation,
+            )
+            bitPerfectUsbManager.refreshConnectedDevices(currentAudioRouteSnapshot)
+        }.onFailure {
+            outputCapabilities = AudioOutputCapabilitySnapshot.Unknown
+            bitPerfectUsbManager.clearPlaybackFormat()
+        }
+        syncRuntimeObservers()
+    }
+
+    private fun applyPreferredAudioDeviceIfNeeded(force: Boolean = false) {
+        val preferredDevice = runCatching { bitPerfectUsbManager.preferredOutputDevice() }.getOrNull()
+        val nextKey = preferredDevice?.let { device ->
+            val id = runCatching { device.id }.getOrNull() ?: return@let null
+            val type = runCatching { device.type }.getOrNull() ?: return@let null
+            PreferredAudioDeviceKey(id, type)
+        }
+        if (!force && lastAppliedPreferredDeviceKey == nextKey) return
+        if (runCatching { player.setPreferredAudioDevice(preferredDevice) }.isSuccess) {
+            lastAppliedPreferredDeviceKey = nextKey
+        } else {
+            lastAppliedPreferredDeviceKey = null
+        }
+    }
+
+    private fun effectiveUpscalerSettings(): UpscalerSettings {
+        val requested = upscalerSettingsProvider()
+        return if (audioSinkRecoveryGuard.isSoftwareFallbackActive(currentAudioRouteSnapshot.generation)) {
+            requested.copy(enabled = false)
+        } else requested
+    }
+
+    private fun shouldReconfigureUpscaler(): Boolean {
+        val requested = effectiveUpscalerSettings()
+        return (requested.enabled || appliedUpscalerSettings.enabled) && requested != appliedUpscalerSettings
+    }
+
+    private fun maybeRebuildPlayerForAudioPath(reason: String) {
+        if (runtimeTransition !is PlaybackRuntimeTransition.Idle) return
+        if (_state.value.queue.isEmpty() && player.mediaItemCount == 0 && !shouldReconfigureUpscaler()) {
+            lastAppliedAudioPathDecisionKey = null
+            player.volume = targetPlayerOutputGain()
+            return
+        }
+        val status = bitPerfectUsbManager.status.value
+        val desiredUseDirectPlayback = when (status.directive) {
+            BitPerfectPlaybackDirective.KeepCurrent -> isDirectPlaybackActive
+            BitPerfectPlaybackDirective.PreferDirect -> true
+            BitPerfectPlaybackDirective.PreferRegular -> false
+        }
+        val nextDecisionKey = AudioPathDecisionKey(
+            useDirectPlayback = desiredUseDirectPlayback,
+            directive = status.directive,
+            evaluationKey = status.evaluationKey,
+            routeDeviceId = status.activeRouteDeviceId,
+            routeType = status.activeRouteType,
+            preferredDeviceKey = bitPerfectUsbManager.preferredOutputDevice()
+                ?.let { PreferredAudioDeviceKey(it.id, it.type) },
+            outputCapabilitySignature = outputCapabilities.routeSignature,
+        )
+        if (shouldReconfigureUpscaler()) {
+            switchPlayerAudioPath(false, "upscaler-settings", nextDecisionKey.copy(useDirectPlayback = false))
+            return
+        }
+        if (nextDecisionKey == lastAppliedAudioPathDecisionKey) {
+            player.volume = targetPlayerOutputGain()
+            return
+        }
+        when (status.directive) {
+            BitPerfectPlaybackDirective.KeepCurrent -> {
+                lastAppliedAudioPathDecisionKey = nextDecisionKey
+                player.volume = targetPlayerOutputGain()
+            }
+
+            BitPerfectPlaybackDirective.PreferDirect -> {
+                if (!isDirectPlaybackActive) {
+                    switchPlayerAudioPath(
+                        useDirectPlayback = true,
+                        reason = reason,
+                        decisionKey = nextDecisionKey,
+                    )
+                } else {
+                    lastAppliedAudioPathDecisionKey = nextDecisionKey
+                    player.volume = targetPlayerOutputGain()
+                }
+            }
+
+            BitPerfectPlaybackDirective.PreferRegular -> {
+                if (isDirectPlaybackActive) {
+                    switchPlayerAudioPath(
+                        useDirectPlayback = false,
+                        reason = reason,
+                        decisionKey = nextDecisionKey,
+                    )
+                } else {
+                    lastAppliedAudioPathDecisionKey = nextDecisionKey
+                    player.volume = targetPlayerOutputGain()
+                }
+            }
+        }
+    }
+
+    private fun switchPlayerAudioPath(
+        useDirectPlayback: Boolean,
+        reason: String,
+        decisionKey: AudioPathDecisionKey,
+    ) {
+        if (!runtimeStateMachine.beginRebuild(reason)) return
+        try {
+            crossfadeController.cancel()
+            val previousPlayer = player
+            val playbackSnapshot = PlaybackSnapshot.from(previousPlayer)
+            val queueSnapshot = _state.value.queue
+            logDebug("rebuild direct=$useDirectPlayback reason=$reason position=${playbackSnapshot.positionMs} index=${playbackSnapshot.currentIndex}")
+            val replacementPlayer = playerSwitcher.switchPlayerAudioPath(
+                currentPlayer = previousPlayer,
+                queueSnapshot = queueSnapshot,
+                useDirectPlayback = useDirectPlayback,
+                playbackSnapshot = playbackSnapshot,
+            )
+            if (replacementPlayer === previousPlayer) {
+                lastAppliedAudioPathDecisionKey = decisionKey.copy(useDirectPlayback = isDirectPlaybackActive)
+                player.volume = targetPlayerOutputGain()
+                return
+            }
+            appliedUpscalerSettings = effectiveUpscalerSettings()
+            isDirectPlaybackActive = useDirectPlayback
+            lastAppliedPreferredDeviceKey = null
+            lastAppliedAudioPathDecisionKey = decisionKey
+            if (crossfadeEnabled) prepareCrossfadeIfPossible()
+        } finally {
+            runtimeStateMachine.complete()
+        }
+    }
+
+    private fun recoverFromAudioSinkError(audioSinkError: Exception) {
+        val routeGeneration = currentAudioRouteSnapshot.generation
+        if (audioSinkRecoveryGuard.isSoftwareFallbackActive(routeGeneration)) return
+        val status = bitPerfectUsbManager.status.value
+        val key = AudioSinkRecoveryKey(
+            playbackRevision = playbackOperationRevision,
+            routeGeneration = routeGeneration,
+            failureCategory = audioSinkError::class.java.name,
+        )
+        if (!audioSinkRecoveryGuard.claim(key)) return
+        audioSinkRecoveryGuard.activateSoftwareFallback(routeGeneration)
+        logDebug("Audio sink error; rebuilding with offload disabled, category=${audioSinkError::class.java.simpleName}")
+        bitPerfectUsbManager.clearPlaybackFormat()
+        lastAppliedAudioPathDecisionKey = null
+        switchPlayerAudioPath(
+            useDirectPlayback = false,
+            reason = "audio-sink-fallback",
+            decisionKey = AudioPathDecisionKey(
+                useDirectPlayback = false,
+                directive = BitPerfectPlaybackDirective.PreferRegular,
+                evaluationKey = null,
+                routeDeviceId = status.activeRouteDeviceId,
+                routeType = status.activeRouteType,
+                preferredDeviceKey = null,
+                outputCapabilitySignature = outputCapabilities.routeSignature,
+            ),
+        )
+    }
+
+    private fun setQueue(
+        songs: List<Song>,
+        startIndex: Int,
+        sourceLabel: String?,
+        shuffleEnabled: Boolean,
+        sourcePlaylistId: Long?,
+        libraryBacked: Boolean,
+        startPositionMs: Long = 0L,
+        audiobookContext: AudiobookPlaybackContext? = null,
+    ) {
+        if (songs.isEmpty()) return
+        beginPlaybackOperation()
+        crossfadeController.cancel()
+        activeAudiobookContext = audiobookContext
+            ?.takeIf {
+                it.bookKey.isNotBlank() &&
+                    it.normalizedSongIds.isNotEmpty() &&
+                    songs.getOrNull(startIndex)?.mediaKind == AudioMediaKind.Audiobook &&
+                    songs.getOrNull(startIndex)?.id in it.normalizedSongIds
+            }
+        player.playbackParameters = PlaybackParameters(
+            if (songs.getOrNull(startIndex)?.mediaKind == elovaire.music.droidbeauty.app.domain.model.AudioMediaKind.Audiobook) {
+                audiobookPlaybackSpeed
+            } else {
+                1f
+            },
+        )
+        queueController.setQueue(
+            songs = songs,
+            startIndex = startIndex,
+            sourceLabel = sourceLabel,
+            shuffleEnabled = shuffleEnabled && songs.none { it.mediaKind == AudioMediaKind.Audiobook },
+            sourcePlaylistId = sourcePlaylistId,
+            audioPathDelayMs = AUDIO_PATH_REEVALUATION_DELAY_MS,
+            libraryBacked = libraryBacked,
+            startPositionMs = startPositionMs,
+        )
+        sleepTimerController.updateEndOfSongTarget(songs.getOrNull(startIndex)?.id)
+    }
+
+    private fun stopAndClearQueue() {
+        beginPlaybackOperation()
+        crossfadeController.cancel()
+        checkpointAudiobookProgress(force = true)
+        cancelPauseFade(resetVolume = false)
+        sleepTimerController.clear()
+        isStoppingQueue = true
+        clearInterruptionResumeState()
+        bitPerfectUsbManager.clearForStop()
+        lastAppliedAudioPathDecisionKey = null
+        playbackHandler.removeCallbacks(audioPathReevaluationRunnable)
+        player.pause()
+        player.playWhenReady = false
+        player.seekTo(0L)
+        player.clearMediaItems()
+        isManualPausePending = false
+        isPauseTransitioningToStopped = false
+        abandonAudioFocus()
+        stateReducer.clearCurrentSongTracking()
+        failedPlaybackSongIds.clear()
+        _state.value = _state.value.copy(
+            queue = emptyList(),
+            currentIndex = -1,
+            isPlaying = false,
+            transportShowsPause = false,
+            sourceLabel = null,
+            audioSessionId = 0,
+            sourcePlaylistId = null,
+        )
+        activeAudiobookContext = null
+        ExternalAudioStageUsage.setActivePlaybackUris(emptyList())
+        queueMetadataRefresher.reset()
+        _progressState.value = playbackProgressController.clear()
+        syncRuntimeObservers()
+        syncProgressUpdateLoop()
+        resetUnexpectedIdleRecoveryGuard()
+        isStoppingQueue = false
+    }
+
+    private fun updateState() {
+        val existingState = _state.value
+        val currentIndex = stateReducer.resolveCurrentQueueIndex(existingState)
+        val currentSong = existingState.queue.getOrNull(currentIndex)
+        if (currentSong != null && (player.isPlaying || player.playWhenReady)) {
+            resetUnexpectedIdleRecoveryGuard()
+        }
+        val displayedVolume = currentEffectiveVolumeFraction()
+        userVolume = displayedVolume
+        val updatedState = stateReducer.reduce(
+            existingState = existingState,
+            isPauseTransitioningToStopped = isPauseTransitioningToStopped,
+            resolvedQueueIndex = currentIndex,
+            displayedVolume = displayedVolume,
+        )
+        if (BuildConfig.DEBUG) {
+            assertPlaybackInvariants(updatedState)
+            assertPlaybackEngineInvariants(updatedState)
+        }
+        if (publishPlaybackState(updatedState, existingState)) {
+            stateReducer.notifyRecentPlaybackChanged(updatedState, existingState)
+        }
+        syncRuntimeObservers()
+        publishProgressSnapshot()
+    }
+
+    private fun publishPlaybackState(
+        nextState: PlaybackUiState,
+        currentState: PlaybackUiState = _state.value,
+    ): Boolean {
+        if (nextState == currentState) return false
+        _state.value = nextState
+        ExternalAudioStageUsage.setActivePlaybackUris(nextState.queue.map(Song::uri))
+        return true
+    }
+
+    private fun assertPlaybackEngineInvariants(state: PlaybackUiState) {
+        val mediaId = player.currentMediaItem?.mediaId?.toLongOrNull()
+        val currentSong = state.currentSong
+        assertPlaybackEngineInvariants(
+            PlaybackEngineInvariantSnapshot(
+                observerBindingCount = playerObserverBindings.size,
+                authoritativePlayerBound = playerObserverBindings.containsKey(player),
+                queueSize = state.queue.size,
+                currentIndex = state.currentIndex,
+                playerMediaItemCount = player.mediaItemCount,
+                playerCurrentMediaId = mediaId,
+                logicalCurrentSongId = currentSong?.id,
+                crossfadeState = crossfadeController.state,
+                crossfadeHasSecondary = crossfadeController.hasSecondaryPlayer,
+                released = released.get(),
+            ),
+        )
+    }
+
+    private fun handleUnsupportedPlaybackFormat(error: PlaybackException): Boolean {
+        val song = currentSong() ?: return false
+        if (!failedPlaybackSongIds.add(song.id)) {
+            logDebug("Repeated unsupported playback failure ignored")
+            return true
+        }
+        val classification = PlaybackFailureClassifier.classify(error)
+        _playbackFormatFailure.value = PlaybackFormatFailure(
+            songId = song.id,
+            fileName = song.fileName,
+            format = song.audioFormat,
+            reason = classification.userSafeReason,
+        )
+        logDebug("Unsupported playback format category=${classification.category} code=${error.errorCodeName}")
+        if (player.hasNextMediaItem()) {
+            player.seekToNextMediaItem()
+            player.prepare()
+            if (requestAudioFocus()) {
+                player.play()
+            }
+            updateState()
+        } else {
+            stopAndClearQueue()
+        }
+        return true
+    }
+
+    private fun publishProgressSnapshot(force: Boolean = false) {
+        val updatedProgress = playbackProgressController.onPlayerSnapshot(
+            mediaId = currentSong()?.id,
+            mediaItemOccurrence = progressMediaItemOccurrence,
+            positionMs = player.currentPosition.coerceAtLeast(0L),
+            durationMs = player.duration.takeIf { it > 0 }?.coerceAtLeast(0L) ?: 0L,
+            bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0L),
+            isPlaying = if (isPauseTransitioningToStopped) false else player.isPlaying,
+        )
+        if (force || updatedProgress != _progressState.value) {
+            _progressState.value = updatedProgress
+        }
+        syncProgressUpdateLoop()
+    }
+
+    private fun prepareCrossfadeIfPossible() {
+        if (
+            !crossfadeEnabled ||
+            isDirectPlaybackActive ||
+            !player.isPlaying ||
+            player.repeatMode == Player.REPEAT_MODE_ONE ||
+            sleepTimerState.value.option == SleepTimerOption.EndOfSong
+        ) return
+        val queue = _state.value.queue
+        val nextIndex = player.nextMediaItemIndex
+        if (nextIndex !in queue.indices) return
+        if (currentSong()?.mediaKind == elovaire.music.droidbeauty.app.domain.model.AudioMediaKind.Audiobook ||
+            queue[nextIndex].mediaKind == elovaire.music.droidbeauty.app.domain.model.AudioMediaKind.Audiobook
+        ) return
+        crossfadeController.prepare(
+            primary = player,
+            queue = queue,
+            nextQueueIndex = nextIndex,
+            outgoingSong = currentSong() ?: return,
+            incomingSong = queue[nextIndex],
+            outgoingGain = effectivePlayerGain(currentSong()),
+            incomingGain = effectivePlayerGain(queue[nextIndex]),
+            fadeDurationMs = crossfadeDurationMs,
+            silenceLevelDb = crossfadeSilenceThresholdDb,
+        )
+    }
+
+    private fun applyPlaybackSpeedForCurrentSong() {
+        player.playbackParameters = PlaybackParameters(
+            if (currentSong()?.mediaKind == AudioMediaKind.Audiobook) audiobookPlaybackSpeed else 1f,
+        )
+    }
+
+    private fun promoteCrossfadePlayer(
+        outgoing: ExoPlayer,
+        incoming: ExoPlayer,
+    ) {
+        if (released.get() || outgoing !== player) {
+            releasePlayer(incoming)
+            return
+        }
+        detachPlayerObservers(outgoing)
+        player = incoming
+        attachPlayerObservers(incoming)
+        commandGatewayPlayer = PlaybackExternalCommandGateway(
+            delegate = incoming,
+            dispatchPlaybackCommand = ::dispatchPlaybackCommand,
+            seek = ::seekTo,
+            skipNext = ::skipNext,
+            skipPrevious = ::skipPrevious,
+        )
+        sessionOwner.setPlayer(commandGatewayPlayer)
+        _playerInstanceVersion.value += 1L
+        releasePlayer(outgoing)
+        sleepTimerController.updateEndOfSongTarget(currentSong()?.id)
+        updateState()
+        incoming.volume = targetPlayerOutputGain()
+    }
+
+    private fun resumePlayback() {
+        externalInterruptionResumeJob?.cancel()
+        if (!interruptionResumeState.isActive) {
+            pendingAutoResumeRetryJob?.cancel()
+            pendingAutoResumeRetryJob = null
+        }
+        startPlaybackWithFadeIn(ResumeFadeReason.Manual)
+    }
+
+    private fun startPlaybackAfterInterruptionWithFadeIn() {
+        startPlaybackWithFadeIn(ResumeFadeReason.AudioInterruption)
+    }
+
+    private fun startPlaybackWithFadeIn(reason: ResumeFadeReason) {
+        val operationRevision = playbackOperationRevision
+        if (!requestAudioFocus()) {
+            if (reason == ResumeFadeReason.AudioInterruption) {
+                scheduleAutoResumeRetry("fade-in-focus-failed")
+            }
+            return
+        }
+
+        cancelPauseFade(resetVolume = false)
+        bitPerfectUsbManager.updateEffectsActive(hasActiveSignalAlteringEffects())
+        refreshUsbAudioOutputState()
+        scheduleAudioPathReevaluation(
+            when (reason) {
+                ResumeFadeReason.Manual -> "resume-playback"
+                ResumeFadeReason.AudioInterruption -> "resume-after-interruption"
+                ResumeFadeReason.Recovery -> "resume-recovery"
+            },
+        )
+        isPauseTransitioningToStopped = false
+        isManualPausePending = false
+
+        val targetGain = effectivePlayerGain()
+        if (currentSong()?.mediaKind == AudioMediaKind.Audiobook) {
+            player.volume = targetGain
+            player.play()
+            clearResumeTransitionState(reason)
+            updateState()
+            return
+        }
+        if (!supportsSoftwarePlaybackFade()) {
+            player.volume = targetGain
+            player.play()
+            clearResumeTransitionState(reason)
+            updateState()
+            return
+        }
+
+        player.volume = 0f
+        player.play()
+        updateState()
+
+        pauseFadeJob?.cancel()
+        pauseFadeJob = scope.launch {
+            repeat(PAUSE_FADE_STEP_COUNT) { step ->
+                if (!isActive || !isCurrentPlaybackOperation(operationRevision)) return@launch
+                val progress = (step + 1).toFloat() / PAUSE_FADE_STEP_COUNT.toFloat()
+                player.volume = lerp(
+                    start = 0f,
+                    stop = targetGain,
+                    fraction = progress,
+                )
+                delay(PAUSE_FADE_STEP_DURATION_MS)
+            }
+            if (!isCurrentPlaybackOperation(operationRevision)) return@launch
+            player.volume = targetGain
+            pauseFadeJob = null
+            clearResumeTransitionState(reason)
+            updateState()
+        }
+    }
+
+    private fun beginPauseFadeOut(reason: PauseFadeReason) {
+        val operationRevision = playbackOperationRevision
+        crossfadeController.cancel()
+        if (currentSong()?.mediaKind == AudioMediaKind.Audiobook || !supportsSoftwarePlaybackFade()) {
+            player.pause()
+            if (reason == PauseFadeReason.Manual) {
+                abandonAudioFocus()
+            }
+            if (reason == PauseFadeReason.Manual) {
+                isManualPausePending = false
+            }
+            isPauseTransitioningToStopped = false
+            player.volume = targetPlayerOutputGain()
+            updateState()
+            return
+        }
+        pauseFadeJob?.cancel()
+        pauseFadeJob = scope.launch {
+            val startVolume = player.volume.coerceIn(0f, 1f)
+            if (startVolume > 0.001f) {
+                repeat(PAUSE_FADE_STEP_COUNT) { step ->
+                    if (!isActive || !isCurrentPlaybackOperation(operationRevision)) return@launch
+                    val progress = (step + 1).toFloat() / PAUSE_FADE_STEP_COUNT.toFloat()
+                    player.volume = lerp(
+                        start = startVolume,
+                        stop = 0f,
+                        fraction = progress,
+                    )
+                    delay(PAUSE_FADE_STEP_DURATION_MS)
+                }
+            }
+            if (!isCurrentPlaybackOperation(operationRevision)) return@launch
+            player.pause()
+            if (reason == PauseFadeReason.Manual) {
+                abandonAudioFocus()
+            }
+            if (reason == PauseFadeReason.Manual) {
+                isManualPausePending = false
+            }
+            isPauseTransitioningToStopped = true
+            pauseFadeJob = null
+            updateState()
+        }
+    }
+
+    private fun clearResumeTransitionState(reason: ResumeFadeReason) {
+        if (reason == ResumeFadeReason.AudioInterruption) {
+            clearInterruptionResumeState()
+        } else {
+            shouldResumeAfterTransientFocusLoss = false
+            pausedForAudioFocusLoss = false
+            pendingResumeAfterExternalInterruption = false
+        }
+    }
+
+    private fun cancelPauseFade(resetVolume: Boolean = true) {
+        pauseFadeJob?.cancel()
+        pauseFadeJob = null
+        if (resetVolume) {
+            player.volume = targetPlayerOutputGain()
+        }
+    }
+
+    private fun supportsSoftwarePlaybackFade(): Boolean {
+        return !isDirectPlaybackActive && !usbDacHardwareVolumeManager.shouldBypassSoftwareVolume()
+    }
+
+    private fun requestAudioFocus(): Boolean {
+        return audioFocusController.request()
+    }
+
+    private fun abandonAudioFocus() {
+        audioFocusController.abandon()
+        duckedForAudioFocus = false
+    }
+
+    private fun handleAudioFocusChange(focusChange: Int) {
+        if (released.get() || !audioFocusController.isActive) return
+        beginPlaybackOperation()
+        when (AudioFocusStateMachine.actionFor(focusChange)) {
+            AudioFocusAction.Gain -> {
+                duckedForAudioFocus = false
+                pendingAutoResumeRetryJob?.cancel()
+                pendingAutoResumeRetryJob = null
+                if (shouldKeepInterruptionResumeIntent()) {
+                    scope.launch {
+                        delay(AUTO_RESUME_SETTLE_DELAY_MS)
+                        attemptAutoResumeAfterInterruption("focus-gain")
+                    }
+                } else {
+                    clearInterruptionResumeState()
+                    player.volume = targetPlayerOutputGain()
+                    updateState()
+                }
+            }
+
+            AudioFocusAction.TransientLoss -> {
+                handleTransientFocusLoss()
+            }
+
+            AudioFocusAction.Duck -> {
+                if (supportsSoftwarePlaybackFade()) {
+                    duckedForAudioFocus = true
+                    player.volume = targetPlayerOutputGain()
+                    updateState()
+                } else {
+                    handleTransientFocusLoss()
+                }
+            }
+
+            AudioFocusAction.PermanentLoss -> {
+                val wasAudiblyPlaying = player.isPlaying ||
+                    player.playWhenReady ||
+                    _state.value.transportShowsPause
+                val looksLikeExternalPlaybackInterruption = wasAudiblyPlaying &&
+                    _state.value.queue.isNotEmpty() &&
+                    hasActiveExternalMediaPlayback()
+                if (looksLikeExternalPlaybackInterruption) {
+                    markInterruptedForResume(InterruptionResumeReason.PermanentLossWithActiveExternalPlayback)
+                } else {
+                    clearInterruptionResumeState()
+                }
+                isManualPausePending = false
+                isPauseTransitioningToStopped = true
+                beginPauseFadeOut(PauseFadeReason.AudioInterruption)
+                abandonAudioFocus()
+                if (looksLikeExternalPlaybackInterruption) {
+                    scheduleExternalInterruptionResumeWatch()
+                }
+            }
+
+            AudioFocusAction.Ignore -> Unit
+        }
+    }
+
+    private fun handleTransientFocusLoss() {
+        val wasAudiblyPlaying = player.isPlaying ||
+            player.playWhenReady ||
+            _state.value.transportShowsPause
+        if (wasAudiblyPlaying && _state.value.queue.isNotEmpty()) {
+            markInterruptedForResume(InterruptionResumeReason.TransientFocusLoss)
+        }
+        isManualPausePending = false
+        isPauseTransitioningToStopped = true
+        beginPauseFadeOut(PauseFadeReason.AudioInterruption)
+    }
+
+    private fun recoverUnexpectedIdleState(shouldAutoPlay: Boolean) {
+        val snapshot = _state.value
+        if (snapshot.queue.isEmpty()) return
+        if (!registerUnexpectedIdleRecoveryAttempt()) {
+            enterSafeStoppedStateAfterRecoveryFailure(snapshot)
+            return
+        }
+        val recoverIndex = stateReducer.lastKnownQueueIndex
+            .takeIf { it >= 0 }
+            .takeIf { it in snapshot.queue.indices }
+            ?: snapshot.currentIndex.takeIf { it in snapshot.queue.indices }
+            ?: 0
+        val recoverPosition = stateReducer.lastKnownPositionMs.coerceAtLeast(0L)
+        bitPerfectUsbManager.clearPlaybackFormat()
+        lastAppliedAudioPathDecisionKey = null
+        scheduleAudioPathReevaluation("recover-idle", AUDIO_PATH_REEVALUATION_DELAY_MS)
+        if (!runtimeStateMachine.beginRecovery(unexpectedIdleRecoveryCount)) return
+        val recovery = runtimeTransition
+        val operationRevision = playbackOperationRevision
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                if (!isCurrentPlaybackOperation(operationRevision)) return@launch
+                val mediaItems = snapshot.queue.mapTo(ArrayList(snapshot.queue.size)) { song ->
+                    song.toPlaybackMediaItem(appLanguage.value)
+                }
+                player.setMediaItems(mediaItems, recoverIndex, recoverPosition)
+                player.shuffleModeEnabled = snapshot.shuffleEnabled && snapshot.queue.none { it.mediaKind == AudioMediaKind.Audiobook }
+                player.repeatMode = snapshot.repeatMode.toPlayerRepeatMode()
+                player.prepare()
+                if (!isCurrentPlaybackOperation(operationRevision)) return@launch
+                if (shouldAutoPlay && requestAudioFocus()) {
+                    player.volume = effectivePlayerGain()
+                    player.playWhenReady = true
+                    player.play()
+                }
+            } finally {
+                runtimeStateMachine.complete(recovery)
+            }
+            if (runtimeTransition !is PlaybackRuntimeTransition.Released) {
+                scheduleAudioPathReevaluation("recovery-completed")
+            }
+            updateState()
+        }
+    }
+
+    private fun registerUnexpectedIdleRecoveryAttempt(): Boolean {
+        val nowElapsedMs = clock.elapsedTimeMs()
+        unexpectedIdleRecoveryCount = if (
+            nowElapsedMs - lastUnexpectedIdleRecoveryElapsedMs <= UNEXPECTED_IDLE_RECOVERY_WINDOW_MS
+        ) {
+            unexpectedIdleRecoveryCount + 1
+        } else {
+            1
+        }
+        lastUnexpectedIdleRecoveryElapsedMs = nowElapsedMs
+        return unexpectedIdleRecoveryCount <= MAX_UNEXPECTED_IDLE_RECOVERY_ATTEMPTS
+    }
+
+    private fun resetUnexpectedIdleRecoveryGuard() {
+        unexpectedIdleRecoveryCount = 0
+        lastUnexpectedIdleRecoveryElapsedMs = 0L
+    }
+
+    private fun enterSafeStoppedStateAfterRecoveryFailure(snapshot: PlaybackUiState) {
+        logDebug("recovery aborted after repeated idle/player errors")
+        cancelPauseFade(resetVolume = false)
+        shouldResumeAfterTransientFocusLoss = false
+        pausedForAudioFocusLoss = false
+        isManualPausePending = false
+        isPauseTransitioningToStopped = false
+        runtimeStateMachine.complete()
+        player.pause()
+        player.playWhenReady = false
+        abandonAudioFocus()
+        val nextState = snapshot.copy(
+            isPlaying = false,
+            transportShowsPause = false,
+            audioSessionId = player.audioSessionId.takeIf { it > 0 } ?: 0,
+        )
+        if (nextState != _state.value) {
+            _state.value = nextState
+            ExternalAudioStageUsage.setActivePlaybackUris(nextState.queue.map(Song::uri))
+        }
+        publishProgressSnapshot()
+    }
+
+    private fun currentSong(): Song? {
+        val index = player.currentMediaItemIndex
+        return _state.value.queue.getOrNull(index)
+    }
+
+    private fun isPausedAtEndOfCurrentSong(): Boolean {
+        if (!player.getPauseAtEndOfMediaItems() || player.playWhenReady || player.isPlaying) return false
+        val duration = player.duration.takeIf { it > 0L } ?: return false
+        val position = player.currentPosition.coerceAtLeast(0L)
+        return duration - position <= END_OF_SONG_TIMER_TOLERANCE_MS
+    }
+
+    private fun syncProgressUpdateLoop() {
+        if (!shouldPollProgress()) {
+            playbackProgressTicker.stop()
+            return
+        }
+        playbackProgressTicker.start()
+    }
+
+    private fun shouldPollProgress(): Boolean {
+        return hasActiveQueue() && (
+            playbackProgressController.needsActivePolling() ||
+                (player.isPlaying && progressDemandController.hasAnyDemand())
+            )
+    }
+
+    private fun scheduleStatePublish() {
+        if (released.get() || statePublishScheduled) return
+        statePublishScheduled = true
+        playbackHandler.post(statePublishRunnable)
+    }
+
+    private fun shouldAutoResumeAfterUnexpectedIdle(): Boolean {
+        val snapshot = _state.value
+        return snapshot.queue.isNotEmpty() &&
+            !isManualPausePending &&
+            (snapshot.transportShowsPause || snapshot.isPlaying || player.playWhenReady || shouldResumeAfterTransientFocusLoss)
+    }
+
+    private fun clearInterruptionResumeState() {
+        shouldResumeAfterTransientFocusLoss = false
+        pausedForAudioFocusLoss = false
+        pendingResumeAfterExternalInterruption = false
+        interruptionResumeState = InterruptionResumeState()
+        interruptionController.clearResumeJobs()
+    }
+
+    private fun markInterruptedForResume(reason: InterruptionResumeReason) {
+        if (_state.value.queue.isEmpty()) return
+        interruptionResumeState = InterruptionResumeState(
+            shouldResume = true,
+            reason = reason,
+            startedAtElapsedMs = clock.elapsedTimeMs(),
+        )
+        shouldResumeAfterTransientFocusLoss = true
+        pausedForAudioFocusLoss = true
+        pendingResumeAfterExternalInterruption =
+            reason != InterruptionResumeReason.TransientFocusLoss || hasActiveExternalMediaPlayback()
+    }
+
+    private fun shouldKeepInterruptionResumeIntent(): Boolean {
+        val state = interruptionResumeState
+        if (!state.shouldResume) return false
+        if (_state.value.queue.isEmpty()) return false
+        if (isManualPausePending || isStoppingQueue) return false
+        if (state.reason == InterruptionResumeReason.TransientFocusLoss) return true
+        val elapsedMs = clock.elapsedTimeMs() - state.startedAtElapsedMs
+        return elapsedMs <= EXTERNAL_INTERRUPTION_MAX_WATCH_MS
+    }
+
+    private fun attemptAutoResumeAfterInterruption(trigger: String) {
+        if (!shouldKeepInterruptionResumeIntent()) {
+            clearInterruptionResumeState()
+            return
+        }
+        if (
+            isPlaybackAlreadyResumed(
+                player.isPlaying,
+                player.playWhenReady,
+                isPauseTransitioningToStopped,
+            )
+        ) {
+            clearInterruptionResumeState()
+            updateState()
+            return
+        }
+        if (
+            shouldWaitForExternalMediaBeforeAutoResume(
+                isTransientFocusInterruption =
+                    interruptionResumeState.reason == InterruptionResumeReason.TransientFocusLoss,
+                hasActiveExternalMedia = hasActiveExternalMediaPlayback(),
+            )
+        ) {
+            scheduleExternalInterruptionResumeWatch()
+            return
+        }
+        if (!requestAudioFocus()) {
+            scheduleAutoResumeRetry(trigger)
+            return
+        }
+        startPlaybackAfterInterruptionWithFadeIn()
+    }
+
+    private fun scheduleAutoResumeRetry(trigger: String) {
+        if (!shouldKeepInterruptionResumeIntent()) {
+            clearInterruptionResumeState()
+            return
+        }
+        val operationRevision = playbackOperationRevision
+        pendingAutoResumeRetryJob?.cancel()
+        pendingAutoResumeRetryJob = scope.launch {
+            delay(AUTO_RESUME_FOCUS_RETRY_DELAY_MS)
+            if (isCurrentPlaybackOperation(operationRevision) && shouldKeepInterruptionResumeIntent()) {
+                attemptAutoResumeAfterInterruption("$trigger-retry")
+            }
+        }
+    }
+
+    private fun scheduleExternalInterruptionResumeWatch() {
+        if (!shouldKeepInterruptionResumeIntent() || externalInterruptionResumeJob?.isActive == true) return
+        val operationRevision = playbackOperationRevision
+        externalInterruptionResumeJob = scope.launch {
+            val startedAtMs = clock.elapsedTimeMs()
+            var quietConfirmations = 0
+            while (isActive && isCurrentPlaybackOperation(operationRevision) && shouldKeepInterruptionResumeIntent()) {
+                val elapsedMs = clock.elapsedTimeMs() - startedAtMs
+                if (elapsedMs >= EXTERNAL_INTERRUPTION_MAX_WATCH_MS) {
+                    clearInterruptionResumeState()
+                    break
+                }
+                if (
+                    _state.value.queue.isEmpty() ||
+                    isManualPausePending ||
+                    isPlaybackAlreadyResumed(player.isPlaying, false, isPauseTransitioningToStopped)
+                ) {
+                    clearInterruptionResumeState()
+                    break
+                }
+                if (
+                    shouldWaitForExternalMediaBeforeAutoResume(
+                        isTransientFocusInterruption =
+                            interruptionResumeState.reason == InterruptionResumeReason.TransientFocusLoss,
+                        hasActiveExternalMedia = hasActiveExternalMediaPlayback(),
+                    )
+                ) {
+                    quietConfirmations = 0
+                } else {
+                    quietConfirmations += 1
+                    if (quietConfirmations >= EXTERNAL_INTERRUPTION_QUIET_CONFIRMATIONS) {
+                        attemptAutoResumeAfterInterruption("external-watch")
+                        break
+                    }
+                }
+                delay(
+                    if (elapsedMs < EXTERNAL_INTERRUPTION_FAST_WATCH_MS) {
+                        EXTERNAL_INTERRUPTION_FAST_DELAY_MS
+                    } else {
+                        EXTERNAL_INTERRUPTION_BACKOFF_DELAY_MS
+                    },
+                )
+            }
+        }
+    }
+
+    private fun syncRuntimeObservers() {
+        if (released.get()) return
+        runtimeResources.sync(
+            hasQueue = hasActiveQueue(),
+            isPlaying = player.isPlaying,
+            playWhenReady = player.playWhenReady,
+        )
+    }
+
+    private fun hasActiveExternalMediaPlayback(): Boolean {
+        return runCatching { audioManager?.isMusicActive == true }.getOrDefault(false)
+    }
+
+    private fun beginPlaybackOperation(): Long {
+        playbackOperationRevision = if (playbackOperationRevision == Long.MAX_VALUE) 1L else playbackOperationRevision + 1L
+        audioSinkRecoveryGuard.reset()
+        return playbackOperationRevision
+    }
+
+    private fun isCurrentPlaybackOperation(revision: Long): Boolean {
+        return !released.get() && playbackOperationRevision == revision
+    }
+
+    private fun recordManualPlaybackStart() {
+        hasManualPlaybackStarted = true
+        _manualPlaybackStartVersion.value = _manualPlaybackStartVersion.value + 1L
+    }
+
+    private fun effectivePlayerGain(song: Song? = currentSong()): Float {
+        val baseGain = if (audioOutputController.usesFixedVolumeOutput()) userVolume else volumeFineGain
+        val gain = effectiveDspState(baseGain, song).fineGain
+        return if (duckedForAudioFocus) gain * DUCK_GAIN else gain
+    }
+
+    private fun hasActiveSignalAlteringEffects(): Boolean {
+        return crossfadeEnabled || upscalerSettingsProvider().enabled || effectiveDspState(baseGain = 1f).altersSignal
+    }
+
+    private fun effectiveDspState(
+        baseGain: Float,
+        song: Song? = currentSong(),
+    ): EffectiveDspState {
+        return resolveEffectiveDspState(
+            effectsRequested = hasSignalAlteringEffects(),
+            normalizationRequested = volumeNormalizationEnabled,
+            normalizationMetadata = song?.volumeNormalization,
+            directPlaybackActive = isDirectPlaybackActive,
+            softwareGainAllowed = !usbDacHardwareVolumeManager.shouldBypassSoftwareVolume(),
+            baseGain = baseGain,
+        )
+    }
+
+    private fun audioPathReevaluationDelayForTransition(): Long {
+        return AUDIO_PATH_REEVALUATION_DELAY_MS
+    }
+
+    private fun lerp(
+        start: Float,
+        stop: Float,
+        fraction: Float,
+    ): Float = start + (stop - start) * fraction.coerceIn(0f, 1f)
+
+    private fun applyFineGrainedVolume(targetVolume: Float) {
+        if (usbDacHardwareVolumeManager.shouldBypassSoftwareVolume()) {
+            userVolume = targetVolume
+            player.volume = 1f
+            return
+        }
+        if (isDirectPlaybackActive) {
+            val manager = audioManager
+            if (manager == null) {
+                userVolume = targetVolume
+                volumeFineGain = if (targetVolume <= 0f) 0f else 1f
+                return
+            }
+            val maxStep = runCatching {
+                manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            }.getOrDefault(1).coerceAtLeast(1)
+            val targetSystemStep = (targetVolume * maxStep.toFloat()).roundToInt().coerceIn(0, maxStep)
+            ignoreObservedSystemVolumeStep = targetSystemStep
+            runCatching { manager.setStreamVolume(AudioManager.STREAM_MUSIC, targetSystemStep, 0) }
+            volumeFineGain = if (targetSystemStep <= 0) 0f else 1f
+            userVolume = audioOutputController.currentSystemVolumeFraction().quantizedVolume()
+            return
+        }
+        if (audioOutputController.usesFixedVolumeOutput()) {
+            userVolume = targetVolume
+            volumeFineGain = targetVolume
+            player.volume = targetPlayerOutputGain()
+            return
+        }
+        val manager = audioManager
+        if (manager == null) {
+            userVolume = targetVolume
+            volumeFineGain = targetVolume
+            return
+        }
+        val maxStep = runCatching {
+            manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        }.getOrDefault(1).coerceAtLeast(1)
+        if (targetVolume <= 0f) {
+            ignoreObservedSystemVolumeStep = 0
+            runCatching { manager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0) }
+            volumeFineGain = 0f
+            userVolume = 0f
+            return
+        }
+
+        val exactSteps = targetVolume * maxStep.toFloat()
+        val targetSystemStep = ceil(exactSteps).toInt().coerceIn(1, maxStep)
+        ignoreObservedSystemVolumeStep = targetSystemStep
+        runCatching { manager.setStreamVolume(AudioManager.STREAM_MUSIC, targetSystemStep, 0) }
+        volumeFineGain = (exactSteps / targetSystemStep.toFloat()).coerceIn(0f, 1f)
+        userVolume = currentEffectiveVolumeFraction()
+    }
+
+    private fun syncFromObservedSystemVolume() {
+        if (released.get()) return
+        if (pauseFadeJob?.isActive == true) {
+            ignoreObservedSystemVolumeStep = null
+            userVolume = currentEffectiveVolumeFraction()
+            updateState()
+            return
+        }
+        if (isDirectPlaybackActive || usbDacHardwareVolumeManager.shouldBypassSoftwareVolume()) {
+            ignoreObservedSystemVolumeStep = null
+            player.volume = if (isPauseTransitioningToStopped && !player.isPlaying) 0f else 1f
+            userVolume = currentEffectiveVolumeFraction()
+            updateState()
+            return
+        }
+        if (audioOutputController.usesFixedVolumeOutput()) {
+            ignoreObservedSystemVolumeStep = null
+            player.volume = targetPlayerOutputGain()
+            updateState()
+            return
+        }
+        val observedSystemStep = audioOutputController.currentSystemVolumeStep()
+        if (ignoreObservedSystemVolumeStep == observedSystemStep) {
+            ignoreObservedSystemVolumeStep = null
+            userVolume = currentEffectiveVolumeFraction()
+        } else {
+            volumeFineGain = if (observedSystemStep <= 0) 0f else 1f
+            userVolume = audioOutputController.currentSystemVolumeFraction().quantizedVolume()
+        }
+        player.volume = targetPlayerOutputGain()
+        updateState()
+    }
+
+    private fun targetPlayerOutputGain(): Float {
+        if (pauseFadeJob?.isActive == true) {
+            return player.volume.coerceIn(0f, 1f)
+        }
+        val target = if (isPauseTransitioningToStopped && !player.isPlaying) {
+            0f
+        } else {
+            effectivePlayerGain()
+        }
+        crossfadeController.refresh(player, target)
+        return target
+    }
+
+    private fun currentEffectiveVolumeFraction(): Float {
+        if (usbDacHardwareVolumeManager.shouldOwnVolumeControls()) {
+            return usbDacHardwareVolumeManager.currentHardwareVolume() ?: userVolume
+        }
+        if (isDirectPlaybackActive) {
+            return audioOutputController.currentSystemVolumeFraction().quantizedVolume()
+        }
+        if (shouldBypassSystemStreamVolume()) return userVolume
+        val currentSystemFraction = audioOutputController.currentSystemVolumeFraction()
+        return (currentSystemFraction * volumeFineGain).coerceIn(0f, 1f).quantizedVolume()
+    }
+
+    private fun shouldBypassSystemStreamVolume(): Boolean {
+        return usbDacHardwareVolumeManager.shouldOwnVolumeControls() ||
+            audioOutputController.usesFixedVolumeOutput()
+    }
+
+    private fun resolveAudioRouteSnapshot(): AudioOutputRouteSnapshot {
+        val manager = audioManager
+            ?: return AudioOutputRouteSnapshot(0L, emptyList(), null, emptyList())
+        val routedDevices = if (AndroidCapabilities.supportsDirectPlaybackQuery(Build.VERSION.SDK_INT)) {
+            manager.safeActiveRoutedOutputDevicesForAttributes(platformPlaybackAudioAttributes)
+        } else {
+            manager.safeOutputDevices()
+        }
+        val identity = routedDevices.map { device ->
+            AudioRouteDeviceIdentity(
+                id = runCatching { device.id }.getOrDefault(-1),
+                type = runCatching { device.type }.getOrDefault(-1),
+                isSink = runCatching { device.isSink }.getOrDefault(false),
+                address = runCatching { device.address.orEmpty() }.getOrDefault(""),
+            )
+        }.sortedWith(
+            compareBy(
+                AudioRouteDeviceIdentity::type,
+                AudioRouteDeviceIdentity::id,
+                AudioRouteDeviceIdentity::address,
+            ),
+        )
+        if (identity != audioRouteIdentity) {
+            audioRouteIdentity = identity
+            audioRouteGeneration = if (audioRouteGeneration == Long.MAX_VALUE) 1L else audioRouteGeneration + 1L
+        }
+        val usbOutput = routedDevices.firstOrNull { device ->
+            runCatching { device.isSink && device.type in USB_AUDIO_OUTPUT_DEVICE_TYPES }.getOrDefault(false)
+        }?.toUsbAudioDeviceDescriptor()
+        return AudioOutputRouteSnapshot(audioRouteGeneration, routedDevices.toList(), usbOutput, identity)
+    }
+
+    private fun resolveCurrentQueueIndex(existingState: PlaybackUiState): Int {
+        return stateReducer.resolveCurrentQueueIndex(existingState)
+    }
+
+    private companion object {
+        const val PAUSE_FADE_DURATION_MS = 600L
+        const val PAUSE_FADE_STEP_COUNT = 20
+        const val PAUSE_FADE_STEP_DURATION_MS = PAUSE_FADE_DURATION_MS / PAUSE_FADE_STEP_COUNT
+        const val PREVIOUS_SEEK_THRESHOLD_MS = 5_000L
+        const val AUDIOBOOK_CHECKPOINT_INTERVAL_MS = 5_000L
+        const val END_OF_SONG_TIMER_TOLERANCE_MS = 350L
+        const val DUCK_GAIN = 0.2f
+        const val AUDIO_PATH_REEVALUATION_DELAY_MS = 80L
+        const val EXTERNAL_INTERRUPTION_FAST_WATCH_MS = 10_000L
+        const val EXTERNAL_INTERRUPTION_MAX_WATCH_MS = 5 * 60_000L
+        const val EXTERNAL_INTERRUPTION_FAST_DELAY_MS = 500L
+        const val EXTERNAL_INTERRUPTION_BACKOFF_DELAY_MS = 3_000L
+        const val EXTERNAL_INTERRUPTION_QUIET_CONFIRMATIONS = 2
+        const val AUTO_RESUME_FOCUS_RETRY_DELAY_MS = 350L
+        const val AUTO_RESUME_SETTLE_DELAY_MS = 180L
+        const val MAX_UNEXPECTED_IDLE_RECOVERY_ATTEMPTS = 3
+        const val MAX_HISTORY_ITEMS = 12
+        const val UNEXPECTED_IDLE_RECOVERY_WINDOW_MS = 10_000L
+        const val TAG = "PlaybackManager"
+    }
+
+    private fun logDebug(message: String) {
+        if (!BuildConfig.DEBUG) return
+        Log.d(TAG, message)
+    }
+}
+
+internal data class AudioPathDecisionKey(
+    val useDirectPlayback: Boolean,
+    val directive: BitPerfectPlaybackDirective,
+    val evaluationKey: DirectPlaybackEvaluationKey?,
+    val routeDeviceId: Int?,
+    val routeType: Int?,
+    val preferredDeviceKey: PreferredAudioDeviceKey?,
+    val outputCapabilitySignature: Int,
+)
+
+internal fun Song.toPlaybackMediaItem(language: AppLanguage = AppLanguage.English): MediaItem {
+    return MediaItem.Builder()
+        .setMediaId(id.toString())
+        .setUri(uri)
+        .setMimeType(inferPlaybackMimeType())
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(localizedExternalAudioText(title, id, language))
+                .setArtist(if (artist == "Unknown Artist") localizedArtistName(artist, language) else artist)
+                .setAlbumTitle(localizedExternalAudioText(if (album == "Unknown Album") localizedAlbumTitle(album, language) else album, id, language))
+                .setAlbumArtist((albumArtist ?: artist).let { if (it == "Unknown Artist") localizedArtistName(it, language) else it })
+                .setTrackNumber(trackNumber.takeIf { it > 0 })
+                .setDiscNumber(discNumber.takeIf { it > 0 })
+                .setReleaseYear(releaseYear)
+                .setGenre(genre.takeIf(String::isNotBlank)?.let { if (it == "Unknown Genre") localizedGenreName(it, language) else it })
+                .setDurationMs(durationMs.takeIf { it > 0 })
+                .setArtworkUri(artUri)
+                .setIsPlayable(true)
+                .setIsBrowsable(false)
+                .setMediaType(
+                    if (mediaKind == elovaire.music.droidbeauty.app.domain.model.AudioMediaKind.Audiobook) {
+                        MediaMetadata.MEDIA_TYPE_AUDIO_BOOK_CHAPTER
+                    } else {
+                        MediaMetadata.MEDIA_TYPE_MUSIC
+                    },
+                )
+                .build(),
+        )
+        .build()
+}
+
+internal data class PlaybackMetadataSignature(
+    val id: Long,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val albumArtist: String?,
+    val releaseYear: Int?,
+    val genre: String,
+    val durationMs: Long,
+    val trackNumber: Int,
+    val discNumber: Int,
+    val uri: String,
+    val artUri: String?,
+    val fileName: String,
+    val volumeNormalization: VolumeNormalizationMetadata?,
+)
+
+internal fun Song.playbackMetadataSignature(): PlaybackMetadataSignature = PlaybackMetadataSignature(
+    id = id,
+    title = title,
+    artist = artist,
+    album = album,
+    albumArtist = albumArtist,
+    releaseYear = releaseYear,
+    genre = genre,
+    durationMs = durationMs,
+    trackNumber = trackNumber,
+    discNumber = discNumber,
+    uri = uri.toString(),
+    artUri = artUri?.toString(),
+    fileName = fileName,
+    volumeNormalization = volumeNormalization,
+)
+
+private fun Song.inferPlaybackMimeType(): String? {
+    return AudioFormatPolicy.playbackMimeType(fileName)
+}
+
+private fun PlaybackException.isUnsupportedFormatError(): Boolean {
+    return errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+        errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+        errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED
+}
+
+private fun Float.quantizedVolume(): Float {
+    return ((coerceIn(0f, 1f) * 100f).roundToInt() / 100f).coerceIn(0f, 1f)
+}
+
+private fun Array<out AudioDeviceInfo>.hasUsbOutputDeviceChange(): Boolean {
+    return any { device ->
+        runCatching { device.isSink && device.type in USB_AUDIO_OUTPUT_DEVICE_TYPES }.getOrDefault(false)
+    }
+}
+
+internal data class PlaybackSnapshot(
+    val currentIndex: Int,
+    val positionMs: Long,
+    val playWhenReady: Boolean,
+    val playbackParameters: PlaybackParameters,
+) {
+    companion object {
+        fun from(player: Player): PlaybackSnapshot {
+            return PlaybackSnapshot(
+                currentIndex = player.currentMediaItemIndex.coerceAtLeast(0),
+                positionMs = player.currentPosition.coerceAtLeast(0L),
+                playWhenReady = player.playWhenReady,
+                playbackParameters = player.playbackParameters,
+            )
+        }
+    }
+}
+
+internal sealed interface PlaybackRuntimeTransition {
+    data object Idle : PlaybackRuntimeTransition
+    data class Rebuilding(val reason: String) : PlaybackRuntimeTransition
+    data class Recovering(val attempt: Int) : PlaybackRuntimeTransition
+    data object Released : PlaybackRuntimeTransition
+}
+
+internal data class PreferredAudioDeviceKey(
+    val id: Int,
+    val type: Int,
+)
+
+private fun AudioDeviceInfo.toUsbAudioDeviceDescriptor(): UsbAudioDeviceDescriptor {
+    return UsbAudioDeviceDescriptor(
+        id = runCatching { id }.getOrDefault(-1),
+        type = runCatching { type }.getOrDefault(-1),
+        isSink = runCatching { isSink }.getOrDefault(false),
+        productName = runCatching { productName?.toString() }.getOrNull(),
+        address = runCatching { address.takeIf { it.isNotBlank() } }.getOrNull(),
+        sampleRates = runCatching { sampleRates.copyOf() }.getOrDefault(intArrayOf()),
+        encodings = runCatching { encodings.copyOf() }.getOrDefault(intArrayOf()),
+        channelCounts = runCatching { channelCounts.copyOf() }.getOrDefault(intArrayOf()),
+        channelMasks = runCatching { channelMasks.copyOf() }.getOrDefault(intArrayOf()),
+    )
+}
+
+internal fun Int.toPlaybackRepeatMode(): PlaybackRepeatMode {
+    return when (this) {
+        Player.REPEAT_MODE_ONE -> PlaybackRepeatMode.One
+        Player.REPEAT_MODE_ALL -> PlaybackRepeatMode.All
+        else -> PlaybackRepeatMode.Off
+    }
+}
+
+internal fun PlaybackRepeatMode.toPlayerRepeatMode(): Int {
+    return when (this) {
+        PlaybackRepeatMode.Off -> Player.REPEAT_MODE_OFF
+        PlaybackRepeatMode.One -> Player.REPEAT_MODE_ONE
+        PlaybackRepeatMode.All -> Player.REPEAT_MODE_ALL
+    }
+}
+
+private val USB_AUDIO_OUTPUT_DEVICE_TYPES = setOf(
+    AudioDeviceInfo.TYPE_USB_DEVICE,
+    AudioDeviceInfo.TYPE_USB_HEADSET,
+    AudioDeviceInfo.TYPE_USB_ACCESSORY,
+)

@@ -1,0 +1,127 @@
+package elovaire.music.droidbeauty.app.data.playback
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+enum class SleepTimerOption(
+    val durationMs: Long?,
+) {
+    Off(null),
+    TenMinutes(10 * 60_000L),
+    FifteenMinutes(15 * 60_000L),
+    TwentyMinutes(20 * 60_000L),
+    TwentyFiveMinutes(25 * 60_000L),
+    ThirtyMinutes(30 * 60_000L),
+    ThirtyFiveMinutes(35 * 60_000L),
+    FortyMinutes(40 * 60_000L),
+    FortyFiveMinutes(45 * 60_000L),
+    FiftyMinutes(50 * 60_000L),
+    FiftyFiveMinutes(55 * 60_000L),
+    SixtyMinutes(60 * 60_000L),
+    EndOfSong(null),
+
+    ;
+
+    companion object {
+        fun forMinutes(minutes: Int): SleepTimerOption? {
+            return entries.firstOrNull { it.durationMs == minutes * 60_000L }
+        }
+    }
+}
+
+data class PlaybackSleepTimerState(
+    val option: SleepTimerOption = SleepTimerOption.Off,
+    val expiresAtElapsedMs: Long? = null,
+    val targetSongId: Long? = null,
+)
+
+internal class PlaybackSleepTimerController(
+    private val scope: CoroutineScope,
+    private val elapsedRealtimeMs: () -> Long,
+    private val onTimerFired: () -> Unit,
+    private val setPauseAtEndOfMediaItems: (Boolean) -> Unit,
+) {
+    private val _state = MutableStateFlow(PlaybackSleepTimerState())
+    val state: StateFlow<PlaybackSleepTimerState> = _state.asStateFlow()
+    private var timerJob: Job? = null
+    private var timerGeneration = 0L
+
+    fun setTimer(
+        option: SleepTimerOption,
+        currentSongId: Long?,
+    ) {
+        timerJob?.cancel()
+        timerJob = null
+        val generation = ++timerGeneration
+        when (option) {
+            SleepTimerOption.Off -> clear()
+            SleepTimerOption.EndOfSong -> {
+                setPauseAtEndOfMediaItems(true)
+                _state.value = PlaybackSleepTimerState(
+                    option = option,
+                    targetSongId = currentSongId,
+                )
+            }
+            else -> {
+                setPauseAtEndOfMediaItems(false)
+                val durationMs = option.durationMs ?: return clear()
+                val expiresAt = elapsedRealtimeMs() + durationMs
+                _state.value = PlaybackSleepTimerState(
+                    option = option,
+                    expiresAtElapsedMs = expiresAt,
+                )
+                timerJob = scope.launch {
+                    delay(durationMs)
+                    fire(generation)
+                }
+            }
+        }
+    }
+
+    fun clear() {
+        timerJob?.cancel()
+        timerJob = null
+        timerGeneration++
+        setPauseAtEndOfMediaItems(false)
+        _state.value = PlaybackSleepTimerState()
+    }
+
+    fun updateEndOfSongTarget(songId: Long?) {
+        val current = _state.value
+        if (current.option != SleepTimerOption.EndOfSong || current.targetSongId == songId) return
+        _state.value = current.copy(targetSongId = songId)
+    }
+
+    fun onPlaybackStoppedByUser() {
+        clear()
+    }
+
+    fun onEndOfSongReached(currentSongId: Long?) {
+        val current = _state.value
+        if (current.option != SleepTimerOption.EndOfSong) return
+        if (current.targetSongId != null && current.targetSongId != currentSongId) return
+        fire(timerGeneration)
+    }
+
+    fun release() {
+        timerJob?.cancel()
+        timerJob = null
+        timerGeneration++
+        setPauseAtEndOfMediaItems(false)
+        _state.value = PlaybackSleepTimerState()
+    }
+
+    private fun fire(expectedGeneration: Long) {
+        if (expectedGeneration != timerGeneration) return
+        timerJob?.cancel()
+        timerJob = null
+        setPauseAtEndOfMediaItems(false)
+        _state.value = PlaybackSleepTimerState()
+        onTimerFired()
+    }
+}

@@ -1,0 +1,246 @@
+package elovaire.music.droidbeauty.app.data.library
+
+import android.net.Uri
+import elovaire.music.droidbeauty.app.data.audio.AudioFormatPolicy
+import elovaire.music.droidbeauty.app.data.audio.DetectedAudioFormat
+import elovaire.music.droidbeauty.app.data.audio.PlaybackSupport
+import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
+import java.util.Locale
+
+internal data class AudioScanCandidate(
+    val id: Long,
+    val uri: Uri,
+    val displayName: String?,
+    val title: String?,
+    val artist: String?,
+    val album: String?,
+    val durationMs: Long,
+    val mimeType: String?,
+    val relativePath: String?,
+    val absolutePath: String?,
+    val extension: String?,
+    val isMusic: Boolean?,
+    val isAudiobook: Boolean? = null,
+    val bookmarkMs: Long? = null,
+    val detectedFormat: DetectedAudioFormat? = null,
+)
+
+internal fun AudioScanCandidate.mediaKind(): AudioMediaKind = AudioMediaKindClassifier.classify(
+    isAudiobook = isAudiobook,
+    extension = extension,
+    relativePath = relativePath,
+    absolutePath = absolutePath,
+)
+
+internal sealed interface AudioFileFilterDecision {
+    data object Include : AudioFileFilterDecision
+
+    data class Exclude(
+        val reason: String,
+    ) : AudioFileFilterDecision
+}
+
+internal class LibraryAudioFileFilter(
+    selectedRelativeRoots: Set<String>,
+    libraryRootPaths: Set<String>,
+    explicitCustomRootPaths: Set<String> = emptySet(),
+    explicitCustomRelativeRoots: Set<String> = emptySet(),
+    private val allowUnscopedMediaStoreRows: Boolean = false,
+) {
+    private val selectedRelativeRoots = selectedRelativeRoots.mapNotNullTo(linkedSetOf(), ::normalizeLibraryRelativePath)
+    private val libraryRootPaths = libraryRootPaths.mapNotNullTo(linkedSetOf(), ::normalizeLibraryAbsolutePath)
+    private val explicitCustomRootPaths = explicitCustomRootPaths.mapNotNullTo(linkedSetOf(), ::normalizeLibraryAbsolutePath)
+    private val explicitCustomRelativeRoots = explicitCustomRelativeRoots.mapNotNullTo(linkedSetOf(), ::normalizeLibraryRelativePath)
+
+    fun evaluate(candidate: AudioScanCandidate): AudioFileFilterDecision {
+        val normalizedExtension = candidate.extension
+            ?.trim()
+            ?.lowercase(Locale.ROOT)
+            ?.takeIf { it.isNotBlank() }
+        val extensionCapability = normalizedExtension?.let(AudioFormatPolicy::capabilityForExtension)
+        val mimeCapability = AudioFormatPolicy.capabilityForMimeType(candidate.mimeType)
+        val detectedCapability = candidate.detectedFormat
+            ?.takeIf { it.detectionSucceeded }
+            ?.let { AudioFormatPolicy.capabilityFor(it.container) }
+        if (extensionCapability == null && mimeCapability == null && detectedCapability == null) {
+            return AudioFileFilterDecision.Exclude(
+                if (normalizedExtension == null) "Missing audio format evidence" else "Unsupported extension",
+            )
+        }
+        val normalizedAbsolutePath = candidate.absolutePath?.let(::normalizeLibraryAbsolutePath)
+        val normalizedRelativePath = normalizeLibraryRelativePath(candidate.relativePath)
+        val folderMatch = folderMatch(
+            normalizedAbsolutePath = normalizedAbsolutePath,
+            normalizedRelativePath = normalizedRelativePath,
+        )
+        if (folderMatch == FolderMatch.None) {
+            return AudioFileFilterDecision.Exclude("Outside selected library folders")
+        }
+        val isExplicitCustomFolder = folderMatch.isExplicitCustom
+        val capability = detectedCapability ?: mimeCapability ?: extensionCapability
+            ?: return AudioFileFilterDecision.Exclude("Unsupported format")
+        if (normalizedExtension in AudioFormatPolicy.voiceOrSpokenWordExtensions && !isExplicitCustomFolder) {
+            return AudioFileFilterDecision.Exclude("Voice-oriented format outside preferred music folder")
+        }
+        val detectedFormat = candidate.detectedFormat
+        if (detectedFormat?.detectionSucceeded == true) {
+            if (!detectedFormat.hasAudioTrack) {
+                return AudioFileFilterDecision.Exclude("No detectable audio track")
+            }
+            if (detectedFormat.hasVideoTrack) {
+                return AudioFileFilterDecision.Exclude("Contains a video track")
+            }
+            if (AudioFormatPolicy.playbackSupport(detectedFormat) == PlaybackSupport.Unsupported) {
+                return AudioFileFilterDecision.Exclude("No compatible audio decoder")
+            }
+        } else if (normalizedExtension == null) {
+            return AudioFileFilterDecision.Exclude("Container could not be validated")
+        }
+
+        val combinedPath = buildCombinedPath(
+            normalizedRelativePath = normalizedRelativePath,
+            normalizedAbsolutePath = normalizedAbsolutePath,
+        ).lowercase(Locale.ROOT)
+        if (
+            ExcludedPathFragments.any(combinedPath::contains) &&
+            !isExplicitCustomFolder
+        ) {
+            return AudioFileFilterDecision.Exclude("Excluded path")
+        }
+
+        if (matchesExcludedName(candidate)) {
+            return AudioFileFilterDecision.Exclude("Excluded name")
+        }
+
+        val mediaKind = candidate.mediaKind()
+        if (
+            candidate.isMusic == false &&
+            mediaKind != AudioMediaKind.Audiobook &&
+            !isExplicitCustomFolder &&
+            folderMatch != FolderMatch.DefaultRoot
+        ) {
+            return AudioFileFilterDecision.Exclude("MediaStore says non-music")
+        }
+
+        if (
+            capability.playbackSupport == PlaybackSupport.PlatformDependent &&
+            candidate.isMusic != true &&
+            mediaKind != AudioMediaKind.Audiobook &&
+            !isExplicitCustomFolder
+        ) {
+            return AudioFileFilterDecision.Exclude("Platform-dependent non-music audio")
+        }
+
+        return AudioFileFilterDecision.Include
+    }
+
+    private fun folderMatch(
+        normalizedAbsolutePath: String?,
+        normalizedRelativePath: String?,
+    ): FolderMatch {
+        if (isInsideExplicitCustomRoot(normalizedAbsolutePath)) return FolderMatch.ExplicitCustomAbsoluteRoot
+        if (isInsideLibraryRoot(normalizedAbsolutePath)) return FolderMatch.DefaultRoot
+        if (normalizedRelativePath != null) {
+            if (explicitCustomRelativeRoots.any { preferredRoot ->
+                    normalizedRelativePath == preferredRoot || normalizedRelativePath.startsWith("$preferredRoot/")
+                }
+            ) {
+                return FolderMatch.ExplicitCustomRelativeRoot
+            }
+            if (selectedRelativeRoots.any { preferredRoot ->
+                normalizedRelativePath == preferredRoot || normalizedRelativePath.startsWith("$preferredRoot/")
+            }) {
+                return FolderMatch.DefaultRoot
+            }
+        }
+
+        // A provider-supplied location is positive evidence. Do not widen a selected-folder
+        // query just because an optional compatibility fallback was used.
+        if (normalizedAbsolutePath != null || normalizedRelativePath != null) return FolderMatch.None
+        if (allowUnscopedMediaStoreRows) return FolderMatch.DefaultRoot
+        return FolderMatch.None
+    }
+
+    private fun isInsideLibraryRoot(normalizedAbsolutePath: String?): Boolean {
+        if (normalizedAbsolutePath == null) return false
+        return libraryRootPaths.any { root ->
+            normalizedAbsolutePath == root || normalizedAbsolutePath.startsWith("$root/")
+        }
+    }
+
+    private fun isInsideExplicitCustomRoot(normalizedAbsolutePath: String?): Boolean {
+        if (normalizedAbsolutePath == null) return false
+        return explicitCustomRootPaths.any { root ->
+            normalizedAbsolutePath == root || normalizedAbsolutePath.startsWith("$root/")
+        }
+    }
+
+    private fun matchesExcludedName(candidate: AudioScanCandidate): Boolean {
+        val normalizedDisplayName = candidate.displayName.orEmpty().lowercase(Locale.ROOT)
+        val normalizedTitle = candidate.title.orEmpty().lowercase(Locale.ROOT)
+        return ExcludedNameRegexes.any { regex ->
+            regex.containsMatchIn(normalizedDisplayName) || regex.containsMatchIn(normalizedTitle)
+        }
+    }
+
+    private fun buildCombinedPath(
+        normalizedRelativePath: String?,
+        normalizedAbsolutePath: String?,
+    ): String {
+        return buildString {
+            normalizedRelativePath?.let {
+                append('/')
+                append(it)
+                append('/')
+            }
+            normalizedAbsolutePath?.let {
+                append('/')
+                append(it)
+                append('/')
+            }
+        }
+    }
+
+    private companion object {
+        private val ExcludedPathFragments = listOf(
+            "/ringtones/",
+            "/notifications/",
+            "/alarms/",
+            "/recordings/",
+            "/recorder/",
+            "/voice recorder/",
+            "/call recordings/",
+            "/call recorder/",
+            "/whatsapp/",
+            "/whatsapp audio/",
+            "/whatsapp voice notes/",
+            "/messenger/",
+            "/telegram/",
+            "/signal/",
+            "/viber/",
+            "/discord/",
+            "/instagram/",
+            "/facebook/",
+            "/snapchat/",
+            "/podcasts/",
+        )
+
+        private val ExcludedNameRegexes = listOf(
+            Regex("""\bvoice note\b"""),
+            Regex("""\bcall recording\b"""),
+            Regex("""\baudio record(?:ing)?\b"""),
+            Regex("""\bwhatsapp (?:audio|ptt)\b"""),
+            Regex("""^ptt-"""),
+            Regex("""^opus_"""),
+            Regex("""^recording[\s_-]"""),
+            Regex("""^voice[\s_-]?record(?:ing)?"""),
+        )
+    }
+}
+
+private enum class FolderMatch(val isExplicitCustom: Boolean) {
+    None(false),
+    DefaultRoot(false),
+    ExplicitCustomAbsoluteRoot(true),
+    ExplicitCustomRelativeRoot(true),
+}

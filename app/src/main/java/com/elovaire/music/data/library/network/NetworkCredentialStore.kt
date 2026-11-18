@@ -1,0 +1,291 @@
+package elovaire.music.droidbeauty.app.data.library.network
+
+import android.content.Context
+import android.util.Base64
+import java.security.GeneralSecurityException
+import java.security.KeyStore
+import java.util.HashMap
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+import org.json.JSONObject
+
+/** Stores network credentials as ciphertext; the clear-text password never enters preferences. */
+internal class NetworkCredentialStore(context: Context) {
+    private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val lock = Any()
+    private var cachedSecretKey: SecretKey? = null
+    private val generations = HashMap<String, Long>()
+    private var generationSequence = 0L
+
+    fun put(sourceId: String, key: String, credentials: NetworkCredentials) {
+        validateIdentity(sourceId, key)
+        val plaintext = JSONObject()
+            .put("sourceId", sourceId)
+            .put("username", credentials.username)
+            .put("password", credentials.password)
+            .put("domain", credentials.domain.orEmpty())
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        synchronized(lock) {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey(createIfMissing = true))
+            cipher.updateAAD(binding(sourceId, key))
+            val ciphertext = cipher.doFinal(plaintext)
+            val value = NetworkCredentialEnvelope.encode(cipher.iv, ciphertext)
+            check(
+                preferences.edit()
+                    .putString(key, Base64.encodeToString(value, Base64.NO_WRAP))
+                    .commit(),
+            ) { "Unable to persist network credentials" }
+            generationSequence += 1L
+            generations[key] = generationSequence
+        }
+    }
+
+    fun generation(key: String): Long = synchronized(lock) {
+        generations[key] ?: if (preferences.contains(key)) 0L else generationSequence
+    }
+
+    fun read(sourceId: String, key: String): NetworkCredentialReadResult {
+        validateIdentity(sourceId, key)
+        return synchronized(lock) {
+            val encoded = preferences.getString(key, null)
+                ?: return@synchronized NetworkCredentialReadResult.Missing
+            val bytes = try {
+                Base64.decode(encoded, Base64.NO_WRAP)
+            } catch (_: IllegalArgumentException) {
+                return@synchronized NetworkCredentialReadResult.Corrupt(
+                    NetworkCredentialCorruption.InvalidBase64,
+                )
+            }
+            val envelope = NetworkCredentialEnvelope.decode(bytes)
+            val (iv, ciphertext, legacy) = when (envelope) {
+                is NetworkCredentialEnvelopeResult.Current -> Triple(envelope.iv, envelope.ciphertext, false)
+                is NetworkCredentialEnvelopeResult.Legacy -> Triple(envelope.iv, envelope.ciphertext, true)
+                is NetworkCredentialEnvelopeResult.Invalid -> {
+                    return@synchronized NetworkCredentialReadResult.Corrupt(
+                        NetworkCredentialCorruption.InvalidEnvelope(envelope.reason),
+                    )
+                }
+            }
+            val keyMaterial = try {
+                secretKey(createIfMissing = false)
+            } catch (_: GeneralSecurityException) {
+                return@synchronized NetworkCredentialReadResult.KeyUnavailable
+            } catch (_: RuntimeException) {
+                return@synchronized NetworkCredentialReadResult.KeyUnavailable
+            }
+            val firstAttempt = decrypt(
+                sourceId = sourceId,
+                key = key,
+                iv = iv,
+                ciphertext = ciphertext,
+                keyMaterial = keyMaterial,
+                useLegacyBinding = legacy,
+            )
+            val decrypted = when {
+                firstAttempt is DecryptionResult.Success -> firstAttempt
+                firstAttempt is DecryptionResult.MalformedPayload -> {
+                    return@synchronized NetworkCredentialReadResult.Corrupt(
+                        NetworkCredentialCorruption.MalformedPayload,
+                    )
+                }
+                !legacy -> {
+                    // Version-2 entries created before credentials were bound to the owning
+                    // source used only the credential key as AAD. Read them once, then upgrade
+                    // them in place with source-bound AAD and an embedded owner id.
+                    decrypt(
+                        sourceId = sourceId,
+                        key = key,
+                        iv = iv,
+                        ciphertext = ciphertext,
+                        keyMaterial = keyMaterial,
+                        useLegacyBinding = true,
+                    )
+                }
+                else -> firstAttempt
+            }
+            val available = decrypted as? DecryptionResult.Success
+                ?: return@synchronized NetworkCredentialReadResult.Corrupt(
+                    if (decrypted is DecryptionResult.MalformedPayload) {
+                        NetworkCredentialCorruption.MalformedPayload
+                    } else {
+                        NetworkCredentialCorruption.AuthenticationFailed
+                    },
+                )
+            NetworkCredentialReadResult.Available(
+                credentials = available.value.credentials,
+                needsMigration = available.value.needsMigration,
+                migrationToken = encoded.takeIf { available.value.needsMigration },
+            )
+        }
+    }
+
+    fun get(sourceId: String, key: String): NetworkCredentials? {
+        return (read(sourceId, key) as? NetworkCredentialReadResult.Available)?.credentials
+    }
+
+    /** Completes a legacy-envelope upgrade only if the value read by the caller is still current. */
+    fun migrateIfNeeded(
+        sourceId: String,
+        key: String,
+        result: NetworkCredentialReadResult.Available,
+    ): Boolean {
+        if (!result.needsMigration || result.migrationToken == null) return true
+        validateIdentity(sourceId, key)
+        synchronized(lock) {
+            if (preferences.getString(key, null) != result.migrationToken) return false
+            val migrated = encrypt(
+                sourceId = sourceId,
+                key = key,
+                credentials = result.credentials,
+                keyMaterial = secretKey(createIfMissing = true),
+            )
+            check(
+                preferences.edit()
+                    .putString(key, Base64.encodeToString(migrated, Base64.NO_WRAP))
+                    .commit(),
+            ) { "Unable to persist migrated network credentials" }
+            return true
+        }
+    }
+
+    fun remove(key: String) {
+        require(key.isNotBlank() && key.length <= MAX_KEY_LENGTH)
+        synchronized(lock) {
+            check(preferences.edit().remove(key).commit()) { "Unable to remove network credentials" }
+            generationSequence += 1L
+            generations.remove(key)
+        }
+    }
+
+    private fun secretKey(createIfMissing: Boolean): SecretKey {
+        cachedSecretKey?.let { return it }
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let {
+            cachedSecretKey = it
+            return it
+        }
+        check(createIfMissing) { "Network credential key is unavailable" }
+        val generator = KeyGenerator.getInstance("AES", ANDROID_KEYSTORE)
+        generator.init(
+            android.security.keystore.KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or
+                    android.security.keystore.KeyProperties.PURPOSE_DECRYPT,
+            )
+                .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                .build(),
+        )
+        return generator.generateKey().also { cachedSecretKey = it }
+    }
+
+    private fun encrypt(
+        sourceId: String,
+        key: String,
+        credentials: NetworkCredentials,
+        keyMaterial: SecretKey,
+    ): ByteArray {
+        val plaintext = JSONObject()
+            .put("sourceId", sourceId)
+            .put("username", credentials.username)
+            .put("password", credentials.password)
+            .put("domain", credentials.domain.orEmpty())
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, keyMaterial)
+        cipher.updateAAD(binding(sourceId, key))
+        return NetworkCredentialEnvelope.encode(cipher.iv, cipher.doFinal(plaintext))
+    }
+
+    private fun decrypt(
+        sourceId: String,
+        key: String,
+        iv: ByteArray,
+        ciphertext: ByteArray,
+        keyMaterial: SecretKey,
+        useLegacyBinding: Boolean,
+    ): DecryptionResult {
+        return try {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.DECRYPT_MODE, keyMaterial, GCMParameterSpec(128, iv))
+            cipher.updateAAD(if (useLegacyBinding) key.toByteArray(Charsets.UTF_8) else binding(sourceId, key))
+            val json = try {
+                JSONObject(cipher.doFinal(ciphertext).toString(Charsets.UTF_8))
+            } catch (_: RuntimeException) {
+                return DecryptionResult.MalformedPayload
+            }
+            val storedSourceId = json.optString("sourceId").takeIf(String::isNotBlank)
+            if (!useLegacyBinding && storedSourceId != sourceId) return DecryptionResult.SourceMismatch
+            if (useLegacyBinding && storedSourceId != null && storedSourceId != sourceId) {
+                return DecryptionResult.SourceMismatch
+            }
+            DecryptionResult.Success(
+                DecryptedCredentials(
+                    credentials = NetworkCredentials(
+                        username = json.optString("username"),
+                        password = json.optString("password"),
+                        domain = json.optString("domain").takeIf(String::isNotBlank),
+                    ),
+                    needsMigration = useLegacyBinding || storedSourceId == null,
+                ),
+            )
+        } catch (_: GeneralSecurityException) {
+            DecryptionResult.AuthenticationFailed
+        } catch (_: RuntimeException) {
+            DecryptionResult.AuthenticationFailed
+        }
+    }
+
+    private fun validateIdentity(sourceId: String, key: String) {
+        require(sourceId.isNotBlank() && sourceId.length <= MAX_SOURCE_ID_LENGTH)
+        require(key.isNotBlank() && key.length <= MAX_KEY_LENGTH)
+    }
+
+    private fun binding(sourceId: String, key: String): ByteArray {
+        return "$sourceId\u0000$key".toByteArray(Charsets.UTF_8)
+    }
+
+    private data class DecryptedCredentials(
+        val credentials: NetworkCredentials,
+        val needsMigration: Boolean,
+    )
+
+    private sealed interface DecryptionResult {
+        data class Success(val value: DecryptedCredentials) : DecryptionResult
+        data object AuthenticationFailed : DecryptionResult
+        data object MalformedPayload : DecryptionResult
+        data object SourceMismatch : DecryptionResult
+    }
+
+    private companion object {
+        const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        const val KEY_ALIAS = "elovaire-network-credentials-v1"
+        const val PREFERENCES = "network_credentials_v1"
+        const val TRANSFORMATION = "AES/GCM/NoPadding"
+        const val MAX_SOURCE_ID_LENGTH = 256
+        const val MAX_KEY_LENGTH = 256
+    }
+}
+
+internal sealed interface NetworkCredentialReadResult {
+    data object Missing : NetworkCredentialReadResult
+    data class Available(
+        val credentials: NetworkCredentials,
+        val needsMigration: Boolean = false,
+        internal val migrationToken: String? = null,
+    ) : NetworkCredentialReadResult
+    data object KeyUnavailable : NetworkCredentialReadResult
+    data class Corrupt(val reason: NetworkCredentialCorruption) : NetworkCredentialReadResult
+}
+
+internal sealed interface NetworkCredentialCorruption {
+    data object InvalidBase64 : NetworkCredentialCorruption
+    data class InvalidEnvelope(val reason: NetworkCredentialEnvelopeError) : NetworkCredentialCorruption
+    data object AuthenticationFailed : NetworkCredentialCorruption
+    data object MalformedPayload : NetworkCredentialCorruption
+}

@@ -1,0 +1,328 @@
+package elovaire.music.droidbeauty.app.data.mutation
+
+import elovaire.music.droidbeauty.app.core.AppClock
+import elovaire.music.droidbeauty.app.core.backend.NoOpBackendEventSink
+import elovaire.music.droidbeauty.app.data.library.db.MediaMutationDao
+import elovaire.music.droidbeauty.app.data.library.db.LibraryMutationEntity
+import elovaire.music.droidbeauty.app.data.library.db.RecoverableMutationBatch
+import elovaire.music.droidbeauty.app.domain.kernel.MediaMutationStatus
+import elovaire.music.droidbeauty.app.domain.kernel.isValidMutationTransition
+import elovaire.music.droidbeauty.app.domain.kernel.recoveryStatusFor
+import java.lang.reflect.Proxy
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Test
+
+class MediaMutationJournalTest {
+    @Test
+    fun validPipelineTransitions_areAccepted() {
+        assertTrue(isValidMutationTransition(MediaMutationStatus.Created, MediaMutationStatus.PreflightPassed))
+        assertTrue(isValidMutationTransition(MediaMutationStatus.PreflightPassed, MediaMutationStatus.TempWritten))
+        assertTrue(isValidMutationTransition(MediaMutationStatus.TempWritten, MediaMutationStatus.TempVerified))
+        assertTrue(isValidMutationTransition(MediaMutationStatus.TempVerified, MediaMutationStatus.Committed))
+        assertTrue(isValidMutationTransition(MediaMutationStatus.Committed, MediaMutationStatus.PersistedVerified))
+        assertTrue(isValidMutationTransition(MediaMutationStatus.PersistedVerified, MediaMutationStatus.Completed))
+        assertTrue(isValidMutationTransition(MediaMutationStatus.NeedsPermission, MediaMutationStatus.PermissionGranted))
+        assertTrue(isValidMutationTransition(MediaMutationStatus.PermissionGranted, MediaMutationStatus.TempWritten))
+    }
+
+    @Test
+    fun terminalAndSkippedTransitions_areRejected() {
+        assertFalse(isValidMutationTransition(MediaMutationStatus.Created, MediaMutationStatus.Completed))
+        assertFalse(isValidMutationTransition(MediaMutationStatus.Completed, MediaMutationStatus.Failed))
+        assertFalse(isValidMutationTransition(MediaMutationStatus.Cancelled, MediaMutationStatus.PreflightPassed))
+        assertFalse(isValidMutationTransition(MediaMutationStatus.TempWritten, MediaMutationStatus.TempWritten))
+    }
+
+    @Test
+    fun failureTransitions_remainAvailableBeforeCompletion() {
+        assertTrue(isValidMutationTransition(MediaMutationStatus.PreflightPassed, MediaMutationStatus.Failed))
+        assertTrue(isValidMutationTransition(MediaMutationStatus.Committed, MediaMutationStatus.NeedsRepair))
+        assertTrue(isValidMutationTransition(MediaMutationStatus.Failed, MediaMutationStatus.NeedsRepair))
+    }
+
+    @Test
+    fun recoveryClassifiesInterruptedMutationByDurabilityPhase() {
+        assertEquals(MediaMutationStatus.Cancelled, recoveryStatusFor(MediaMutationStatus.TempVerified))
+        assertEquals(MediaMutationStatus.NeedsRepair, recoveryStatusFor(MediaMutationStatus.Committed))
+        assertEquals(MediaMutationStatus.Completed, recoveryStatusFor(MediaMutationStatus.PersistedVerified))
+        assertNull(recoveryStatusFor(MediaMutationStatus.NeedsRepair))
+    }
+
+    @Test
+    fun everyMutationStateHasDeterministicRepeatedTerminalAndRecoveryBehavior() {
+        MediaMutationStatus.entries.forEach { state ->
+            assertFalse(isValidMutationTransition(state, state))
+            val hasOutgoingTransition = MediaMutationStatus.entries.any { next ->
+                isValidMutationTransition(state, next)
+            }
+            if (state == MediaMutationStatus.Completed || state == MediaMutationStatus.Cancelled || state == MediaMutationStatus.NeedsRepair) {
+                assertFalse(state.name, hasOutgoingTransition)
+            } else {
+                assertTrue(state.name, hasOutgoingTransition)
+            }
+        }
+
+        val recoveries = MediaMutationStatus.entries.associateWith(::recoveryStatusFor)
+        assertEquals(MediaMutationStatus.Cancelled, recoveries.getValue(MediaMutationStatus.Created))
+        assertEquals(MediaMutationStatus.NeedsRepair, recoveries.getValue(MediaMutationStatus.Committed))
+        assertEquals(MediaMutationStatus.Completed, recoveries.getValue(MediaMutationStatus.Published))
+        assertNull(recoveries.getValue(MediaMutationStatus.Completed))
+    }
+
+    @Test
+    fun correlatedPermissionRetryDoesNotResetExistingJournalState() = runBlocking {
+        val stored = mutableMapOf<String, LibraryMutationEntity>()
+        val dao = libraryDao(stored)
+        val journal = MediaMutationJournal(
+            dao = dao,
+            clock = FixedClock,
+            operationIdGenerator = { "generated" },
+            backendEventSink = NoOpBackendEventSink,
+        )
+        val operation = MediaMutationOperation(
+            mutationId = "permission-retry",
+            type = MediaMutationType.EmbeddedLyricsWrite,
+        )
+
+        journal.create(operation)
+        journal.mark("permission-retry", MediaMutationStatus.PreflightPassed)
+        journal.mark("permission-retry", MediaMutationStatus.TempWritten)
+        journal.mark("permission-retry", MediaMutationStatus.TempVerified)
+        journal.mark("permission-retry", MediaMutationStatus.NeedsPermission)
+        journal.create(operation)
+
+        assertEquals(MediaMutationStatus.NeedsPermission.name, stored.getValue("permission-retry").status)
+        journal.mark("permission-retry", MediaMutationStatus.PermissionGranted)
+        assertEquals(MediaMutationStatus.PermissionGranted.name, stored.getValue("permission-retry").status)
+        listOf(
+            MediaMutationStatus.PreflightPassed, MediaMutationStatus.TempWritten, MediaMutationStatus.TempVerified,
+            MediaMutationStatus.Committed, MediaMutationStatus.PersistedVerified, MediaMutationStatus.Completed,
+        ).forEach { journal.mark("permission-retry", it) }
+        assertEquals(MediaMutationStatus.Completed.name, stored.getValue("permission-retry").status)
+    }
+
+    @Test
+    fun mutationIdCannotBeReusedForAnotherMutationType() = runBlocking {
+        val stored = mutableMapOf<String, LibraryMutationEntity>()
+        val journal = MediaMutationJournal(
+            dao = libraryDao(stored),
+            clock = FixedClock,
+            operationIdGenerator = { "generated" },
+            backendEventSink = NoOpBackendEventSink,
+        )
+
+        journal.create(MediaMutationOperation("shared", MediaMutationType.TagEdit))
+
+        var failed = false
+        try {
+            journal.create(MediaMutationOperation("shared", MediaMutationType.Delete))
+        } catch (_: IllegalStateException) {
+            failed = true
+        }
+        assertTrue(failed)
+        journal.close()
+    }
+
+    @Test
+    fun mutationIdCannotChangeItsDurableTarget() {
+        runBlocking {
+            val stored = mutableMapOf<String, LibraryMutationEntity>()
+            val journal = MediaMutationJournal(
+                dao = libraryDao(stored),
+                clock = FixedClock,
+                operationIdGenerator = { "generated" },
+                backendEventSink = NoOpBackendEventSink,
+            )
+            val original = MediaMutationOperation(
+                mutationId = "same-operation",
+                type = MediaMutationType.TagEdit,
+                songId = 10L,
+                albumId = 20L,
+                uri = android.net.TestUri("file:///music/a.mp3"),
+            )
+            journal.create(original)
+
+            assertThrows(IllegalStateException::class.java) {
+                runBlocking {
+                    journal.create(original.copy(uri = android.net.TestUri("file:///music/b.mp3")))
+                }
+            }
+            journal.close()
+        }
+    }
+
+    @Test
+    fun malformedPersistedStatusIsMovedToRepairInsteadOfRemainingInvisible() = runBlocking {
+        val stored = mutableMapOf(
+            "malformed" to LibraryMutationEntity(
+                mutationId = "malformed",
+                type = MediaMutationType.TagEdit.name,
+                status = "not-a-real-status",
+                songId = 1L,
+                albumId = 2L,
+                uri = "file:///music/a.mp3",
+                displayName = "a.mp3",
+                createdAtMs = 1_000L,
+                updatedAtMs = 1_000L,
+                attemptCount = 0,
+                error = null,
+            ),
+        )
+        val journal = MediaMutationJournal(
+            dao = libraryDao(stored),
+            clock = FixedClock,
+            operationIdGenerator = { "recovery" },
+            backendEventSink = NoOpBackendEventSink,
+        )
+
+        val result = journal.recoverIncomplete()
+
+        assertEquals(1, (result as MediaMutationRecoveryResult.Success).recoveredCount)
+        assertEquals(MediaMutationStatus.NeedsRepair.name, stored.getValue("malformed").status)
+        assertTrue(stored.getValue("malformed").error.orEmpty().contains("not-a-real-status"))
+    }
+
+    @Test
+    fun mutationDefaultsDeclareDeliveryAndReconciliationSemantics() {
+        val tagEdit = MediaMutationOperation(type = MediaMutationType.TagEdit)
+        val delete = MediaMutationOperation(type = MediaMutationType.Delete)
+
+        assertEquals(MediaMutationDelivery.LastWriteWins, tagEdit.delivery)
+        assertEquals(MediaMutationReconciliation.TargetedLibraryRefresh, tagEdit.reconciliation)
+        assertEquals(MediaMutationDelivery.RetryableIdempotent, delete.delivery)
+        assertEquals(MediaMutationReconciliation.LibraryAndPlaybackRefresh, delete.reconciliation)
+    }
+
+    @Test
+    fun maintenanceRecoveryDoesNotCancelAnotherOwnersLiveMutation() = runBlocking {
+        val stored = mutableMapOf<String, LibraryMutationEntity>()
+        val dao = libraryDao(stored)
+        val foregroundJournal = MediaMutationJournal(dao, FixedClock, { "active" }, NoOpBackendEventSink)
+        val recoveryJournal = MediaMutationJournal(dao, FixedClock, { "recovery" }, NoOpBackendEventSink)
+
+        foregroundJournal.create(MediaMutationOperation(type = MediaMutationType.TagEdit))
+        val result = recoveryJournal.recoverIncomplete()
+
+        assertEquals(MediaMutationStatus.Created.name, stored.getValue("active").status)
+        assertEquals(0, (result as MediaMutationRecoveryResult.Success).recoveredCount)
+        assertEquals(1, result.remainingCount)
+        foregroundJournal.close()
+        recoveryJournal.close()
+    }
+
+    @Test
+    fun closingTheOwnerMakesAnInterruptedMutationRecoverable() = runBlocking {
+        val stored = mutableMapOf<String, LibraryMutationEntity>()
+        val dao = libraryDao(stored)
+        val foregroundJournal = MediaMutationJournal(
+            dao,
+            FixedClock,
+            { "active-after-close" },
+            NoOpBackendEventSink,
+        )
+        val recoveryJournal = MediaMutationJournal(
+            dao,
+            FixedClock,
+            { "recovery-after-close" },
+            NoOpBackendEventSink,
+        )
+
+        foregroundJournal.create(MediaMutationOperation(type = MediaMutationType.TagEdit))
+        foregroundJournal.close()
+
+        val result = recoveryJournal.recoverIncomplete()
+        val repeated = recoveryJournal.recoverIncomplete()
+
+        assertEquals(1, (result as MediaMutationRecoveryResult.Success).recoveredCount)
+        assertEquals(MediaMutationStatus.Cancelled.name, stored.getValue("active-after-close").status)
+        assertEquals(0, (repeated as MediaMutationRecoveryResult.Success).recoveredCount)
+    }
+
+    @Test
+    fun startupRecoveryPropagatesFatalErrors() {
+        val fatalError = OutOfMemoryError("fatal")
+        val journal = MediaMutationJournal(
+            dao = libraryDao(mutableMapOf(), recoverableMutationBatchFailure = fatalError),
+            clock = FixedClock,
+            operationIdGenerator = { "recovery" },
+            backendEventSink = NoOpBackendEventSink,
+        )
+
+        assertThrows(OutOfMemoryError::class.java) {
+            runBlocking { journal.recoverIncomplete() }
+        }
+    }
+
+    @Test
+    fun recoveryLoadsOnlyOneBatchAndReportsRemainingMutations() = runBlocking {
+        val stored = mutableMapOf<String, LibraryMutationEntity>()
+        val journal = MediaMutationJournal(
+            dao = libraryDao(stored),
+            clock = FixedClock,
+            operationIdGenerator = { "recovery" },
+            backendEventSink = NoOpBackendEventSink,
+        )
+        listOf("first", "second", "third").forEach { id ->
+            journal.create(MediaMutationOperation(mutationId = id, type = MediaMutationType.TagEdit))
+        }
+        journal.close()
+        val recoveryJournal = MediaMutationJournal(
+            libraryDao(stored), FixedClock, { "recovery-batch" }, NoOpBackendEventSink,
+        )
+
+        val firstBatch = recoveryJournal.recoverIncomplete(maxRecords = 1) as MediaMutationRecoveryResult.Success
+        val secondBatch = recoveryJournal.recoverIncomplete(maxRecords = 1) as MediaMutationRecoveryResult.Success
+        val lastBatch = recoveryJournal.recoverIncomplete(maxRecords = 1) as MediaMutationRecoveryResult.Success
+
+        assertEquals(1, firstBatch.recoveredCount)
+        assertEquals(2, firstBatch.remainingCount)
+        assertEquals(1, secondBatch.remainingCount)
+        assertEquals(0, lastBatch.remainingCount)
+    }
+
+    private fun libraryDao(
+        stored: MutableMap<String, LibraryMutationEntity>,
+        recoverableMutationBatchFailure: Throwable? = null,
+    ): MediaMutationDao {
+        return Proxy.newProxyInstance(
+            MediaMutationDao::class.java.classLoader,
+            arrayOf(MediaMutationDao::class.java),
+        ) { _, method, arguments ->
+            when (method.name) {
+                "mutation" -> stored[arguments?.get(0) as String]
+                "mutationAwaitingFileRecovery" -> stored.values.firstOrNull {
+                    it.uri == arguments?.get(0) && it.recoveryBackupPath != null
+                }?.mutationId
+                "upsertMutation" -> {
+                    val entity = arguments?.get(0) as LibraryMutationEntity
+                    stored[entity.mutationId] = entity
+                    Unit
+                }
+                "recoverableLocalMutationBatch" -> {
+                    recoverableMutationBatchFailure?.let { throw it }
+                    val limit = arguments?.get(0) as Int
+                    val recoverable = stored.values
+                        .filter {
+                            it.recoveryNetworkSourceFingerprint == null &&
+                                (it.recoveryBackupPath != null ||
+                                    it.status !in setOf("Completed", "Cancelled", "Failed", "NeedsRepair"))
+                        }
+                        .sortedWith(compareBy(LibraryMutationEntity::updatedAtMs, LibraryMutationEntity::mutationId))
+                    RecoverableMutationBatch(recoverable.size, recoverable.take(limit))
+                }
+                "toString" -> "TestLibraryDao"
+                else -> error("Unexpected DAO call: ${method.name}")
+            }
+        } as MediaMutationDao
+    }
+
+    private object FixedClock : AppClock {
+        override fun wallTimeMs(): Long = 1_000L
+        override fun elapsedTimeMs(): Long = 500L
+    }
+}

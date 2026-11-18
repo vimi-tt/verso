@@ -1,0 +1,236 @@
+package elovaire.music.droidbeauty.app.data.library
+
+import elovaire.music.droidbeauty.app.domain.model.LibrarySnapshot
+import elovaire.music.droidbeauty.app.domain.model.Album
+import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
+import elovaire.music.droidbeauty.app.domain.model.Song
+import java.util.Locale
+
+internal data class LibrarySongPatchResult(
+    val state: LibraryContentState,
+    val changeSet: LibraryChangeSet,
+)
+
+internal class LibrarySnapshotPublisher(
+    private val publish: (LibraryContentState) -> Unit,
+    private val currentState: () -> LibraryContentState,
+) {
+    private var indexedSongs: List<Song>? = null
+    private var albumSongPositions = emptyMap<Long, List<Int>>()
+    private var albumPositions = emptyMap<Long, Int>()
+    private var songPositionsById = emptyMap<Long, Int>()
+    private var ambiguousSongIds = emptySet<Long>()
+    private var songPositionsByStableKey: Map<String, Int>? = null
+
+    fun stateForSnapshot(
+        snapshot: LibrarySnapshot,
+        removingSongIds: Set<Long>,
+        removingAlbumIds: Set<Long>,
+    ): LibraryContentState {
+        return LibraryContentState(
+            songs = snapshot.songs,
+            albums = snapshot.albums,
+            audiobooks = snapshot.audiobooks,
+            removingSongIds = removingSongIds,
+            removingAlbumIds = removingAlbumIds,
+            contentRevision = snapshot.contentRevision.ifBlank {
+                librarySongsContentRevision(snapshot.songs)
+            },
+            portableMediaIdentityRevision = MediaIdentityResolver.portableIdentityRevision(snapshot.songs),
+        )
+    }
+
+    fun publishState(nextState: LibraryContentState) {
+        if (!hasSamePublishedState(currentState(), nextState)) {
+            publish(nextState)
+        }
+    }
+
+    /**
+     * Applies verified metadata changes without rebuilding unrelated albums.
+     * Scan snapshots are assembled from source-deduplicated songs, while mutation results
+     * already contain authoritative replacement Song instances.
+     */
+    fun patchSongs(
+        editedSongs: List<Song>,
+        removingSongIds: Set<Long>,
+        removingAlbumIds: Set<Long>,
+        publishResult: Boolean = true,
+    ): LibrarySongPatchResult {
+        if (editedSongs.isEmpty()) return LibrarySongPatchResult(currentState(), LibraryChangeSet.Empty)
+        val current = currentState()
+        updateIndices(current)
+        val replacementsByPosition = hashMapOf<Int, Song>()
+        editedSongs.forEach { edited ->
+            val position = positionByStableKey(edited)
+                ?: songPositionsById[edited.id]?.takeUnless { edited.id in ambiguousSongIds }
+            if (position != null) replacementsByPosition[position] = edited
+        }
+        replacementsByPosition.entries.removeAll { (position, song) -> current.songs[position] == song }
+        val replacementPositions = replacementsByPosition.keys.sorted()
+        if (replacementPositions.isEmpty()) {
+            val next = current.copy(removingSongIds = removingSongIds, removingAlbumIds = removingAlbumIds)
+            if (publishResult) publishState(next)
+            return LibrarySongPatchResult(next, LibraryChangeSet.Empty)
+        }
+        val updatedSongs = current.songs.toMutableList()
+        replacementPositions.forEach { position ->
+            updatedSongs[position] = replacementsByPosition.getValue(position)
+        }
+        val canonicalUpdatedSongs = LibrarySnapshotAssembler.canonicalizeAlbumIdsAfterPatch(
+            previousSongs = current.songs,
+            updatedSongs = updatedSongs,
+            changedPositions = replacementPositions,
+        )
+        val patches = replacementPositions.map { position ->
+            LibrarySongPatch(
+                before = current.songs[position],
+                after = canonicalUpdatedSongs[position],
+            )
+        }
+        val changeSet = LibraryChangeSetCalculator.fromPatches(patches)
+
+        val affectedAlbumIds = buildSet {
+            replacementPositions.forEach { position -> add(current.songs[position].albumId) }
+            replacementPositions.forEach { position -> add(canonicalUpdatedSongs[position].albumId) }
+        }
+        val affectedPositions = buildSet {
+            affectedAlbumIds.forEach { albumId ->
+                addAll(albumSongPositions[albumId].orEmpty())
+            }
+            addAll(replacementPositions)
+        }
+        val affectedSongsByAlbum = affectedPositions
+            .asSequence()
+            .map(canonicalUpdatedSongs::get)
+            .filter { it.mediaKind == AudioMediaKind.Music }
+            .groupBy(Song::albumId)
+        val rebuiltAlbums = affectedAlbumIds.flatMap { albumId ->
+            buildAlbumsFromSongs(affectedSongsByAlbum[albumId].orEmpty())
+        }
+        val updatedAlbums = current.albums.toMutableList()
+        affectedAlbumIds.mapNotNull(albumPositions::get).sortedDescending().forEach(updatedAlbums::removeAt)
+        rebuiltAlbums.sortedWith(ALBUM_COMPARATOR).forEach { album ->
+            val insertionPoint = updatedAlbums.binarySearch(album, ALBUM_COMPARATOR).let { index ->
+                if (index >= 0) index else -index - 1
+            }
+            updatedAlbums.add(insertionPoint, album)
+        }
+        val audiobookCatalog = if (
+                audiobookContentChanged(
+                    previousSongs = current.songs,
+                    updatedSongs = canonicalUpdatedSongs,
+                    changedPositions = replacementPositions,
+                    globalCanonicalization = canonicalUpdatedSongs !== updatedSongs,
+                ) ||
+                (current.audiobooks.isEmpty() && canonicalUpdatedSongs.any { it.mediaKind == AudioMediaKind.Audiobook })
+        ) {
+            AudiobookCatalog.build(canonicalUpdatedSongs)
+        } else {
+            current.audiobooks
+        }
+        val nextState = LibraryContentState(
+            songs = canonicalUpdatedSongs,
+            albums = updatedAlbums,
+            audiobooks = audiobookCatalog,
+            removingSongIds = removingSongIds,
+            removingAlbumIds = removingAlbumIds,
+            contentRevision = libraryPatchedContentRevision(
+                previousRevision = current.contentRevision,
+                patches = patches,
+            ),
+            portableMediaIdentityRevision = if (
+                current.portableMediaIdentityRevision.isNotBlank() &&
+                    patches.none { patch -> MediaIdentityResolver.portableIdentityChanged(patch.before, patch.after) }
+            ) {
+                current.portableMediaIdentityRevision
+            } else {
+                MediaIdentityResolver.portableIdentityRevision(canonicalUpdatedSongs)
+            },
+        )
+        if (publishResult && !hasSamePublishedState(current, nextState)) publish(nextState)
+        return LibrarySongPatchResult(nextState, changeSet)
+    }
+
+    fun snapshotOf(state: LibraryContentState): LibrarySnapshot {
+        return LibrarySnapshot(
+            songs = state.songs,
+            albums = state.albums,
+            audiobooks = state.audiobooks,
+            contentRevision = state.contentRevision.ifBlank {
+                librarySongsContentRevision(state.songs)
+            },
+        )
+    }
+
+    private fun hasSamePublishedState(
+        current: LibraryContentState,
+        next: LibraryContentState,
+    ): Boolean {
+        // The revision is calculated from the complete canonical song representation. Once it
+        // is present, comparing it avoids walking every song and every derived album on each
+        // publication. Removal markers remain independent transient state.
+        return if (
+            current.contentRevision.isNotBlank() &&
+                current.contentRevision == next.contentRevision
+        ) {
+            current.removingSongIds == next.removingSongIds &&
+                current.removingAlbumIds == next.removingAlbumIds
+        } else {
+            current == next
+        }
+    }
+
+    private fun updateIndices(state: LibraryContentState) {
+        if (indexedSongs === state.songs) return
+        indexedSongs = state.songs
+        songPositionsByStableKey = null
+        val nextAlbumSongPositions = HashMap<Long, MutableList<Int>>(state.albums.size)
+        val nextSongPositionsById = HashMap<Long, Int>(state.songs.size)
+        val nextAmbiguousSongIds = HashSet<Long>()
+        val nextAlbumPositions = HashMap<Long, Int>(state.albums.size)
+        state.songs.forEachIndexed { index, song ->
+            nextAlbumSongPositions.getOrPut(song.albumId) { mutableListOf() }.add(index)
+            if (song.id !in nextAmbiguousSongIds && nextSongPositionsById.putIfAbsent(song.id, index) != null) {
+                nextSongPositionsById.remove(song.id)
+                nextAmbiguousSongIds += song.id
+            }
+        }
+        state.albums.forEachIndexed { index, album -> nextAlbumPositions[album.id] = index }
+        albumSongPositions = nextAlbumSongPositions
+        songPositionsById = nextSongPositionsById
+        ambiguousSongIds = nextAmbiguousSongIds
+        albumPositions = nextAlbumPositions
+    }
+
+    private fun positionByStableKey(song: Song): Int? {
+        val indexedPositions = songPositionsByStableKey ?: HashMap<String, Int>(indexedSongs.orEmpty().size).apply {
+            indexedSongs.orEmpty().forEachIndexed { index, indexedSong ->
+                putIfAbsent(MediaIdentityResolver.stableKey(indexedSong), index)
+            }
+        }.also { songPositionsByStableKey = it }
+        return indexedPositions[MediaIdentityResolver.stableKey(song)]
+    }
+
+    private fun audiobookContentChanged(
+        previousSongs: List<Song>,
+        updatedSongs: List<Song>,
+        changedPositions: List<Int>,
+        globalCanonicalization: Boolean,
+    ): Boolean {
+        val positions = if (globalCanonicalization) previousSongs.indices else changedPositions
+        return positions.any { index ->
+            val previous = previousSongs[index]
+            val updated = updatedSongs[index]
+            (previous.mediaKind == AudioMediaKind.Audiobook || updated.mediaKind == AudioMediaKind.Audiobook) &&
+                previous != updated
+        }
+    }
+
+    private companion object {
+        val ALBUM_COMPARATOR: Comparator<Album> = compareBy(
+            { it.artist.lowercase(Locale.ROOT) },
+            { it.title.lowercase(Locale.ROOT) },
+        )
+    }
+}

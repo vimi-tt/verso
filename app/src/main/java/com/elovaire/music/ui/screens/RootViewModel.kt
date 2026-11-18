@@ -1,0 +1,230 @@
+package elovaire.music.droidbeauty.app.ui.screens
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import elovaire.music.droidbeauty.app.core.RootViewModelDependencies
+import elovaire.music.droidbeauty.app.data.smartplaylists.SmartPlaylist
+import elovaire.music.droidbeauty.app.data.smartplaylists.BuiltInSmartPlaylistType
+import elovaire.music.droidbeauty.app.data.settings.AppearanceSettingsStore
+import elovaire.music.droidbeauty.app.domain.model.AppLanguage
+import elovaire.music.droidbeauty.app.domain.model.AudiobookSettings
+import elovaire.music.droidbeauty.app.domain.model.NowPlayingBarStyle
+import elovaire.music.droidbeauty.app.domain.model.Playlist
+import elovaire.music.droidbeauty.app.domain.model.TextSizePreset
+import elovaire.music.droidbeauty.app.domain.model.ThemeMode
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+
+internal data class RootAppearanceState(
+    val themeMode: ThemeMode,
+    val textSizePreset: TextSizePreset,
+    val appLanguage: AppLanguage,
+    val nowPlayingBarStyle: NowPlayingBarStyle,
+    val albumCollectionLayoutModeName: String,
+    val songCollectionGridEnabled: Boolean,
+    val albumCollectionSortModeName: String,
+    val songCollectionSortModeName: String,
+    val volumeNormalizationEnabled: Boolean,
+    val onlineLyricsEnabled: Boolean,
+    val audiobookSettings: AudiobookSettings,
+    val smartPlaylistEnabledTypes: Set<BuiltInSmartPlaylistType>,
+    val smartPlaylistMaxSongs: Int,
+)
+
+internal data class RootCollectionState(
+    val playlists: List<Playlist>,
+    val smartPlaylists: List<SmartPlaylist>,
+    val favoriteSongIds: Set<Long>,
+    val albumPlayCounts: Map<Long, Int>,
+    val songPlayCounts: Map<Long, Int>,
+)
+
+internal class RootViewModel(
+    dependencies: RootViewModelDependencies,
+) : ViewModel() {
+    val libraryState = combine(
+        dependencies.libraryReader.contentState,
+        dependencies.libraryReader.scanState,
+        ::libraryUiStateOf,
+    ).distinctUntilChanged().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000L),
+        initialValue = libraryUiStateOf(
+            dependencies.libraryReader.contentState.value,
+            dependencies.libraryReader.scanState.value,
+        ),
+    )
+
+    val appearanceState = combine(
+        combine(
+            dependencies.appearanceSettings.themeMode,
+            dependencies.appearanceSettings.textSizePreset,
+            dependencies.appearanceSettings.appLanguage,
+            dependencies.appearanceSettings.nowPlayingBarStyle,
+        ) { theme, textSize, language, nowPlayingBarStyle ->
+            AppearanceCore(theme, textSize, language, nowPlayingBarStyle)
+        },
+        combine(
+            dependencies.appearanceSettings.albumCollectionLayoutMode,
+            dependencies.appearanceSettings.songCollectionGridEnabled,
+            dependencies.appearanceSettings.albumCollectionSortMode,
+            dependencies.appearanceSettings.songCollectionSortMode,
+        ) { albumLayout, songGrid, albumSort, songSort ->
+            AppearanceLayout(albumLayout, songGrid, albumSort, songSort)
+        },
+        combine(
+            dependencies.appearanceSettings.volumeNormalizationEnabled,
+            dependencies.appearanceSettings.onlineLyricsEnabled,
+            dependencies.appearanceSettings.audiobookSettings,
+            dependencies.appearanceSettings.smartPlaylistEnabledTypes,
+            dependencies.appearanceSettings.smartPlaylistMaxSongs,
+        ) { volumeNormalization, onlineLyrics, audiobookSettings, enabledTypes, maxSongs ->
+            AppearancePlayback(
+                volumeNormalizationEnabled = volumeNormalization,
+                onlineLyricsEnabled = onlineLyrics,
+                audiobookSettings = audiobookSettings,
+                smartPlaylistEnabledTypes = enabledTypes,
+                smartPlaylistMaxSongs = maxSongs,
+            )
+        },
+    ) { core, layout, playback ->
+        RootAppearanceState(
+            themeMode = core.themeMode,
+            textSizePreset = core.textSizePreset,
+            appLanguage = core.appLanguage,
+            nowPlayingBarStyle = core.nowPlayingBarStyle,
+            albumCollectionLayoutModeName = layout.albumCollectionLayoutModeName,
+            songCollectionGridEnabled = layout.songCollectionGridEnabled,
+            albumCollectionSortModeName = layout.albumCollectionSortModeName,
+            songCollectionSortModeName = layout.songCollectionSortModeName,
+            volumeNormalizationEnabled = playback.volumeNormalizationEnabled,
+            onlineLyricsEnabled = playback.onlineLyricsEnabled,
+            audiobookSettings = playback.audiobookSettings,
+            smartPlaylistEnabledTypes = playback.smartPlaylistEnabledTypes,
+            smartPlaylistMaxSongs = playback.smartPlaylistMaxSongs,
+        )
+    }.distinctUntilChanged().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000L),
+        initialValue = rootAppearanceStateOf(dependencies.appearanceSettings),
+    )
+
+    private val favoriteSongIds = dependencies.userData.favoriteSongIds
+        .map { ids -> ids.toSet() }
+        .distinctUntilChanged()
+
+    private val collectionState: Flow<RootCollectionState> = combine(
+        dependencies.userData.playlists,
+        dependencies.userData.smartPlaylists,
+        favoriteSongIds,
+        dependencies.userData.albumPlayCounts,
+        dependencies.userData.songPlayCounts,
+    ) { playlists, smartPlaylists, favorites, albumCounts, songCounts ->
+        RootCollectionState(
+            playlists = playlists,
+            smartPlaylists = smartPlaylists,
+            favoriteSongIds = favorites,
+            albumPlayCounts = albumCounts,
+            songPlayCounts = songCounts,
+        )
+    }.distinctUntilChanged()
+
+    val appState: StateFlow<RootAppState> = combine(
+        libraryState,
+        dependencies.playbackState,
+        appearanceState,
+        collectionState,
+    ) { library, playback, appearance, collections ->
+        RootAppState(
+            library = library,
+            playback = playback,
+            themeMode = appearance.themeMode,
+            textSizePreset = appearance.textSizePreset,
+            appLanguage = appearance.appLanguage,
+            nowPlayingBarStyle = appearance.nowPlayingBarStyle,
+            playlists = collections.playlists,
+            smartPlaylists = collections.smartPlaylists,
+            favoriteSongIds = collections.favoriteSongIds,
+            albumPlayCounts = collections.albumPlayCounts,
+            songPlayCounts = collections.songPlayCounts,
+            albumCollectionLayoutModeName = appearance.albumCollectionLayoutModeName,
+            songCollectionGridEnabled = appearance.songCollectionGridEnabled,
+            albumCollectionSortModeName = appearance.albumCollectionSortModeName,
+            songCollectionSortModeName = appearance.songCollectionSortModeName,
+            volumeNormalizationEnabled = appearance.volumeNormalizationEnabled,
+            onlineLyricsEnabled = appearance.onlineLyricsEnabled,
+            audiobookSettings = appearance.audiobookSettings,
+            smartPlaylistEnabledTypes = appearance.smartPlaylistEnabledTypes,
+            smartPlaylistMaxSongs = appearance.smartPlaylistMaxSongs,
+        )
+    }.distinctUntilChanged().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000L),
+        initialValue = RootAppState(
+            library = libraryState.value,
+            playback = dependencies.playbackState.value,
+            themeMode = appearanceState.value.themeMode,
+            textSizePreset = appearanceState.value.textSizePreset,
+            appLanguage = appearanceState.value.appLanguage,
+            nowPlayingBarStyle = appearanceState.value.nowPlayingBarStyle,
+            playlists = dependencies.userData.playlists.value,
+            smartPlaylists = dependencies.userData.smartPlaylists.value,
+            favoriteSongIds = dependencies.userData.favoriteSongIds.value.toSet(),
+            albumPlayCounts = dependencies.userData.albumPlayCounts.value,
+            songPlayCounts = dependencies.userData.songPlayCounts.value,
+            albumCollectionLayoutModeName = appearanceState.value.albumCollectionLayoutModeName,
+            songCollectionGridEnabled = appearanceState.value.songCollectionGridEnabled,
+            albumCollectionSortModeName = appearanceState.value.albumCollectionSortModeName,
+            songCollectionSortModeName = appearanceState.value.songCollectionSortModeName,
+            volumeNormalizationEnabled = appearanceState.value.volumeNormalizationEnabled,
+            onlineLyricsEnabled = appearanceState.value.onlineLyricsEnabled,
+            audiobookSettings = appearanceState.value.audiobookSettings,
+            smartPlaylistEnabledTypes = appearanceState.value.smartPlaylistEnabledTypes,
+            smartPlaylistMaxSongs = appearanceState.value.smartPlaylistMaxSongs,
+        ),
+    )
+}
+
+private data class AppearanceCore(
+    val themeMode: ThemeMode,
+    val textSizePreset: TextSizePreset,
+    val appLanguage: AppLanguage,
+    val nowPlayingBarStyle: NowPlayingBarStyle,
+)
+
+private data class AppearanceLayout(
+    val albumCollectionLayoutModeName: String,
+    val songCollectionGridEnabled: Boolean,
+    val albumCollectionSortModeName: String,
+    val songCollectionSortModeName: String,
+)
+
+private data class AppearancePlayback(
+    val volumeNormalizationEnabled: Boolean,
+    val onlineLyricsEnabled: Boolean,
+    val audiobookSettings: AudiobookSettings,
+    val smartPlaylistEnabledTypes: Set<BuiltInSmartPlaylistType>,
+    val smartPlaylistMaxSongs: Int,
+)
+
+private fun rootAppearanceStateOf(settings: AppearanceSettingsStore) =
+    RootAppearanceState(
+        themeMode = settings.themeMode.value,
+        textSizePreset = settings.textSizePreset.value,
+        appLanguage = settings.appLanguage.value,
+        nowPlayingBarStyle = settings.nowPlayingBarStyle.value,
+        albumCollectionLayoutModeName = settings.albumCollectionLayoutMode.value,
+        songCollectionGridEnabled = settings.songCollectionGridEnabled.value,
+        albumCollectionSortModeName = settings.albumCollectionSortMode.value,
+        songCollectionSortModeName = settings.songCollectionSortMode.value,
+        volumeNormalizationEnabled = settings.volumeNormalizationEnabled.value,
+        onlineLyricsEnabled = settings.onlineLyricsEnabled.value,
+        audiobookSettings = settings.audiobookSettings.value,
+        smartPlaylistEnabledTypes = settings.smartPlaylistEnabledTypes.value,
+        smartPlaylistMaxSongs = settings.smartPlaylistMaxSongs.value,
+    )

@@ -1,0 +1,171 @@
+package elovaire.music.droidbeauty.app.data.library.db
+
+import elovaire.music.droidbeauty.app.core.AndroidAppClock
+import elovaire.music.droidbeauty.app.core.AppClock
+import elovaire.music.droidbeauty.app.data.mutation.MediaMutationJournal
+import elovaire.music.droidbeauty.app.data.mutation.MediaMutationRecoveryResult
+import androidx.room.Dao
+import androidx.room.RawQuery
+import androidx.room.Query
+import androidx.sqlite.db.SimpleSQLiteQuery
+import androidx.sqlite.db.SupportSQLiteQuery
+
+@Dao
+internal interface PersistenceMaintenanceDao {
+    @Query("SELECT COUNT(*) FROM pragma_foreign_key_check")
+    suspend fun foreignKeyViolationCount(): Int
+
+    @RawQuery
+    suspend fun quickCheck(query: SupportSQLiteQuery): List<String>
+
+    @Query("DELETE FROM media_mutations WHERE recoveryBackupPath IS NULL AND status IN ('Completed', 'Cancelled', 'Failed') AND updatedAtMs < :cutoffMs")
+    suspend fun deleteTerminalMutationsBefore(cutoffMs: Long): Int
+
+    @Query("SELECT COUNT(*) FROM media_mutations WHERE status = 'NeedsRepair'")
+    suspend fun repairRequiredMutationCount(): Int
+
+    @Query(
+        "SELECT COUNT(*) FROM user_playlist_entries AS entry " +
+            "LEFT JOIN user_playlists AS playlist ON playlist.playlistId = entry.playlistId " +
+            "WHERE playlist.playlistId IS NULL OR entry.position < 0 OR entry.position >= " +
+            "(SELECT COUNT(*) FROM user_playlist_entries AS sibling WHERE sibling.playlistId = entry.playlistId) OR " +
+            "entry.position != (SELECT COUNT(*) FROM user_playlist_entries AS prior " +
+            "WHERE prior.playlistId = entry.playlistId AND prior.position < entry.position)",
+    )
+    suspend fun invalidPlaylistEntryCount(): Int
+
+    @Query(
+        "SELECT COUNT(*) FROM favorite_songs AS favorite " +
+            "WHERE favorite.position < 0 OR favorite.position >= (SELECT COUNT(*) FROM favorite_songs) OR " +
+            "favorite.position != (SELECT COUNT(*) FROM favorite_songs AS prior " +
+            "WHERE prior.position < favorite.position)",
+    )
+    suspend fun invalidFavoritePositionCount(): Int
+
+    @Query("SELECT COUNT(*) FROM song_play_counts WHERE playCount < 0")
+    suspend fun invalidSongPlayCountCount(): Int
+
+    @Query("SELECT COUNT(*) FROM album_play_counts WHERE playCount < 0")
+    suspend fun invalidAlbumPlayCountCount(): Int
+
+    @Query(
+        "SELECT COUNT(*) FROM recent_playback AS recent " +
+            "WHERE recent.position < 0 OR recent.position >= " +
+            "(SELECT COUNT(*) FROM recent_playback AS sibling WHERE sibling.kind = recent.kind) OR " +
+            "recent.position != (SELECT COUNT(*) FROM recent_playback AS prior " +
+            "WHERE prior.kind = recent.kind AND prior.position < recent.position)",
+    )
+    suspend fun invalidRecentPositionCount(): Int
+
+    @Query("SELECT COUNT(*) FROM user_smart_playlists WHERE trim(payload) = ''")
+    suspend fun invalidSmartPlaylistCount(): Int
+
+}
+
+internal enum class PersistenceHealthStatus {
+    Healthy,
+    RebuildableDerivedState,
+    RepairableUserState,
+    AmbiguousUserState,
+    FatalStorageFailure,
+}
+
+internal data class DatabaseHealth(
+    val foreignKeysValid: Boolean,
+    val orphanCount: Int,
+    val recoveryRequired: Boolean,
+    val userDataConsistent: Boolean = true,
+    val status: PersistenceHealthStatus = PersistenceHealthStatus.Healthy,
+    val physicalIntegrityValid: Boolean = true,
+)
+
+internal class PersistenceMaintenance(
+    private val dao: PersistenceMaintenanceDao,
+    private val mutationJournal: MediaMutationJournal,
+    private val clock: AppClock = AndroidAppClock,
+    private val userDataDao: UserDataDao? = null,
+) {
+    suspend fun recoverCritical(): Boolean {
+        return recoverMutationBatches { mutationJournal.recoverIncomplete() }
+    }
+
+    suspend fun checkAndPrune(): DatabaseHealth {
+        val physicalIntegrityValid = dao.quickCheck(SimpleSQLiteQuery("PRAGMA quick_check")) == listOf("ok")
+        if (!physicalIntegrityValid) {
+            return DatabaseHealth(
+                foreignKeysValid = false,
+                orphanCount = -1,
+                recoveryRequired = true,
+                status = PersistenceHealthStatus.FatalStorageFailure,
+                physicalIntegrityValid = false,
+            )
+        }
+        val foreignKeyViolationCount = dao.foreignKeyViolationCount()
+        val repairRequired = dao.repairRequiredMutationCount() > 0
+        val invalidSmartPlaylists = dao.invalidSmartPlaylistCount()
+        val repairPlan = UserDataRepairer.plan(
+            invalidPlaylistEntries = dao.invalidPlaylistEntryCount() > 0,
+            invalidFavorites = dao.invalidFavoritePositionCount() > 0,
+            invalidRecentPlayback = dao.invalidRecentPositionCount() > 0,
+            invalidSongPlayCounts = dao.invalidSongPlayCountCount() > 0,
+            invalidAlbumPlayCounts = dao.invalidAlbumPlayCountCount() > 0,
+        )
+        if (userDataDao != null && !repairPlan.isEmpty) {
+            userDataDao.repairDeterministicUserData(repairPlan)
+        }
+        val userDataConsistent = dao.invalidPlaylistEntryCount() == 0 &&
+            dao.invalidFavoritePositionCount() == 0 &&
+            dao.invalidSongPlayCountCount() == 0 &&
+            dao.invalidAlbumPlayCountCount() == 0 &&
+            dao.invalidRecentPositionCount() == 0 &&
+            dao.invalidSmartPlaylistCount() == 0
+        dao.deleteTerminalMutationsBefore(terminalMutationCutoff(clock.wallTimeMs()))
+        return DatabaseHealth(
+            foreignKeysValid = foreignKeyViolationCount == 0,
+            orphanCount = 0,
+            recoveryRequired = repairRequired || !userDataConsistent,
+            userDataConsistent = userDataConsistent,
+            physicalIntegrityValid = physicalIntegrityValid,
+            status = when {
+                foreignKeyViolationCount > 0 -> PersistenceHealthStatus.FatalStorageFailure
+                repairRequired -> PersistenceHealthStatus.AmbiguousUserState
+                invalidSmartPlaylists > 0 -> PersistenceHealthStatus.AmbiguousUserState
+                !userDataConsistent -> PersistenceHealthStatus.RepairableUserState
+                else -> PersistenceHealthStatus.Healthy
+            },
+        )
+    }
+
+    suspend fun recoverAndPrune(): DatabaseHealth {
+        if (!recoverCritical()) {
+            return DatabaseHealth(
+                foreignKeysValid = false,
+                orphanCount = -1,
+                recoveryRequired = true,
+                status = PersistenceHealthStatus.FatalStorageFailure,
+                physicalIntegrityValid = false,
+            )
+        }
+        return checkAndPrune()
+    }
+}
+
+internal suspend fun recoverMutationBatches(
+    recoverBatch: suspend () -> MediaMutationRecoveryResult,
+): Boolean {
+    while (true) {
+        when (val result = recoverBatch()) {
+            is MediaMutationRecoveryResult.Failure -> return false
+            is MediaMutationRecoveryResult.Success -> {
+                if (result.remainingCount == 0) return true
+                if (result.recoveredCount == 0) return false
+            }
+        }
+    }
+}
+
+internal fun terminalMutationCutoff(nowMs: Long): Long {
+    return (nowMs - TERMINAL_MUTATION_RETENTION_MS).coerceAtLeast(0L)
+}
+
+private const val TERMINAL_MUTATION_RETENTION_MS = 30L * 24L * 60L * 60L * 1_000L

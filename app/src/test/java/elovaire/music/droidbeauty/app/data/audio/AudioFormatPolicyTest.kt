@@ -1,0 +1,323 @@
+package elovaire.music.droidbeauty.app.data.audio
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AudioFormatPolicyTest {
+    @Test
+    fun failedDetectionAndUnknownFilesDoNotClaimPlaybackOrFingerprintSupport() {
+        val format = detected(AudioContainerFormat.Mp3, "audio/mpeg")
+        assertEquals(PlaybackSupport.Unsupported, AudioFormatPolicy.playbackSupport(format.copy(detectionSucceeded = false)))
+        assertFalse(AudioFormatPolicy.canFingerprint("unknown.bin"))
+        assertTrue(AudioFormatPolicy.canFingerprint("track.mp3"))
+    }
+
+    @Test
+    fun tagWritingRejectsContainerThatDoesNotMatchFilename() {
+        val flac = detected(AudioContainerFormat.Flac, "audio/flac")
+        assertEquals(TagWriteSupport.Unsupported, AudioFormatPolicy.tagWriteSupport(flac, "song.mp3"))
+        assertEquals(TagWriteSupport.Safe, AudioFormatPolicy.tagWriteSupport(flac, "song.flac"))
+    }
+
+    @Test
+    fun resolveContainer_distinguishesOggCodecsForOga() {
+        assertEquals(
+            AudioContainerFormat.OggOpus,
+            AudioFormatPolicy.resolveContainer("oga", null, "audio/opus"),
+        )
+        assertEquals(
+            AudioContainerFormat.OggFlac,
+            AudioFormatPolicy.resolveContainer("oga", null, "audio/flac"),
+        )
+        assertEquals(
+            AudioContainerFormat.OggVorbis,
+            AudioFormatPolicy.resolveContainer("oga", null, "audio/vorbis"),
+        )
+    }
+
+    @Test
+    fun resolveContainerKeepsSignatureDetectedOggCodecWhenExtensionIsGeneric() {
+        assertEquals(
+            AudioContainerFormat.OggOpus,
+            AudioFormatPolicy.resolveContainer("ogg", "application/ogg", "audio/opus"),
+        )
+    }
+
+    @Test
+    fun resolveContainer_treatsM4bAsMp4Audio() {
+        assertEquals(
+            AudioContainerFormat.Mp4Audio,
+            AudioFormatPolicy.resolveContainer("m4b", "audio/mp4", null),
+        )
+    }
+
+    @Test
+    fun capabilityForExtension_acceptsCommonFlacMimeAlias() {
+        val flac = AudioFormatPolicy.capabilityFor(AudioContainerFormat.Flac)
+
+        requireNotNull(flac)
+        assertTrue("audio/x-flac" in flac.mimeTypes)
+    }
+
+    @Test
+    fun playbackMimeType_includesOgaAndM4b() {
+        assertEquals("audio/ogg", AudioFormatPolicy.playbackMimeType("chapter.oga"))
+        assertEquals("audio/mp4", AudioFormatPolicy.playbackMimeType("book.m4b"))
+    }
+
+    @Test
+    fun scannerExtensions_allMapToCapabilitiesAndPlaybackMime() {
+        AudioFormatPolicy.scannerExtensions.forEach { extension ->
+            requireNotNull(AudioFormatPolicy.capabilityForExtension(extension))
+            requireNotNull(AudioFormatPolicy.playbackMimeType("song.$extension"))
+        }
+    }
+
+    @Test
+    fun capabilityTableKeepsDerivedSetsConsistent() {
+        val derivedScannerExtensions = AudioFormatPolicy.capabilities
+            .filter { it.playbackSupport != PlaybackSupport.Unsupported }
+            .flatMapTo(linkedSetOf()) { it.extensions }
+        val derivedValidationExtensions = AudioFormatPolicy.capabilities
+            .filter { it.requiresContainerValidation }
+            .flatMapTo(linkedSetOf()) { it.extensions }
+        val derivedTaggableExtensions = AudioFormatPolicy.capabilities
+            .filter { it.tagWriteSupport == TagWriteSupport.Safe }
+            .flatMapTo(linkedSetOf()) { it.extensions }
+
+        assertEquals(derivedScannerExtensions, AudioFormatPolicy.scannerExtensions)
+        assertEquals(derivedValidationExtensions, AudioFormatPolicy.validationRequiredExtensions)
+        assertEquals(derivedTaggableExtensions, AudioFormatPolicy.safelyTaggableExtensions)
+    }
+
+    @Test
+    fun playbackMimeTypes_comeFromCapabilityTable() {
+        AudioFormatPolicy.capabilities.forEach { capability ->
+            capability.extensions.forEach { extension ->
+                assertEquals(
+                    capability.playbackMimeType,
+                    AudioFormatPolicy.playbackMimeType("song.$extension"),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun playbackSupport_rejectsVideoContainersEvenWithAudioTrack() {
+        val detected = DetectedAudioFormat(
+            container = AudioContainerFormat.Mp4Audio,
+            displayName = "MP4 Audio",
+            mimeType = "video/mp4",
+            codecMimeType = "audio/mp4a-latm",
+            detectionSucceeded = true,
+            hasAudioTrack = true,
+            hasVideoTrack = true,
+            decoderAvailable = true,
+            sampleRate = null,
+            channelCount = null,
+            bitrate = null,
+            bitDepth = null,
+        )
+
+        assertEquals(PlaybackSupport.Unsupported, AudioFormatPolicy.playbackSupport(detected))
+    }
+
+    @Test
+    fun playbackSupport_rejectsProtectedAudio() {
+        val detected = detected(AudioContainerFormat.Mp4Audio, "audio/mp4a-latm").copy(isProtected = true)
+
+        assertEquals(PlaybackSupport.Unsupported, AudioFormatPolicy.playbackSupport(detected))
+        assertTrue(AudioFormatPolicy.eligibility(detected) is FormatEligibility.Unsupported)
+    }
+
+    @Test
+    fun resolveContainer_rejectsUnknownOggCodec() {
+        assertEquals(
+            AudioContainerFormat.Unknown,
+            AudioFormatPolicy.resolveContainer("ogg", null, "audio/speex"),
+        )
+    }
+
+    @Test
+    fun playbackSupport_allowsDeviceDecodedMp4AlacOnly() {
+        val supported = DetectedAudioFormat(
+            container = AudioContainerFormat.Mp4Audio,
+            displayName = "M4A/ALAC",
+            mimeType = "audio/mp4",
+            codecMimeType = "audio/alac",
+            detectionSucceeded = true,
+            hasAudioTrack = true,
+            hasVideoTrack = false,
+            decoderAvailable = true,
+            sampleRate = null,
+            channelCount = null,
+            bitrate = null,
+            bitDepth = null,
+        )
+        val unsupported = supported.copy(decoderAvailable = false)
+
+        assertEquals(PlaybackSupport.Supported, AudioFormatPolicy.playbackSupport(supported))
+        assertEquals(PlaybackSupport.Unsupported, AudioFormatPolicy.playbackSupport(unsupported))
+    }
+
+    @Test
+    fun playbackSupport_acceptsPlatformPcmOutputForFlacContainer() {
+        val detected = detected(AudioContainerFormat.Flac, "audio/raw")
+
+        assertEquals(PlaybackSupport.Supported, AudioFormatPolicy.playbackSupport(detected))
+        assertTrue(AudioFormatPolicy.isLossless(detected.container, detected.codecMimeType))
+    }
+
+    @Test
+    fun wavLosslessnessDependsOnTheCodecAndRawCodecMustMatchExactly() {
+        assertTrue(AudioFormatPolicy.isLossless(AudioContainerFormat.Wav, "audio/raw"))
+        assertFalse(AudioFormatPolicy.isLossless(AudioContainerFormat.Wav, "audio/ima-adpcm"))
+        assertEquals(
+            PlaybackSupport.Unsupported,
+            AudioFormatPolicy.playbackSupport(detected(AudioContainerFormat.Wav, "audio/raw-extra")),
+        )
+    }
+
+    @Test
+    fun validationExtensions_includeRequestedAliasesOnly() {
+        assertEquals(
+            setOf("m4a", "m4b", "mp4", "ogg", "oga", "opus", "mka", "3gp", "amr"),
+            AudioFormatPolicy.validationRequiredExtensions,
+        )
+        assertFalse("webm" in AudioFormatPolicy.validationRequiredExtensions)
+    }
+
+    @Test
+    fun registry_hasNoAmbiguousOrIncompleteClaims() {
+        assertEquals(emptyList<String>(), AudioFormatPolicy.registryViolations())
+    }
+
+    @Test
+    fun mutationCapabilities_doNotClaimUnverifiedOggOrWavWrites() {
+        listOf(
+            AudioContainerFormat.OggVorbis,
+            AudioContainerFormat.OggOpus,
+            AudioContainerFormat.OggFlac,
+            AudioContainerFormat.Wav,
+        ).forEach { format ->
+            val mutation = requireNotNull(AudioFormatPolicy.capabilityFor(format)).mutation
+            assertEquals(CapabilityLevel.Unsupported, mutation.textFields)
+            assertEquals(CapabilityLevel.Unsupported, mutation.artwork)
+            assertEquals(CapabilityLevel.Unsupported, mutation.unsyncedLyrics)
+        }
+    }
+
+    @Test
+    fun writeSupport_isCodecAwareForMp4Family() {
+        val supported = detected(
+            container = AudioContainerFormat.Mp4Audio,
+            codecMimeType = "audio/alac",
+        )
+        val unsupported = supported.copy(codecMimeType = "audio/opus")
+
+        assertEquals(TagWriteSupport.Safe, AudioFormatPolicy.tagWriteSupport(supported, "song.m4a"))
+        assertEquals(TagWriteSupport.Partial, AudioFormatPolicy.tagWriteSupport(unsupported, "song.m4a"))
+        assertTrue(AudioFormatPolicy.canEmbedArtwork(supported, "song.m4a"))
+        assertFalse(AudioFormatPolicy.canEmbedArtwork(unsupported, "song.m4a"))
+    }
+
+    @Test
+    fun surroundMp4PlaybackUsesDeviceDecodersAndKeepsTaggingIndependent() {
+        listOf("audio/mp4a-latm", "audio/ac3", "audio/eac3", "audio/eac3-joc").forEach { codec ->
+            listOf(6, 7, 8).forEach { channels ->
+                val format = detected(AudioContainerFormat.Mp4Audio, codec).copy(channelCount = channels)
+                assertEquals(PlaybackSupport.Supported, AudioFormatPolicy.playbackSupport(format))
+                assertEquals(PlaybackSupport.Unsupported, AudioFormatPolicy.playbackSupport(format.copy(decoderAvailable = false)))
+                assertEquals(TagWriteSupport.Safe, AudioFormatPolicy.tagWriteSupport(format, "surround.m4a"))
+                assertEquals(TagWriteSupport.Safe, AudioFormatPolicy.tagWriteSupport(format.copy(decoderAvailable = false), "surround.m4a"))
+            }
+        }
+    }
+
+    @Test
+    fun tagWritingRejectsProtectedVideoAndUnverifiedMp4Files() {
+        val format = detected(AudioContainerFormat.Mp4Audio, "audio/eac3-joc")
+        listOf(
+            format.copy(isProtected = true),
+            format.copy(hasVideoTrack = true),
+            format.copy(hasAudioTrack = false),
+            format.copy(detectionSucceeded = false),
+        ).forEach { unsafe ->
+            assertEquals(TagWriteSupport.Unsupported, AudioFormatPolicy.tagWriteSupport(unsafe, "surround.m4a"))
+        }
+    }
+
+    @Test
+    fun writeSupport_rejectsUnsafeContainers() {
+        assertEquals(
+            TagWriteSupport.Unsupported,
+            AudioFormatPolicy.embeddedLyricsWriteSupport(detected(AudioContainerFormat.OggOpus, "audio/opus"), "song.oga"),
+        )
+        assertEquals(
+            TagWriteSupport.Unsupported,
+            AudioFormatPolicy.embeddedLyricsWriteSupport(detected(AudioContainerFormat.Amr, "audio/amr"), "voice.amr"),
+        )
+        assertEquals(
+            TagWriteSupport.Unsupported,
+            AudioFormatPolicy.embeddedLyricsWriteSupport(detected(AudioContainerFormat.MatroskaAudio, "audio/flac"), "song.mka"),
+        )
+    }
+
+    @Test
+    fun embeddedLyricsWriteSupport_allowsVerifiedMp4LyricsAtom() {
+        assertEquals(
+            TagWriteSupport.Safe,
+            AudioFormatPolicy.embeddedLyricsWriteSupport(
+                detected(AudioContainerFormat.Mp4Audio, "audio/mp4a-latm"),
+                "song.m4a",
+            ),
+        )
+    }
+
+    @Test
+    fun decoderAvailability_doesNotAssumeAlacDecoderExists() {
+        assertTrue(AudioDecoderAvailability.isImplicitlyAvailable("audio/raw"))
+        assertFalse(AudioDecoderAvailability.isImplicitlyAvailable("audio/alac"))
+    }
+
+    @Test
+    fun resolvedCapabilitiesKeepPlaybackAndMutationDimensionsSeparate() {
+        val mp4 = requireNotNull(AudioFormatPolicy.resolvedCapability(AudioContainerFormat.Mp4Audio))
+
+        assertEquals(CapabilityLevel.Strong, mp4.playback.extractorSupport)
+        assertEquals(CapabilityLevel.Strong, mp4.metadata.textWrite)
+        assertEquals(CapabilityLevel.Strong, mp4.metadata.lyricsWrite.unsynced)
+        assertEquals(CapabilityLevel.Unsupported, mp4.metadata.lyricsWrite.synced)
+    }
+
+    @Test
+    fun eligibilityRejectsVideoAndMissingDeviceDecoder() {
+        val audio = detected(AudioContainerFormat.Mp4Audio, "audio/mp4a-latm")
+
+        assertTrue(AudioFormatPolicy.eligibility(audio.copy(hasVideoTrack = true)) is FormatEligibility.Unsupported)
+        assertTrue(AudioFormatPolicy.eligibility(audio.copy(decoderAvailable = false)) is FormatEligibility.Unsupported)
+        assertTrue(AudioFormatPolicy.eligibility(audio) is FormatEligibility.Supported)
+    }
+
+    private fun detected(
+        container: AudioContainerFormat,
+        codecMimeType: String,
+    ): DetectedAudioFormat {
+        return DetectedAudioFormat(
+            container = container,
+            displayName = AudioFormatPolicy.displayName(container, "tmp", codecMimeType),
+            mimeType = null,
+            codecMimeType = codecMimeType,
+            detectionSucceeded = true,
+            hasAudioTrack = true,
+            hasVideoTrack = false,
+            decoderAvailable = true,
+            sampleRate = null,
+            channelCount = null,
+            bitrate = null,
+            bitDepth = null,
+        )
+    }
+}

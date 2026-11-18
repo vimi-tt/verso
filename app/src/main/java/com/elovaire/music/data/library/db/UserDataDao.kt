@@ -1,0 +1,444 @@
+package elovaire.music.droidbeauty.app.data.library.db
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Upsert
+import elovaire.music.droidbeauty.app.data.library.canonicalizeMediaIdRelocations
+
+@Dao
+@Suppress("TooManyFunctions")
+internal interface UserDataDao : PlaybackHistoryDao, SearchHistoryDao {
+    @Query("SELECT * FROM user_playlists ORDER BY playlistId")
+    suspend fun playlists(): List<UserPlaylistEntity>
+
+    @Query("SELECT * FROM user_playlists WHERE playlistId = :playlistId")
+    suspend fun playlist(playlistId: Long): UserPlaylistEntity?
+
+    @Query("SELECT * FROM user_playlists WHERE playlistId IN (:ids)")
+    suspend fun playlistsByIds(ids: List<Long>): List<UserPlaylistEntity>
+
+    @Query("SELECT * FROM user_playlist_entries ORDER BY playlistId, position")
+    suspend fun playlistEntries(): List<UserPlaylistEntryEntity>
+
+    @Query("SELECT * FROM user_playlist_entries WHERE playlistId = :playlistId ORDER BY position")
+    suspend fun playlistEntries(playlistId: Long): List<UserPlaylistEntryEntity>
+
+    @Query("SELECT * FROM user_playlist_entries WHERE playlistId IN (:ids) ORDER BY playlistId, position")
+    suspend fun playlistEntriesByIds(ids: List<Long>): List<UserPlaylistEntryEntity>
+
+    @Query("SELECT * FROM user_smart_playlists ORDER BY playlistId")
+    suspend fun smartPlaylists(): List<UserSmartPlaylistEntity>
+
+    @Query("SELECT * FROM user_smart_playlists WHERE playlistId = :playlistId")
+    suspend fun smartPlaylist(playlistId: Long): UserSmartPlaylistEntity?
+
+    @Query("SELECT * FROM favorite_songs ORDER BY position")
+    suspend fun favorites(): List<FavoriteSongEntity>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM user_data_migrations WHERE migrationId = :migrationId)")
+    suspend fun migrationComplete(migrationId: String): Boolean
+
+    @Query("SELECT revision FROM user_data_revision WHERE singletonId = 0")
+    suspend fun userDataRevision(): Long?
+
+    @Query("INSERT OR REPLACE INTO user_data_revision(singletonId, revision) VALUES(0, :revision)")
+    suspend fun writeUserDataRevision(revision: Long)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM library_commit_relocations WHERE commitId = :commitId)")
+    suspend fun libraryCommitRelocationApplied(commitId: String): Boolean
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertLibraryCommitRelocation(commit: LibraryCommitRelocationEntity): Long
+
+    @Query("SELECT * FROM audiobook_progress ORDER BY bookKey")
+    suspend fun audiobookProgressRows(): List<AudiobookProgressEntity>
+
+    @Query("SELECT * FROM audiobook_progress WHERE bookKey = :bookKey")
+    suspend fun audiobookProgress(bookKey: String): AudiobookProgressEntity?
+
+    @Upsert
+    suspend fun upsertAudiobookProgress(progress: AudiobookProgressEntity)
+
+    @Upsert
+    suspend fun upsertAudiobookProgressRows(progress: List<AudiobookProgressEntity>)
+
+    @Query("DELETE FROM audiobook_progress WHERE bookKey = :bookKey")
+    suspend fun deleteAudiobookProgress(bookKey: String)
+
+    @Query("UPDATE audiobook_progress SET songId = :newSongId WHERE songId = :oldSongId")
+    suspend fun relocateAudiobookProgress(oldSongId: Long, newSongId: Long)
+
+    @Transaction
+    suspend fun relocateAudiobookProgress(replacements: Map<Long, Long>) {
+        replacements.forEach { (oldSongId, newSongId) ->
+            relocateAudiobookProgress(oldSongId, newSongId)
+        }
+    }
+
+    @Transaction
+    suspend fun migrateLegacyAudiobookProgress(
+        rows: List<AudiobookProgressEntity>,
+        migration: UserDataMigrationEntity,
+    ) {
+        if (rows.isNotEmpty()) upsertAudiobookProgressRows(rows)
+        insertMigration(migration)
+    }
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertPlaylist(playlist: UserPlaylistEntity)
+
+    @Transaction
+    suspend fun insertPlaylistWithEntries(
+        playlist: UserPlaylistEntity,
+        songIds: List<Long>,
+    ) {
+        insertPlaylist(playlist)
+        replacePlaylistEntries(playlist.playlistId, songIds)
+        check(this.playlist(playlist.playlistId) == playlist) {
+            "Playlist create readback failed for ${playlist.playlistId}."
+        }
+        check(songIdsForPlaylist(playlist.playlistId) == songIds.distinct()) {
+            "Playlist entry create readback failed for ${playlist.playlistId}."
+        }
+    }
+
+    @Transaction
+    suspend fun insertPlaylistAndVerify(playlist: UserPlaylistEntity) {
+        insertPlaylist(playlist)
+        check(this.playlist(playlist.playlistId) == playlist) {
+            "Playlist create readback failed for ${playlist.playlistId}."
+        }
+    }
+
+    @Transaction
+    suspend fun insertPlaylistsWithEntries(
+        playlists: List<UserPlaylistEntity>,
+        entries: List<UserPlaylistEntryEntity>,
+    ) {
+        playlists.forEach { insertPlaylist(it) }
+        if (entries.isNotEmpty()) insertPlaylistEntries(entries)
+        val entriesByPlaylist = entries.groupBy(UserPlaylistEntryEntity::playlistId)
+        val idChunks = if (playlists.size >= 8) playlists.map(UserPlaylistEntity::playlistId).chunked(500) else null
+        val storedPlaylists = idChunks?.flatMap { playlistsByIds(it) }?.associateBy(UserPlaylistEntity::playlistId)
+        val storedEntries = idChunks?.flatMap { playlistEntriesByIds(it) }?.groupBy(UserPlaylistEntryEntity::playlistId)
+        playlists.forEach { expected ->
+            check((storedPlaylists?.get(expected.playlistId) ?: playlist(expected.playlistId)) == expected) {
+                "Playlist import row readback failed for ${expected.playlistId}."
+            }
+            check(
+                (storedEntries?.get(expected.playlistId) ?: if (storedEntries != null) emptyList() else playlistEntries(expected.playlistId)) == entriesByPlaylist[expected.playlistId].orEmpty()
+                    .sortedBy(UserPlaylistEntryEntity::position),
+            ) {
+                "Playlist import entry readback failed for ${expected.playlistId}."
+            }
+        }
+    }
+
+    @Query("UPDATE user_playlists SET name = :name WHERE playlistId = :playlistId")
+    suspend fun renamePlaylist(playlistId: Long, name: String)
+
+    @Transaction
+    suspend fun renamePlaylistAndVerify(playlistId: Long, name: String) {
+        renamePlaylist(playlistId, name)
+        check(this.playlist(playlistId)?.name == name) {
+            "Playlist rename readback failed for $playlistId."
+        }
+    }
+
+    @Query("DELETE FROM user_playlists WHERE playlistId IN (:playlistIds)")
+    suspend fun deletePlaylists(playlistIds: Set<Long>)
+
+    @Transaction
+    suspend fun deletePlaylistsAndVerify(playlistIds: Set<Long>) {
+        deletePlaylists(playlistIds)
+        check(playlistIds.all { this.playlist(it) == null }) {
+            "Playlist delete readback failed."
+        }
+    }
+
+    @Query("DELETE FROM user_playlist_entries WHERE playlistId = :playlistId")
+    suspend fun deletePlaylistEntries(playlistId: Long)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertPlaylistEntries(entries: List<UserPlaylistEntryEntity>)
+
+    @Upsert
+    suspend fun upsertSmartPlaylist(playlist: UserSmartPlaylistEntity)
+
+    @Transaction
+    suspend fun upsertSmartPlaylistAndVerify(playlist: UserSmartPlaylistEntity) {
+        upsertSmartPlaylist(playlist)
+        check(this.smartPlaylist(playlist.playlistId) == playlist) {
+            "Smart playlist write readback failed for ${playlist.playlistId}."
+        }
+    }
+
+    @Query("DELETE FROM user_smart_playlists WHERE playlistId IN (:playlistIds)")
+    suspend fun deleteSmartPlaylists(playlistIds: Set<Long>)
+
+    @Transaction
+    suspend fun deleteSmartPlaylistsAndVerify(playlistIds: Set<Long>) {
+        deleteSmartPlaylists(playlistIds)
+        check(playlistIds.all { this.smartPlaylist(it) == null }) {
+            "Smart playlist delete readback failed."
+        }
+    }
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertFavorite(favorite: FavoriteSongEntity): Long
+
+    @Query("DELETE FROM favorite_songs WHERE songId IN (:songIds)")
+    suspend fun deleteFavorites(songIds: Set<Long>)
+
+    @Query("DELETE FROM favorite_songs")
+    suspend fun clearFavorites()
+
+    @Query("SELECT COALESCE(MAX(position), -1) FROM favorite_songs")
+    suspend fun lastFavoritePosition(): Int
+
+    @Query("DELETE FROM user_playlist_entries")
+    suspend fun clearPlaylistEntries()
+
+    @Query("DELETE FROM user_playlists")
+    suspend fun clearPlaylists()
+
+    @Query("DELETE FROM user_smart_playlists")
+    suspend fun clearSmartPlaylists()
+
+    @Query("DELETE FROM playback_collection_state")
+    suspend fun clearPlaybackCollectionState()
+
+    /** Restores only user-owned rows after a failed Room read; library/index rows are untouched. */
+    @Transaction
+    suspend fun restoreUserData(
+        playlists: List<UserPlaylistEntity>,
+        playlistEntries: List<UserPlaylistEntryEntity>,
+        smartPlaylists: List<UserSmartPlaylistEntity>,
+        favorites: List<FavoriteSongEntity>,
+        songCounts: List<SongPlayCountEntity>,
+        albumCounts: List<AlbumPlayCountEntity>,
+        recentPlayback: List<RecentPlaybackEntity>,
+        searchHistory: List<SearchHistoryEntity>,
+        collectionState: PlaybackCollectionStateEntity,
+    ) {
+        clearPlaylistEntries()
+        clearPlaylists()
+        clearSmartPlaylists()
+        clearFavorites()
+        clearSongPlayCounts()
+        clearAlbumPlayCounts()
+        clearRecentPlayback()
+        clearSearchHistory()
+        clearPlaybackCollectionState()
+        if (playlists.isNotEmpty()) insertPlaylists(playlists)
+        if (playlistEntries.isNotEmpty()) insertPlaylistEntries(playlistEntries)
+        if (smartPlaylists.isNotEmpty()) insertSmartPlaylists(smartPlaylists)
+        if (favorites.isNotEmpty()) insertFavorites(favorites)
+        if (songCounts.isNotEmpty()) insertSongPlayCounts(songCounts)
+        if (albumCounts.isNotEmpty()) insertAlbumPlayCounts(albumCounts)
+        if (recentPlayback.isNotEmpty()) insertRecentPlayback(recentPlayback)
+        if (searchHistory.isNotEmpty()) insertSearchHistory(searchHistory)
+        upsertPlaybackCollectionState(collectionState)
+    }
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertPlaylists(playlists: List<UserPlaylistEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSmartPlaylists(playlists: List<UserSmartPlaylistEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertFavorites(favorites: List<FavoriteSongEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSongPlayCounts(counts: List<SongPlayCountEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAlbumPlayCounts(counts: List<AlbumPlayCountEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertMigration(migration: UserDataMigrationEntity)
+
+    @Transaction
+    suspend fun replacePlaylistEntries(playlistId: Long, songIds: List<Long>) {
+        deletePlaylistEntries(playlistId)
+        val entries = songIds.distinct().mapIndexed { position, songId ->
+            UserPlaylistEntryEntity(playlistId, songId, position)
+        }
+        if (entries.isNotEmpty()) insertPlaylistEntries(entries)
+    }
+
+    @Transaction
+    suspend fun replacePlaylistEntriesAndVerify(playlistId: Long, songIds: List<Long>) {
+        replacePlaylistEntries(playlistId, songIds)
+        check(songIdsForPlaylist(playlistId) == songIds.distinct()) {
+            "Playlist entry write readback failed for $playlistId."
+        }
+    }
+
+    /**
+     * Repairs only ordering/counter fields whose intended value is deterministic from the
+     * existing rows. Membership and smart-playlist definitions are deliberately untouched.
+     */
+    @Transaction
+    suspend fun repairDeterministicUserData(plan: UserDataRepairPlan) {
+        if (plan.normalizePlaylistPositions) {
+            val entriesByPlaylist = playlistEntries().groupBy(UserPlaylistEntryEntity::playlistId)
+            playlists().forEach { playlist ->
+                val normalizedSongIds = entriesByPlaylist[playlist.playlistId].orEmpty()
+                    .sortedWith(compareBy(UserPlaylistEntryEntity::position, UserPlaylistEntryEntity::songId))
+                    .map(UserPlaylistEntryEntity::songId)
+                    .distinct()
+                replacePlaylistEntries(playlist.playlistId, normalizedSongIds)
+            }
+        }
+        if (plan.normalizeFavoritePositions) {
+            val normalizedFavorites = favorites()
+                .sortedWith(compareBy(FavoriteSongEntity::position, FavoriteSongEntity::songId))
+                .mapIndexed { position, favorite -> FavoriteSongEntity(favorite.songId, position) }
+            clearFavorites()
+            if (normalizedFavorites.isNotEmpty()) insertFavorites(normalizedFavorites)
+        }
+        if (plan.normalizeRecentPositions) {
+            val normalizedRecent = recentPlayback()
+                .groupBy(RecentPlaybackEntity::kind)
+                .toSortedMap()
+                .flatMap { (kind, entries) ->
+                    entries
+                        .sortedWith(compareBy(RecentPlaybackEntity::position, RecentPlaybackEntity::itemId))
+                        .mapIndexed { position, entry -> entry.copy(kind = kind, position = position) }
+                }
+            clearRecentPlayback()
+            if (normalizedRecent.isNotEmpty()) insertRecentPlayback(normalizedRecent)
+        }
+        if (plan.normalizeSongPlayCounts) {
+            val normalizedCounts = songPlayCounts().map { count ->
+                count.copy(playCount = count.playCount.coerceAtLeast(0))
+            }
+            clearSongPlayCounts()
+            if (normalizedCounts.isNotEmpty()) insertSongPlayCounts(normalizedCounts)
+        }
+        if (plan.normalizeAlbumPlayCounts) {
+            val normalizedCounts = albumPlayCounts().map { count ->
+                count.copy(playCount = count.playCount.coerceAtLeast(0))
+            }
+            clearAlbumPlayCounts()
+            if (normalizedCounts.isNotEmpty()) insertAlbumPlayCounts(normalizedCounts)
+        }
+    }
+
+    @Transaction
+    suspend fun removeSongReferences(songIds: Set<Long>) {
+        if (songIds.isEmpty()) return
+        removeFavorites(songIds)
+        val affectedPlaylists = playlistIdsContaining(songIds).toSet()
+        deleteSongReferencesFromPlaylists(songIds)
+        affectedPlaylists.forEach { playlistId ->
+            replacePlaylistEntries(playlistId, songIdsForPlaylist(playlistId))
+        }
+    }
+
+    @Transaction
+    suspend fun removeFavorites(songIds: Set<Long>) {
+        if (songIds.isEmpty()) return
+        deleteFavorites(songIds)
+    }
+
+    @Query("SELECT playlistId FROM user_playlist_entries WHERE songId IN (:songIds)")
+    suspend fun playlistIdsContaining(songIds: Set<Long>): List<Long>
+
+    @Query("SELECT songId FROM user_playlist_entries WHERE playlistId = :playlistId ORDER BY position")
+    suspend fun songIdsForPlaylist(playlistId: Long): List<Long>
+
+    @Query("DELETE FROM user_playlist_entries WHERE songId IN (:songIds)")
+    suspend fun deleteSongReferencesFromPlaylists(songIds: Set<Long>)
+
+    /**
+     * Re-keys user data after a source adapter proves that one media item was rediscovered
+     * under another domain id. The operation is intentionally a single transaction so a
+     * restart cannot expose only part of the relocation.
+     */
+    @Transaction
+    suspend fun relocateSongReferences(replacements: Map<Long, Long>) {
+        val normalized = canonicalizeMediaIdRelocations(replacements).orEmpty()
+        if (normalized.isEmpty()) return
+
+        fun resolve(id: Long): Long = normalized[id] ?: id
+
+        playlistEntries()
+            .groupBy(UserPlaylistEntryEntity::playlistId)
+            .forEach { (playlistId, entries) ->
+                val currentIds = entries.map(UserPlaylistEntryEntity::songId)
+                val relocatedIds = currentIds
+                    .map(::resolve)
+                    .distinct()
+                if (relocatedIds != currentIds) {
+                    replacePlaylistEntries(playlistId, relocatedIds)
+                }
+            }
+
+        val currentFavorites = favorites()
+        val currentFavoriteIds = currentFavorites.map(FavoriteSongEntity::songId)
+        val relocatedFavorites = currentFavoriteIds
+            .map(::resolve)
+            .distinct()
+        if (relocatedFavorites != currentFavoriteIds) {
+            clearFavorites()
+            insertFavorites(relocatedFavorites.mapIndexed { position, songId -> FavoriteSongEntity(songId, position) })
+        }
+
+        val currentCounts = songPlayCounts()
+        val relocatedCounts = currentCounts
+            .groupBy { resolve(it.songId) }
+            .map { (songId, counts) ->
+                SongPlayCountEntity(songId, counts.maxOf(SongPlayCountEntity::playCount))
+            }
+            .sortedBy(SongPlayCountEntity::songId)
+        if (relocatedCounts != currentCounts) {
+            clearSongPlayCounts()
+            if (relocatedCounts.isNotEmpty()) insertSongPlayCounts(relocatedCounts)
+        }
+
+        val currentRecent = recentPlayback()
+        val currentSongRecent = currentRecent
+            .filter { it.kind == "song" }
+        val relocatedSongRecent = currentSongRecent
+            .map { it.copy(itemId = resolve(it.itemId)) }
+            .distinctBy(RecentPlaybackEntity::itemId)
+            .mapIndexed { position, entry -> entry.copy(position = position) }
+        val otherRecent = currentRecent.filterNot { it.kind == "song" }
+        val relocatedRecent = otherRecent + relocatedSongRecent
+        if (relocatedRecent != currentRecent) {
+            clearRecentPlayback()
+            if (relocatedRecent.isNotEmpty()) insertRecentPlayback(relocatedRecent)
+        }
+    }
+
+    @Transaction
+    suspend fun migrateLegacy(
+        playlists: List<UserPlaylistEntity>,
+        entries: List<UserPlaylistEntryEntity>,
+        smartPlaylists: List<UserSmartPlaylistEntity>,
+        favorites: List<FavoriteSongEntity>,
+        songCounts: List<SongPlayCountEntity>,
+        albumCounts: List<AlbumPlayCountEntity>,
+        recents: List<RecentPlaybackEntity>,
+        searchHistory: List<SearchHistoryEntity>,
+        collectionState: PlaybackCollectionStateEntity,
+        migration: UserDataMigrationEntity,
+    ) {
+        if (playlists.isNotEmpty()) insertPlaylists(playlists)
+        if (entries.isNotEmpty()) insertPlaylistEntries(entries)
+        if (smartPlaylists.isNotEmpty()) insertSmartPlaylists(smartPlaylists)
+        if (favorites.isNotEmpty()) insertFavorites(favorites)
+        if (songCounts.isNotEmpty()) insertSongPlayCounts(songCounts)
+        if (albumCounts.isNotEmpty()) insertAlbumPlayCounts(albumCounts)
+        if (recents.isNotEmpty()) insertRecentPlayback(recents)
+        if (searchHistory.isNotEmpty()) insertSearchHistory(searchHistory)
+        upsertPlaybackCollectionState(collectionState)
+        insertMigration(migration)
+    }
+}

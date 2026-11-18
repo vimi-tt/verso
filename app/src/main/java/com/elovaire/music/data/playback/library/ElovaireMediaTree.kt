@@ -1,0 +1,1038 @@
+package elovaire.music.droidbeauty.app.data.playback.library
+
+import androidx.media3.common.MediaItem
+import elovaire.music.droidbeauty.app.data.library.LibraryReader
+import elovaire.music.droidbeauty.app.data.playback.PlaybackCollectionKind
+import elovaire.music.droidbeauty.app.core.MemoryPressure
+import elovaire.music.droidbeauty.app.data.settings.MediaLibraryUserDataReader
+import elovaire.music.droidbeauty.app.domain.model.Album
+import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
+import elovaire.music.droidbeauty.app.domain.model.Audiobook
+import elovaire.music.droidbeauty.app.domain.model.AudiobookPart
+import elovaire.music.droidbeauty.app.domain.model.Playlist
+import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.domain.model.AppLanguage
+import elovaire.music.droidbeauty.app.data.playback.AudiobookPlaybackContext
+import elovaire.music.droidbeauty.app.data.smartplaylists.BuiltInSmartPlaylistType
+import elovaire.music.droidbeauty.app.domain.model.UNKNOWN_ARTIST_PLAYBACK_SOURCE
+import elovaire.music.droidbeauty.app.domain.model.UNKNOWN_GENRE_PLAYBACK_SOURCE
+import elovaire.music.droidbeauty.app.domain.model.ALL_SONGS_PLAYBACK_SOURCE
+import elovaire.music.droidbeauty.app.domain.model.SMART_PLAYLIST_PLAYBACK_SOURCE_PREFIX
+import elovaire.music.droidbeauty.app.domain.model.SONG_BUCKET_PLAYBACK_SOURCE_PREFIX
+import elovaire.music.droidbeauty.app.domain.search.NormalizedSearchQuery
+import elovaire.music.droidbeauty.app.domain.search.SearchableAlbum
+import elovaire.music.droidbeauty.app.domain.search.SearchableAudiobook
+import elovaire.music.droidbeauty.app.domain.search.SearchablePlaylist
+import elovaire.music.droidbeauty.app.domain.search.SearchableSong
+import elovaire.music.droidbeauty.app.domain.search.normalizeSearchText
+import elovaire.music.droidbeauty.app.domain.search.searchArtistsForPicker
+import elovaire.music.droidbeauty.app.domain.search.searchIndexedAlbumsForPicker
+import elovaire.music.droidbeauty.app.domain.search.searchIndexedPlaylists
+import elovaire.music.droidbeauty.app.domain.search.searchIndexedSongsForPicker
+import elovaire.music.droidbeauty.app.domain.search.toSearchableAlbum
+import elovaire.music.droidbeauty.app.domain.search.toSearchableAudiobook
+import elovaire.music.droidbeauty.app.domain.search.toSearchableSong
+import java.util.Locale
+
+private fun sortedDistinctNames(names: Sequence<String>): List<String> = names
+    .distinct()
+    .map { name -> name to name.lowercase(Locale.ROOT) }
+    .sortedBy { it.second }
+    .map { it.first }
+    .toList()
+
+private const val SYMBOL_BUCKET = "#"
+private val bucketLabelComparator = compareBy<String> { if (it == SYMBOL_BUCKET) "ZZ" else it }
+
+private fun bucketKey(label: String): String {
+    val first = label.trim().firstOrNull()?.uppercaseChar() ?: return SYMBOL_BUCKET
+    return if (first in 'A'..'Z') first.toString() else SYMBOL_BUCKET
+}
+
+private fun sortedBucketLabels(labels: Collection<String>): List<String> =
+    labels.sortedWith(bucketLabelComparator)
+
+internal interface MediaLibraryBrowser {
+    fun childrenOf(id: ElovaireMediaId): List<MediaItem>
+    fun childrenOfPage(id: ElovaireMediaId, page: Int, pageSize: Int): List<MediaItem> {
+        val items = childrenOf(id)
+        val from = page.toLong() * pageSize.toLong()
+        if (page < 0 || pageSize <= 0 || from >= items.size) return emptyList()
+        val to = (from + pageSize.toLong()).coerceAtMost(items.size.toLong())
+        return items.subList(from.toInt(), to.toInt())
+    }
+    fun item(mediaId: String): MediaItem?
+    fun search(query: String, limit: Int = 50): List<MediaItem>
+
+    fun searchRevision(): String = ""
+
+    fun searchPage(query: String, offset: Int, limit: Int): List<MediaItem> {
+        if (offset < 0 || limit <= 0) return emptyList()
+        val endExclusive = offset.toLong() + limit.toLong()
+        if (endExclusive > MediaLibraryRequestPolicy.MAX_SEARCH_RESULT_ITEMS) return emptyList()
+        return search(query, endExclusive.toInt())
+            .drop(offset)
+            .take(limit)
+    }
+
+    fun searchCount(query: String): Int = search(query, MediaLibraryRequestPolicy.MAX_SEARCH_RESULT_ITEMS).size
+}
+
+internal interface MediaLibraryCommandResolver {
+    fun resolvePlayableQueue(mediaId: String): ResolvedPlayableQueue?
+    fun resolveSearchQueue(query: String): ResolvedPlayableQueue?
+    fun defaultPlayableQueue(): ResolvedPlayableQueue?
+    fun resumptionQueue(): ResolvedPlayableQueue?
+}
+
+internal class ElovaireMediaTree(
+    private val libraryRepository: LibraryReader,
+    private val preferenceStore: MediaLibraryUserDataReader,
+    private val language: () -> AppLanguage = { AppLanguage.English },
+) : MediaCatalogPort {
+    private val snapshotCache = MediaTreeSnapshotCache()
+
+    fun onMemoryPressure(pressure: MemoryPressure) {
+        if (pressure != MemoryPressure.Normal) snapshotCache.clear()
+    }
+
+    fun rootChildren(): List<MediaItem> {
+        val snapshot = snapshot()
+        return when {
+            !snapshot.permissionGranted -> listOf(ElovaireMediaItems.permissionRequiredInfo(language()))
+            snapshot.songs.isEmpty() && snapshot.audiobooks.isEmpty() -> listOf(ElovaireMediaItems.emptyLibraryInfo(language()))
+            else -> listOf(
+                ElovaireMediaItems.recentlyAddedRoot(language()),
+                ElovaireMediaItems.favoritesRoot(language()),
+                ElovaireMediaItems.audiobooksRoot(language()).takeIf { snapshot.audiobooks.isNotEmpty() },
+                ElovaireMediaItems.albumsRoot(language()),
+                ElovaireMediaItems.artistsRoot(language()),
+                ElovaireMediaItems.genresRoot(language()).takeIf { snapshot.hasUsefulGenres() },
+                ElovaireMediaItems.playlistsRoot(language()),
+                ElovaireMediaItems.songsRoot(language()),
+            ).filterNotNull()
+        }
+    }
+
+    override fun childrenOf(id: ElovaireMediaId): List<MediaItem> {
+        val snapshot = snapshot()
+        if (!snapshot.permissionGranted) {
+            return if (id == ElovaireMediaId.Root) listOf(ElovaireMediaItems.permissionRequiredInfo(language())) else emptyList()
+        }
+        if (snapshot.songs.isEmpty() && snapshot.audiobooks.isEmpty()) {
+            return if (id == ElovaireMediaId.Root) listOf(ElovaireMediaItems.emptyLibraryInfo(language())) else emptyList()
+        }
+        return when (id) {
+            ElovaireMediaId.Root -> rootChildren()
+            ElovaireMediaId.PermissionRequired,
+            ElovaireMediaId.EmptyLibrary,
+            -> emptyList()
+            ElovaireMediaId.Songs -> bucketIfLarge(
+                parent = BUCKET_PARENT_SONGS,
+                rows = snapshot.songsByTitle(),
+                bucketKeys = snapshot::songBucketKeys,
+                item = { ElovaireMediaItems.song(it, language()) },
+            )
+            ElovaireMediaId.Albums -> bucketIfLarge(
+                parent = BUCKET_PARENT_ALBUMS,
+                rows = snapshot.albumsByTitle(),
+                bucketKeys = snapshot::albumBucketKeys,
+                item = { ElovaireMediaItems.album(it, language()) },
+            )
+            ElovaireMediaId.Artists -> bucketIfLarge(
+                parent = BUCKET_PARENT_ARTISTS,
+                rows = snapshot.artistNames(),
+                bucketKeys = snapshot::artistBucketKeys,
+                item = { ElovaireMediaItems.artist(it, language()) },
+            )
+            ElovaireMediaId.Genres -> snapshot.genreNames().map { ElovaireMediaItems.genre(it, language()) }
+            ElovaireMediaId.Playlists -> snapshot.nonEmptyPlaylistsByName()
+                .map(ElovaireMediaItems::playlist)
+            ElovaireMediaId.Favorites -> snapshot.favoriteSongsByTitle().map { ElovaireMediaItems.song(it, language()) }
+            ElovaireMediaId.RecentlyAdded -> snapshot.recentlyAddedSongs().map { ElovaireMediaItems.song(it, language()) }
+            ElovaireMediaId.Audiobooks -> snapshot.audiobooks.map { ElovaireMediaItems.audiobook(it, language()) }
+            is ElovaireMediaId.Song -> emptyList()
+            is ElovaireMediaId.Album -> snapshot.album(id.albumId)
+                ?.songs.orEmpty()
+                .map { ElovaireMediaItems.song(it, language()) }
+            is ElovaireMediaId.Artist -> snapshot
+                .songsForArtistInContext(ElovaireMediaIds.decodeName(id.encodedName))
+                .map { ElovaireMediaItems.song(it, language()) }
+            is ElovaireMediaId.Genre -> snapshot
+                .songsForGenreInContext(ElovaireMediaIds.decodeName(id.encodedName))
+                .map { ElovaireMediaItems.song(it, language()) }
+            is ElovaireMediaId.Playlist -> snapshot.playlistSongs(id.playlistId).map { snapshot.mediaItem(it, language()) }
+            is ElovaireMediaId.Audiobook -> snapshot.audiobook(id.stableKey)?.parts.orEmpty()
+                .map { part -> ElovaireMediaItems.audiobookPart(part.song, language()) }
+            is ElovaireMediaId.Bucket -> bucketChildren(id, snapshot)
+        }
+    }
+
+    override fun childrenOfPage(
+        id: ElovaireMediaId,
+        page: Int,
+        pageSize: Int,
+    ): List<MediaItem> {
+        val snapshot = snapshot()
+        if (!snapshot.permissionGranted) {
+            return pageWindow(childrenOf(id), page, pageSize)
+        }
+        if (snapshot.songs.isEmpty() && snapshot.audiobooks.isEmpty()) {
+            return pageWindow(childrenOf(id), page, pageSize)
+        }
+        return when (id) {
+            ElovaireMediaId.Songs -> bucketIfLargePage(
+                parent = BUCKET_PARENT_SONGS,
+                rows = snapshot.songsByTitle(),
+                bucketKeys = snapshot::songBucketKeys,
+                item = { ElovaireMediaItems.song(it, language()) },
+                page = page,
+                pageSize = pageSize,
+            )
+            ElovaireMediaId.Albums -> bucketIfLargePage(
+                parent = BUCKET_PARENT_ALBUMS,
+                rows = snapshot.albumsByTitle(),
+                bucketKeys = snapshot::albumBucketKeys,
+                item = { ElovaireMediaItems.album(it, language()) },
+                page = page,
+                pageSize = pageSize,
+            )
+            ElovaireMediaId.Artists -> bucketIfLargePage(
+                parent = BUCKET_PARENT_ARTISTS,
+                rows = snapshot.artistNames(),
+                bucketKeys = snapshot::artistBucketKeys,
+                item = { ElovaireMediaItems.artist(it, language()) },
+                page = page,
+                pageSize = pageSize,
+            )
+            ElovaireMediaId.Genres -> pageWindow(snapshot.genreNames(), page, pageSize)
+                .map { ElovaireMediaItems.genre(it, language()) }
+            ElovaireMediaId.Playlists -> pageWindow(snapshot.nonEmptyPlaylistsByName(), page, pageSize)
+                .map(ElovaireMediaItems::playlist)
+            ElovaireMediaId.Favorites -> pageWindow(snapshot.favoriteSongsByTitle(), page, pageSize)
+                .map { ElovaireMediaItems.song(it, language()) }
+            ElovaireMediaId.RecentlyAdded -> pageWindow(snapshot.recentlyAddedSongs(), page, pageSize)
+                .map { ElovaireMediaItems.song(it, language()) }
+            ElovaireMediaId.Audiobooks -> pageWindow(snapshot.audiobooks, page, pageSize)
+                .map { ElovaireMediaItems.audiobook(it, language()) }
+            is ElovaireMediaId.Album -> pageWindow(snapshot.album(id.albumId)?.songs.orEmpty(), page, pageSize)
+                .map { ElovaireMediaItems.song(it, language()) }
+            is ElovaireMediaId.Artist -> pageWindow(
+                snapshot.songsForArtistInContext(ElovaireMediaIds.decodeName(id.encodedName)),
+                page,
+                pageSize,
+            ).map { ElovaireMediaItems.song(it, language()) }
+            is ElovaireMediaId.Genre -> pageWindow(
+                snapshot.songsForGenreInContext(ElovaireMediaIds.decodeName(id.encodedName)),
+                page,
+                pageSize,
+            ).map { ElovaireMediaItems.song(it, language()) }
+            is ElovaireMediaId.Playlist -> pageWindow(snapshot.playlistSongs(id.playlistId), page, pageSize)
+                .map { snapshot.mediaItem(it, language()) }
+            is ElovaireMediaId.Audiobook -> pageWindow(snapshot.audiobook(id.stableKey)?.parts.orEmpty(), page, pageSize)
+                .map { part -> ElovaireMediaItems.audiobookPart(part.song, language()) }
+            is ElovaireMediaId.Bucket -> bucketChildrenPage(id, snapshot, page, pageSize)
+            else -> pageWindow(childrenOf(id), page, pageSize)
+        }
+    }
+
+    override fun item(mediaId: String): MediaItem? {
+        val parsed = ElovaireMediaIds.parse(mediaId) ?: return null
+        val snapshot = snapshot()
+        if (!snapshot.permissionGranted) {
+            return when (parsed) {
+                ElovaireMediaId.Root -> ElovaireMediaItems.root()
+                ElovaireMediaId.PermissionRequired -> ElovaireMediaItems.permissionRequiredInfo(language())
+                else -> null
+            }
+        }
+        return when (parsed) {
+            ElovaireMediaId.Root -> ElovaireMediaItems.root()
+            ElovaireMediaId.PermissionRequired -> ElovaireMediaItems.permissionRequiredInfo(language())
+            ElovaireMediaId.EmptyLibrary -> ElovaireMediaItems.emptyLibraryInfo(language())
+            ElovaireMediaId.Songs -> ElovaireMediaItems.songsRoot(language())
+            ElovaireMediaId.Albums -> ElovaireMediaItems.albumsRoot(language())
+            ElovaireMediaId.Artists -> ElovaireMediaItems.artistsRoot(language())
+            ElovaireMediaId.Genres -> ElovaireMediaItems.genresRoot(language())
+            ElovaireMediaId.Playlists -> ElovaireMediaItems.playlistsRoot(language())
+            ElovaireMediaId.Favorites -> ElovaireMediaItems.favoritesRoot(language())
+            ElovaireMediaId.RecentlyAdded -> ElovaireMediaItems.recentlyAddedRoot(language())
+            ElovaireMediaId.Audiobooks -> ElovaireMediaItems.audiobooksRoot(language())
+            is ElovaireMediaId.Song -> snapshot.playableSong(parsed.songId)
+                ?.let { song -> if (song.mediaKind == AudioMediaKind.Audiobook) ElovaireMediaItems.audiobookPart(song, language()) else ElovaireMediaItems.song(song, language()) }
+            is ElovaireMediaId.Album -> snapshot.album(parsed.albumId)
+                ?.let { ElovaireMediaItems.album(it, language()) }
+            is ElovaireMediaId.Artist -> ElovaireMediaItems.artist(ElovaireMediaIds.decodeName(parsed.encodedName), language())
+            is ElovaireMediaId.Genre -> ElovaireMediaItems.genre(ElovaireMediaIds.decodeName(parsed.encodedName), language())
+            is ElovaireMediaId.Playlist -> snapshot.playlist(parsed.playlistId)
+                ?.let(ElovaireMediaItems::playlist)
+            is ElovaireMediaId.Audiobook -> snapshot.audiobook(parsed.stableKey)
+                ?.let { ElovaireMediaItems.audiobook(it, language()) }
+            is ElovaireMediaId.Bucket -> ElovaireMediaItems.bucket(parsed.parent, parsed.key)
+        }
+    }
+
+    override fun resolvePlayableQueue(mediaId: String): ResolvedPlayableQueue? {
+        val parsed = ElovaireMediaIds.parse(mediaId) ?: return null
+        val snapshot = snapshot()
+        if (!snapshot.permissionGranted || snapshot.songs.isEmpty() && snapshot.audiobooks.isEmpty()) return null
+        return when (parsed) {
+            ElovaireMediaId.Songs -> snapshot.songsByTitle().toQueue(ALL_SONGS_PLAYBACK_SOURCE)
+            ElovaireMediaId.Favorites -> snapshot.favoriteSongsByTitle().toQueue(SMART_PLAYLIST_PLAYBACK_SOURCE_PREFIX + BuiltInSmartPlaylistType.Favorites.name)
+            ElovaireMediaId.RecentlyAdded -> snapshot.recentlyAddedSongs().toQueue(SMART_PLAYLIST_PLAYBACK_SOURCE_PREFIX + BuiltInSmartPlaylistType.RecentlyAdded.name)
+            is ElovaireMediaId.Song -> {
+                val song = snapshot.playableSong(parsed.songId) ?: return null
+                if (song.mediaKind == AudioMediaKind.Audiobook) {
+                    val book = snapshot.audiobookContainingSong(song.id) ?: return null
+                    return ResolvedPlayableQueue(
+                        startSong = song,
+                        queue = book.parts.map(AudiobookPart::song),
+                        sourceLabel = book.title,
+                        sourcePlaylistId = null,
+                        audiobookContext = AudiobookPlaybackContext(
+                            bookKey = book.stableKey,
+                            orderedSongIds = book.parts.map { it.song.id },
+                            bookDurationMs = book.durationMs,
+                            orderedSongDurationsMs = book.parts.map { it.song.durationMs },
+                        ),
+                    )
+                }
+                val album = snapshot.album(song.albumId)
+                if (album != null) {
+                    ResolvedPlayableQueue(song, album.songs, album.title, null)
+                } else {
+                    ResolvedPlayableQueue(song, snapshot.songsByTitle(), song.album, null)
+                }
+            }
+            is ElovaireMediaId.Album -> {
+                val album = snapshot.album(parsed.albumId) ?: return null
+                album.songs.toQueue(album.title)
+            }
+            is ElovaireMediaId.Artist -> {
+                val artist = ElovaireMediaIds.decodeName(parsed.encodedName)
+                snapshot.songsForArtistInContext(artist)
+                    .toQueue(if (artist == "Unknown Artist") UNKNOWN_ARTIST_PLAYBACK_SOURCE else artist)
+            }
+            is ElovaireMediaId.Genre -> {
+                val genre = ElovaireMediaIds.decodeName(parsed.encodedName)
+                snapshot.songsForGenreInContext(genre)
+                    .toQueue(if (genre == "Unknown Genre") UNKNOWN_GENRE_PLAYBACK_SOURCE else genre)
+            }
+            is ElovaireMediaId.Playlist -> {
+                val playlist = snapshot.playlist(parsed.playlistId) ?: return null
+                snapshot.playlistSongs(playlist.id).toQueue(playlist.name, playlist.id)
+            }
+            is ElovaireMediaId.Audiobook -> snapshot.audiobook(parsed.stableKey)?.let { book ->
+                book.parts.map { it.song }.toQueue(
+                    sourceLabel = book.title,
+                    audiobookContext = AudiobookPlaybackContext(
+                        bookKey = book.stableKey,
+                        orderedSongIds = book.parts.map { it.song.id },
+                        bookDurationMs = book.durationMs,
+                        orderedSongDurationsMs = book.parts.map { it.song.durationMs },
+                    ),
+                )
+            }
+            is ElovaireMediaId.Bucket -> bucketQueue(parsed, snapshot)
+            ElovaireMediaId.PermissionRequired,
+            ElovaireMediaId.EmptyLibrary,
+            ElovaireMediaId.Root,
+            ElovaireMediaId.Albums,
+            ElovaireMediaId.Artists,
+            ElovaireMediaId.Genres,
+            ElovaireMediaId.Playlists,
+            ElovaireMediaId.Audiobooks,
+            -> null
+        }
+    }
+
+    override fun search(query: String, limit: Int): List<MediaItem> {
+        val snapshot = snapshot()
+        if (!snapshot.permissionGranted || snapshot.songs.isEmpty() && snapshot.audiobooks.isEmpty() || limit <= 0) return emptyList()
+        val normalizedQuery = NormalizedSearchQuery.from(query)
+        return searchMediaIds(snapshot, normalizedQuery, limit).mapNotNull { mediaId ->
+            searchMediaItem(snapshot, mediaId)
+        }
+    }
+
+    private fun searchMediaIds(
+        snapshot: MediaTreeSnapshot,
+        normalizedQuery: NormalizedSearchQuery,
+        limit: Int,
+    ): List<String> {
+        if (limit <= 0) return emptyList()
+        if (normalizedQuery.value.isBlank()) {
+            return defaultQueue(snapshot)?.queue.orEmpty().take(limit).map { song ->
+                ElovaireMediaIds.song(song.id)
+            }
+        }
+        val exactAndStrongTitleSongs = snapshot.searchableSongTitleMatches(
+            query = normalizedQuery.value,
+            limit = limit,
+        )
+        return ArrayList<String>(limit.coerceAtMost(128)).apply {
+            val seen = HashSet<String>(limit.coerceAtMost(128))
+            fun addDistinctId(mediaId: String) {
+                if (size < limit && seen.add(mediaId)) add(mediaId)
+            }
+            fun <T> addDistinctIds(items: Iterable<T>, id: (T) -> String) {
+                for (item in items) {
+                    if (size >= limit) return
+                    addDistinctId(id(item))
+                }
+            }
+            addDistinctIds(exactAndStrongTitleSongs) { ElovaireMediaIds.song(it.id) }
+            if (size < limit) {
+                addDistinctIds(
+                    snapshot.searchableAudiobooks().filter { book ->
+                        book.normalizedTitle.contains(normalizedQuery.value) ||
+                            book.normalizedAuthor.contains(normalizedQuery.value)
+                    },
+                ) { ElovaireMediaIds.audiobook(it.audiobook.stableKey) }
+            }
+            if (size < limit) {
+                addDistinctIds(
+                    searchIndexedAlbumsForPicker(snapshot.searchableAlbums(), normalizedQuery),
+                ) { ElovaireMediaIds.album(it.id) }
+            }
+            if (size < limit) {
+                addDistinctIds(
+                    searchArtistsForPicker(
+                        artists = snapshot.artistSearchRows(),
+                        query = normalizedQuery,
+                        name = NamedSongs::name,
+                        songs = NamedSongs::songs,
+                        songCount = { it.songs.size },
+                    ),
+                ) { ElovaireMediaIds.artist(it.name) }
+            }
+            if (size < limit) {
+                addDistinctIds(
+                    searchIndexedPlaylists(snapshot.searchablePlaylists(), normalizedQuery),
+                ) { ElovaireMediaIds.playlist(it.id) }
+            }
+            if (size < limit) {
+                addDistinctIds(
+                    searchArtistsForPicker(
+                        artists = snapshot.genreSearchRows(),
+                        query = normalizedQuery,
+                        name = NamedSongs::name,
+                        songs = NamedSongs::songs,
+                        songCount = { it.songs.size },
+                    ),
+                ) { ElovaireMediaIds.genre(it.name) }
+            }
+            if (size < limit) {
+                addDistinctIds(
+                    searchIndexedSongsForPicker(snapshot.searchableSongs(), normalizedQuery),
+                ) { ElovaireMediaIds.song(it.id) }
+            }
+        }
+    }
+
+    private fun searchMediaItem(snapshot: MediaTreeSnapshot, mediaId: String): MediaItem? {
+        return when (val parsed = ElovaireMediaIds.parse(mediaId)) {
+            is ElovaireMediaId.Song -> snapshot.playableSong(parsed.songId)?.let { song ->
+                if (song.mediaKind == AudioMediaKind.Audiobook) ElovaireMediaItems.audiobookPart(song, language()) else ElovaireMediaItems.song(song, language())
+            }
+            is ElovaireMediaId.Album -> snapshot.album(parsed.albumId)?.let { ElovaireMediaItems.album(it, language()) }
+            is ElovaireMediaId.Artist -> ElovaireMediaItems.artist(
+                ElovaireMediaIds.decodeName(parsed.encodedName),
+                language(),
+            )
+            is ElovaireMediaId.Genre -> ElovaireMediaItems.genre(
+                ElovaireMediaIds.decodeName(parsed.encodedName),
+                language(),
+            )
+            is ElovaireMediaId.Playlist -> snapshot.playlist(parsed.playlistId)
+                ?.let(ElovaireMediaItems::playlist)
+            is ElovaireMediaId.Audiobook -> snapshot.audiobook(parsed.stableKey)
+                ?.let { ElovaireMediaItems.audiobook(it, language()) }
+            else -> null
+        }
+    }
+
+    override fun searchRevision(): String {
+        val snapshot = snapshot()
+        return buildString {
+            append(snapshot.libraryRevision)
+            append(':')
+            append(System.identityHashCode(snapshot.playlists))
+            append(':')
+            append(snapshot.permissionGranted)
+            append(':')
+            append(language().name)
+        }
+    }
+
+    override fun searchPage(query: String, offset: Int, limit: Int): List<MediaItem> {
+        if (offset < 0 || limit <= 0) return emptyList()
+        val endExclusive = offset.toLong() + limit.toLong()
+        if (endExclusive > MediaLibraryRequestPolicy.MAX_SEARCH_RESULT_ITEMS) return emptyList()
+        val snapshot = snapshot()
+        if (!snapshot.permissionGranted || snapshot.songs.isEmpty() && snapshot.audiobooks.isEmpty()) return emptyList()
+        return searchMediaIds(snapshot, NormalizedSearchQuery.from(query), endExclusive.toInt())
+            .drop(offset)
+            .mapNotNull { mediaId -> searchMediaItem(snapshot, mediaId) }
+    }
+
+    override fun searchCount(query: String): Int {
+        val normalizedQuery = NormalizedSearchQuery.from(query)
+        val snapshot = snapshot()
+        if (!snapshot.permissionGranted || snapshot.songs.isEmpty() && snapshot.audiobooks.isEmpty()) return 0
+        if (normalizedQuery.value.isBlank()) return defaultQueue(snapshot)?.queue?.size ?: 0
+        return searchMediaIds(
+            snapshot = snapshot,
+            normalizedQuery = normalizedQuery,
+            limit = MediaLibraryRequestPolicy.MAX_SEARCH_RESULT_ITEMS,
+        ).size
+    }
+
+    override fun resolveSearchQueue(query: String): ResolvedPlayableQueue? {
+        val snapshot = snapshot()
+        if (!snapshot.permissionGranted || snapshot.songs.isEmpty() && snapshot.audiobooks.isEmpty()) return null
+        val normalizedQuery = NormalizedSearchQuery.from(query)
+        if (normalizedQuery.value.isBlank()) return defaultQueue(snapshot)
+        search(query, limit = 1).firstOrNull()?.let { return resolvePlayableQueue(it.mediaId) }
+        return null
+    }
+
+    override fun defaultPlayableQueue(): ResolvedPlayableQueue? {
+        val snapshot = snapshot()
+        if (!snapshot.permissionGranted || snapshot.songs.isEmpty() && snapshot.audiobooks.isEmpty()) return null
+        return defaultQueue(snapshot) ?: snapshot.audiobooks.firstOrNull()?.let { book ->
+            audiobookQueue(book, book.parts.firstOrNull()?.song)
+        }
+    }
+
+    override fun resumptionQueue(): ResolvedPlayableQueue? {
+        val snapshot = snapshot()
+        if (!snapshot.permissionGranted || snapshot.songs.isEmpty() && snapshot.audiobooks.isEmpty()) return null
+        val recentSong = snapshot.recentSongIds.firstNotNullOfOrNull { songId ->
+            snapshot.playableSong(songId)
+        } ?: return null
+        if (recentSong.mediaKind == AudioMediaKind.Audiobook) {
+            val book = snapshot.audiobookContainingSong(recentSong.id) ?: return null
+            return audiobookQueue(book, recentSong)
+        }
+        return when (snapshot.lastPlayedCollectionKind) {
+            PlaybackCollectionKind.Playlist -> snapshot.lastPlayedCollectionId
+                ?.let(snapshot::playlistSongs)
+                ?.takeIf { songs -> songs.any { it.id == recentSong.id } }
+                ?.let { songs ->
+                    val playlistName = snapshot.playlists.firstOrNull { it.id == snapshot.lastPlayedCollectionId }?.name
+                    ResolvedPlayableQueue(recentSong, songs, playlistName ?: "Playlist", snapshot.lastPlayedCollectionId)
+                }
+            PlaybackCollectionKind.Album -> snapshot.lastPlayedCollectionId
+                ?.let(snapshot::album)
+                ?.takeIf { album -> album.songs.any { it.id == recentSong.id } }
+                ?.let { album -> ResolvedPlayableQueue(recentSong, album.songs, album.title, null) }
+            null -> null
+        } ?: snapshot.album(recentSong.albumId)
+            ?.let { album -> ResolvedPlayableQueue(recentSong, album.songs, album.title, null) }
+            ?: ResolvedPlayableQueue(recentSong, snapshot.songsByTitle(), ALL_SONGS_PLAYBACK_SOURCE, null)
+    }
+
+    private fun snapshot(): MediaTreeSnapshot {
+        val content = libraryRepository.contentState.value
+        val scan = libraryRepository.scanState.value
+        val userData = preferenceStore.userDataSnapshot.value
+        return snapshotCache.snapshot(
+            permissionGranted = scan.permissionGranted,
+            songs = content.songs,
+            albums = content.albums,
+            audiobooks = content.audiobooks,
+            libraryRevision = content.contentRevision,
+            playlists = userData.playlists,
+            favoriteSongIds = userData.favoriteSongIds,
+            recentSongIds = userData.recentSongIds,
+            lastPlayedCollectionKind = userData.lastPlayedCollectionKind,
+            lastPlayedCollectionId = userData.lastPlayedCollectionId,
+        )
+    }
+
+    private fun List<Song>.toQueue(
+        sourceLabel: String,
+        sourcePlaylistId: Long? = null,
+        audiobookContext: AudiobookPlaybackContext? = null,
+    ): ResolvedPlayableQueue? {
+        val startSong = firstOrNull() ?: return null
+        return ResolvedPlayableQueue(startSong, this, sourceLabel, sourcePlaylistId, audiobookContext)
+    }
+
+    private fun bucketChildren(
+        id: ElovaireMediaId.Bucket,
+        snapshot: MediaTreeSnapshot,
+    ): List<MediaItem> {
+        return when (id.parent) {
+            BUCKET_PARENT_SONGS -> snapshot.songsForBucket(id.key)
+                .map { ElovaireMediaItems.song(it, language()) }
+            BUCKET_PARENT_ALBUMS -> snapshot.albumsForBucket(id.key)
+                .map { ElovaireMediaItems.album(it, language()) }
+            BUCKET_PARENT_ARTISTS -> snapshot.artistsForBucket(id.key)
+                .map { ElovaireMediaItems.artist(it, language()) }
+            else -> emptyList()
+        }
+    }
+
+    private fun bucketChildrenPage(
+        id: ElovaireMediaId.Bucket,
+        snapshot: MediaTreeSnapshot,
+        page: Int,
+        pageSize: Int,
+    ): List<MediaItem> {
+        return when (id.parent) {
+            BUCKET_PARENT_SONGS -> pageWindow(snapshot.songsForBucket(id.key), page, pageSize)
+                .map { ElovaireMediaItems.song(it, language()) }
+            BUCKET_PARENT_ALBUMS -> pageWindow(snapshot.albumsForBucket(id.key), page, pageSize)
+                .map { ElovaireMediaItems.album(it, language()) }
+            BUCKET_PARENT_ARTISTS -> pageWindow(snapshot.artistsForBucket(id.key), page, pageSize)
+                .map { ElovaireMediaItems.artist(it, language()) }
+            else -> emptyList()
+        }
+    }
+
+    private fun bucketQueue(
+        id: ElovaireMediaId.Bucket,
+        snapshot: MediaTreeSnapshot,
+    ): ResolvedPlayableQueue? {
+        return when (id.parent) {
+            BUCKET_PARENT_SONGS -> snapshot.songsForBucket(id.key).toQueue(SONG_BUCKET_PLAYBACK_SOURCE_PREFIX + id.key)
+            else -> null
+        }
+    }
+
+    private inline fun <T> bucketIfLarge(
+        parent: String,
+        rows: List<T>,
+        crossinline bucketKeys: () -> List<String>,
+        item: (T) -> MediaItem,
+    ): List<MediaItem> {
+        if (rows.size <= DIRECT_BROWSE_LIMIT) return rows.map(item)
+        return bucketKeys().map { ElovaireMediaItems.bucket(parent, it) }
+    }
+
+    private inline fun <T> bucketIfLargePage(
+        parent: String,
+        rows: List<T>,
+        crossinline bucketKeys: () -> List<String>,
+        item: (T) -> MediaItem,
+        page: Int,
+        pageSize: Int,
+    ): List<MediaItem> {
+        if (rows.size <= DIRECT_BROWSE_LIMIT) {
+            return pageWindow(rows, page, pageSize).map(item)
+        }
+        return pageWindow(bucketKeys(), page, pageSize)
+            .map { ElovaireMediaItems.bucket(parent, it) }
+    }
+
+    private fun <T> pageWindow(rows: List<T>, page: Int, pageSize: Int): List<T> {
+        if (page < 0 || pageSize <= 0) return emptyList()
+        val from = page.toLong() * pageSize.toLong()
+        if (from >= rows.size) return emptyList()
+        val to = (from + pageSize.toLong()).coerceAtMost(rows.size.toLong())
+        return rows.subList(from.toInt(), to.toInt())
+    }
+
+    private fun defaultQueue(snapshot: MediaTreeSnapshot): ResolvedPlayableQueue? {
+        return snapshot.favoriteSongsByTitle().toQueue(SMART_PLAYLIST_PLAYBACK_SOURCE_PREFIX + BuiltInSmartPlaylistType.Favorites.name)
+            ?: snapshot.recentlyAddedSongs().toQueue(SMART_PLAYLIST_PLAYBACK_SOURCE_PREFIX + BuiltInSmartPlaylistType.RecentlyAdded.name)
+            ?: snapshot.songsByTitle().toQueue(ALL_SONGS_PLAYBACK_SOURCE)
+    }
+
+    private fun audiobookQueue(book: Audiobook, startSong: Song?): ResolvedPlayableQueue? {
+        val queue = book.parts.map(AudiobookPart::song).distinctBy(Song::id)
+        val resolvedStartSong = startSong?.takeIf { candidate -> queue.any { it.id == candidate.id } }
+            ?: queue.firstOrNull()
+            ?: return null
+        return ResolvedPlayableQueue(
+            startSong = resolvedStartSong,
+            queue = queue,
+            sourceLabel = book.title,
+            sourcePlaylistId = null,
+            audiobookContext = AudiobookPlaybackContext(
+                bookKey = book.stableKey,
+                orderedSongIds = queue.map(Song::id),
+                bookDurationMs = book.durationMs,
+                orderedSongDurationsMs = queue.map(Song::durationMs),
+            ),
+        )
+    }
+
+    internal class MediaTreeSnapshot(
+        val permissionGranted: Boolean,
+        val songs: List<Song>,
+        val albums: List<Album>,
+        val playlists: List<Playlist>,
+        favoriteSongIdSource: List<Long>,
+        favoriteSongIds: Set<Long>,
+        recentSongIds: List<Long>,
+        lastPlayedCollectionKind: PlaybackCollectionKind?,
+        lastPlayedCollectionId: Long?,
+        val libraryRevision: String = "",
+        val audiobooks: List<Audiobook> = emptyList(),
+    ) {
+        @Volatile
+        private var favoriteSongIdSource = favoriteSongIdSource
+        @Volatile
+        var favoriteSongIds = favoriteSongIds
+            private set
+        @Volatile
+        var recentSongIds = recentSongIds
+            private set
+        @Volatile
+        var lastPlayedCollectionKind = lastPlayedCollectionKind
+            private set
+        @Volatile
+        var lastPlayedCollectionId = lastPlayedCollectionId
+            private set
+        private var favoriteSongsCache: List<Song>? = null
+        private var favoriteSongsByTitleCache: List<Song>? = null
+        private val songsByTitle by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            sortedByDisplayName(songs, Song::title, Song::id)
+        }
+        private val albumsByTitle by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            sortedByDisplayName(albums, Album::title, Album::id)
+        }
+        private val nonEmptyPlaylistsByName by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            sortedByDisplayName(
+                playlists.filter { it.songIds.isNotEmpty() },
+                Playlist::name,
+                Playlist::id,
+            )
+        }
+        private val recentlyAddedSongs by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            val keyedSongs = songs.map { song ->
+                song to song.title.lowercase(Locale.ROOT)
+            }
+            keyedSongs.sortedWith(
+                compareByDescending<Pair<Song, String>> { it.first.dateAddedSeconds }
+                    .thenBy { it.second }
+                    .thenBy { it.first.title }
+                    .thenBy { it.first.id },
+            ).map { it.first }
+        }
+        private val artistNames by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            sortedDistinctNames(songs.asSequence().map(Song::libraryArtistName))
+        }
+        private val songsByBucket by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            songsByTitle().groupBy { bucketKey(it.title) }
+        }
+        private val albumsByBucket by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            albumsByTitle().groupBy { bucketKey(it.title) }
+        }
+        private val artistsByBucket by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            artistNames().groupBy(::bucketKey)
+        }
+        private val songBucketLabels by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            sortedBucketLabels(songsByBucket.keys)
+        }
+        private val albumBucketLabels by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            sortedBucketLabels(albumsByBucket.keys)
+        }
+        private val artistBucketLabels by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            sortedBucketLabels(artistsByBucket.keys)
+        }
+        private val genreNames by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            sortedDistinctNames(songs.asSequence().map { it.genre.ifBlank { UNKNOWN_GENRE } })
+        }
+        private val usefulGenres by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            songs.any { it.genre.isNotBlank() && it.genre != UNKNOWN_GENRE }
+        }
+        private val songsById by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { songs.associateBy(Song::id) }
+        private val audiobookSongsById by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            audiobooks.asSequence()
+                .flatMap { it.parts.asSequence().map(AudiobookPart::song) }
+                .associateBy(Song::id)
+        }
+        private val audiobooksByStableKey by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            buildMap<String, Audiobook> {
+                audiobooks.forEach { book -> putIfAbsent(book.stableKey, book) }
+            }
+        }
+        private val audiobooksBySongId by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            buildMap<Long, Audiobook> {
+                audiobooks.forEach { book ->
+                    book.parts.forEach { part -> putIfAbsent(part.song.id, book) }
+                }
+            }
+        }
+        private val albumsById by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { albums.associateBy(Album::id) }
+        private val playlistsById by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { playlists.associateBy(Playlist::id) }
+        private val searchableSongs by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { songs.map(Song::toSearchableSong) }
+        private val searchableSongsByTitle by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            searchableSongs.sortedBy(SearchableSong::normalizedTitle)
+        }
+        private val searchableAlbums by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { albums.map(Album::toSearchableAlbum) }
+        private val searchableAudiobooks by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            audiobooks.map(Audiobook::toSearchableAudiobook)
+        }
+        private val searchablePlaylists by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            playlists
+                .filter { it.songIds.isNotEmpty() }
+                .map { playlist ->
+                    val normalizedName = normalizeSearchText(playlist.name)
+                    SearchablePlaylist(
+                        playlist = playlist,
+                        normalizedName = normalizedName,
+                        normalizedComposite = normalizedName,
+                    )
+                }
+        }
+        private val songsByArtist by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            songs.groupBy { it.libraryArtistName().lowercase(Locale.ROOT) }
+        }
+        private val songsByGenre by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            songs.groupBy { it.genre.ifBlank { UNKNOWN_GENRE }.lowercase(Locale.ROOT) }
+        }
+        private val songsByArtistForContext = hashMapOf<String, List<Song>>()
+        private val songsByGenreForContext = hashMapOf<String, List<Song>>()
+        private val artistSearchRows by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            artistNames.map { name -> NamedSongs(name = name, songs = songsForArtist(name)) }
+        }
+        private val genreSearchRows by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            genreNames.map { name -> NamedSongs(name = name, songs = songsForGenre(name)) }
+        }
+
+        @Synchronized
+        fun updatePlaybackContext(
+            favoriteSongIds: List<Long>,
+            recentSongIds: List<Long>,
+            lastPlayedCollectionKind: PlaybackCollectionKind?,
+            lastPlayedCollectionId: Long?,
+        ) {
+            if (this.favoriteSongIdSource != favoriteSongIds) {
+                this.favoriteSongIdSource = favoriteSongIds
+                this.favoriteSongIds = favoriteSongIds.toSet()
+                favoriteSongsCache = null
+                favoriteSongsByTitleCache = null
+            }
+            if (this.recentSongIds != recentSongIds) this.recentSongIds = recentSongIds
+            this.lastPlayedCollectionKind = lastPlayedCollectionKind
+            this.lastPlayedCollectionId = lastPlayedCollectionId
+        }
+
+        @Synchronized
+        fun favoriteSongs(): List<Song> = favoriteSongsCache ?: songs
+            .filter { it.id in favoriteSongIds }
+            .also { favoriteSongsCache = it }
+
+        @Synchronized
+        fun favoriteSongsByTitle(): List<Song> = favoriteSongsByTitleCache ?: sortedByDisplayName(
+            favoriteSongs(),
+            Song::title,
+            Song::id,
+        ).also { favoriteSongsByTitleCache = it }
+        fun songsByTitle(): List<Song> = songsByTitle
+        fun albumsByTitle(): List<Album> = albumsByTitle
+        fun nonEmptyPlaylistsByName(): List<Playlist> = nonEmptyPlaylistsByName
+        fun recentlyAddedSongs(): List<Song> = recentlyAddedSongs
+        fun artistNames(): List<String> = artistNames
+        fun songBucketKeys(): List<String> = songBucketLabels
+        fun albumBucketKeys(): List<String> = albumBucketLabels
+        fun artistBucketKeys(): List<String> = artistBucketLabels
+        fun songsForBucket(key: String): List<Song> = songsByBucket[key].orEmpty()
+        fun albumsForBucket(key: String): List<Album> = albumsByBucket[key].orEmpty()
+        fun artistsForBucket(key: String): List<String> = artistsByBucket[key].orEmpty()
+        fun genreNames(): List<String> = genreNames
+        fun searchableSongs(): List<SearchableSong> = searchableSongs
+        fun searchableSongTitleMatches(query: String, limit: Int): List<Song> {
+            if (query.isBlank() || limit <= 0) return emptyList()
+            val ordered = searchableSongsByTitle
+            var low = 0
+            var high = ordered.size
+            while (low < high) {
+                val middle = (low + high) ushr 1
+                if (ordered[middle].normalizedTitle < query) {
+                    low = middle + 1
+                } else {
+                    high = middle
+                }
+            }
+            val matches = ArrayList<Song>(limit.coerceAtMost(64))
+            while (low < ordered.size) {
+                val searchable = ordered[low]
+                if (!searchable.normalizedTitle.startsWith(query)) break
+                matches += searchable.song
+                low++
+                if (matches.size >= limit) break
+            }
+            return matches
+        }
+        fun searchableAlbums(): List<SearchableAlbum> = searchableAlbums
+        fun searchableAudiobooks(): List<SearchableAudiobook> = searchableAudiobooks
+        fun searchablePlaylists(): List<SearchablePlaylist> = searchablePlaylists
+        fun artistSearchRows(): List<NamedSongs> = artistSearchRows
+        fun genreSearchRows(): List<NamedSongs> = genreSearchRows
+        fun song(id: Long): Song? = songsById[id]
+        fun playableSong(id: Long): Song? = songsById[id] ?: audiobookSongsById[id]
+        fun album(id: Long): Album? = albumsById[id]
+        fun audiobook(stableKey: String): Audiobook? = audiobooksByStableKey[stableKey]
+        fun audiobookContainingSong(songId: Long): Audiobook? = audiobooksBySongId[songId]
+        fun playlist(id: Long): Playlist? = playlistsById[id]
+        fun mediaItem(song: Song, language: AppLanguage): MediaItem = if (song.mediaKind == AudioMediaKind.Audiobook) {
+            ElovaireMediaItems.audiobookPart(song, language)
+        } else {
+            ElovaireMediaItems.song(song, language)
+        }
+        fun songsForArtist(name: String): List<Song> = songsByArtist[name.lowercase(Locale.ROOT)].orEmpty()
+        fun songsForGenre(name: String): List<Song> = songsByGenre[name.lowercase(Locale.ROOT)].orEmpty()
+        fun songsForArtistInContext(name: String): List<Song> = synchronized(songsByArtistForContext) {
+            val key = name.lowercase(Locale.ROOT)
+            val songs = songsByArtist[key] ?: return emptyList()
+            songsByArtistForContext.getOrPut(key) { sortedSongsForContext(songs) }
+        }
+        fun songsForGenreInContext(name: String): List<Song> = synchronized(songsByGenreForContext) {
+            val key = name.lowercase(Locale.ROOT)
+            val songs = songsByGenre[key] ?: return emptyList()
+            songsByGenreForContext.getOrPut(key) { sortedSongsForContext(songs) }
+        }
+        fun hasUsefulGenres(): Boolean = usefulGenres
+        fun playlistSongs(playlistId: Long): List<Song> {
+            val playlist = playlistsById[playlistId] ?: return emptyList()
+            return playlist.songIds.mapNotNull(::playableSong)
+        }
+    }
+
+    internal data class NamedSongs(
+        val name: String,
+        val songs: List<Song>,
+    )
+
+    private companion object {
+        const val DIRECT_BROWSE_LIMIT = 100
+        const val BUCKET_PARENT_SONGS = "songs"
+        const val BUCKET_PARENT_ALBUMS = "albums"
+        const val BUCKET_PARENT_ARTISTS = "artists"
+        const val UNKNOWN_GENRE = "Unknown Genre"
+    }
+}
+
+private data class DisplayNameSortKey<T>(
+    val value: T,
+    val normalizedName: String,
+    val originalName: String,
+    val id: Long,
+)
+
+private fun <T> sortedByDisplayName(
+    values: List<T>,
+    name: (T) -> String,
+    id: (T) -> Long,
+): List<T> = values
+    .map { value ->
+        val originalName = name(value)
+        DisplayNameSortKey(value, originalName.lowercase(Locale.ROOT), originalName, id(value))
+    }
+    .sortedWith(
+        compareBy<DisplayNameSortKey<T>>(
+            DisplayNameSortKey<T>::normalizedName,
+            DisplayNameSortKey<T>::originalName,
+            DisplayNameSortKey<T>::id,
+        ),
+    )
+    .map(DisplayNameSortKey<T>::value)
+
+private data class ContextSongSortKey(
+    val song: Song,
+    val normalizedAlbum: String,
+    val normalizedTitle: String,
+)
+
+private fun sortedSongsForContext(songs: List<Song>): List<Song> = songs
+    .map { song ->
+        ContextSongSortKey(
+            song = song,
+            normalizedAlbum = song.album.lowercase(Locale.ROOT),
+            normalizedTitle = song.title.lowercase(Locale.ROOT),
+        )
+    }
+    .sortedWith(
+        compareBy<ContextSongSortKey>(ContextSongSortKey::normalizedAlbum)
+            .thenBy { it.song.discNumber }
+            .thenBy { it.song.trackNumber }
+            .thenBy(ContextSongSortKey::normalizedTitle)
+            .thenBy { it.song.id },
+    )
+    .map(ContextSongSortKey::song)
+
+internal class MediaTreeSnapshotCache {
+    private var snapshot: ElovaireMediaTree.MediaTreeSnapshot? = null
+    private var musicSongSource: List<Song>? = null
+    private var musicSongRevision: String = ""
+    private var musicSongs: List<Song>? = null
+
+    @Synchronized
+    fun clear() {
+        snapshot = null
+        musicSongSource = null
+        musicSongRevision = ""
+        musicSongs = null
+    }
+
+    @Synchronized
+    fun snapshot(
+        permissionGranted: Boolean,
+        songs: List<Song>,
+        albums: List<Album>,
+        playlists: List<Playlist>,
+        favoriteSongIds: List<Long>,
+        recentSongIds: List<Long>,
+        lastPlayedCollectionKind: PlaybackCollectionKind?,
+        lastPlayedCollectionId: Long?,
+        libraryRevision: String = "",
+        audiobooks: List<Audiobook> = emptyList(),
+    ): ElovaireMediaTree.MediaTreeSnapshot {
+        val musicSongs = when {
+            libraryRevision.isNotBlank() && musicSongRevision == libraryRevision ->
+                requireNotNull(this.musicSongs)
+            libraryRevision.isBlank() && musicSongSource === songs -> requireNotNull(this.musicSongs)
+            else -> songs.filter { it.mediaKind == AudioMediaKind.Music }.also {
+                musicSongSource = songs
+                musicSongRevision = libraryRevision
+                this.musicSongs = it
+            }
+        }
+        snapshot?.takeIf {
+            it.permissionGranted == permissionGranted &&
+                (libraryRevision.isNotBlank() && it.libraryRevision == libraryRevision ||
+                    libraryRevision.isBlank() && it.songs === musicSongs && it.albums === albums) &&
+                it.audiobooks === audiobooks &&
+                it.playlists === playlists
+        }?.let { cached ->
+            cached.updatePlaybackContext(
+                favoriteSongIds = favoriteSongIds,
+                recentSongIds = recentSongIds,
+                lastPlayedCollectionKind = lastPlayedCollectionKind,
+                lastPlayedCollectionId = lastPlayedCollectionId,
+            )
+            return cached
+        }
+        return ElovaireMediaTree.MediaTreeSnapshot(
+            permissionGranted = permissionGranted,
+            songs = musicSongs,
+            albums = albums,
+            audiobooks = audiobooks,
+            libraryRevision = libraryRevision,
+            playlists = playlists,
+            favoriteSongIdSource = favoriteSongIds,
+            favoriteSongIds = favoriteSongIds.toSet(),
+            recentSongIds = recentSongIds,
+            lastPlayedCollectionKind = lastPlayedCollectionKind,
+            lastPlayedCollectionId = lastPlayedCollectionId,
+        ).also { snapshot = it }
+    }
+}
+
+private fun Song.libraryArtistName(): String {
+    return albumArtist?.takeIf { it.isNotBlank() } ?: artist.ifBlank { "Unknown Artist" }
+}
+
+internal data class ResolvedPlayableQueue(
+    val startSong: Song,
+    val queue: List<Song>,
+    val sourceLabel: String,
+    val sourcePlaylistId: Long?,
+    val audiobookContext: AudiobookPlaybackContext? = null,
+)

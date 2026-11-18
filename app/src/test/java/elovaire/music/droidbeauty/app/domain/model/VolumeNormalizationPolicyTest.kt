@@ -1,0 +1,119 @@
+package elovaire.music.droidbeauty.app.domain.model
+
+import kotlin.math.abs
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class VolumeNormalizationPolicyTest {
+    @Test
+    fun invalidTrackValuesFallBackToValidAlbumMetadata() {
+        val metadata = VolumeNormalizationMetadata(
+            trackGainDb = Float.NaN, albumGainDb = 6f,
+            trackPeak = Float.NaN, albumPeak = 0.8f,
+        )
+        assertEquals(1.25f, VolumeNormalizationPolicy.multiplierFor(metadata), 0.001f)
+    }
+
+    @Test
+    fun peakProtectionCanReduceGainBelowNormalFloor() {
+        val metadata = VolumeNormalizationMetadata(trackGainDb = -30f, trackPeak = 8f)
+        assertEquals(0.125f, VolumeNormalizationPolicy.multiplierFor(metadata), 0.001f)
+    }
+
+    @Test
+    fun peakParsingSupportsScientificNotation() {
+        assertEquals(0.125f, VolumeNormalizationPolicy.parsePeak("1.25e-1") ?: 0f, 0.0001f)
+    }
+
+    @Test
+    fun parseGain_acceptsReplayGainDbValues() {
+        assertEquals(-7.5f, VolumeNormalizationPolicy.parseGain("-7.50 dB") ?: 0f, 0.001f)
+        assertEquals(3.25f, VolumeNormalizationPolicy.parseGain("+3.25 dB") ?: 0f, 0.001f)
+    }
+
+    @Test
+    fun parseGain_acceptsR128FixedPointValues() {
+        assertEquals(-5f, VolumeNormalizationPolicy.parseGain("-1280", r128 = true) ?: 0f, 0.001f)
+        assertEquals(0.0234375f, VolumeNormalizationPolicy.parseGain("6", r128 = true) ?: 0f, 0.0001f)
+    }
+
+    @Test
+    fun multiplier_usesNeutralGainForMissingOrMalformedMetadata() {
+        assertEquals(1f, VolumeNormalizationPolicy.multiplierFor(null), 0.001f)
+        assertEquals(null, VolumeNormalizationPolicy.parseGain("not a gain"))
+    }
+
+    @Test
+    fun multiplier_limitsClippingWhenPeakIsPresent() {
+        val multiplier = VolumeNormalizationPolicy.multiplierFor(
+            VolumeNormalizationMetadata(
+                trackGainDb = 6f,
+                trackPeak = 0.8f,
+            ),
+        )
+        assertEquals(1.25f, multiplier, 0.001f)
+    }
+
+    @Test
+    fun multiplier_reducesNegativeGain() {
+        val multiplier = VolumeNormalizationPolicy.multiplierFor(
+            VolumeNormalizationMetadata(trackGainDb = -6f),
+        )
+        assertTrue(abs(multiplier - 0.501f) < 0.01f)
+    }
+
+    @Test
+    fun multiplier_prefersTrackGainAndPeakOverAlbumValues() {
+        val multiplier = VolumeNormalizationPolicy.multiplierFor(
+            VolumeNormalizationMetadata(
+                trackGainDb = -6f,
+                albumGainDb = 6f,
+                trackPeak = 0.5f,
+                albumPeak = 2f,
+            ),
+        )
+
+        assertTrue(abs(multiplier - 0.501f) < 0.01f)
+    }
+
+    @Test
+    fun effectiveGain_appliesPositiveNormalizationWhenHeadroomExists() {
+        val gain = VolumeNormalizationPolicy.effectivePlayerGain(
+            baseGain = 0.5f,
+            metadata = VolumeNormalizationMetadata(trackGainDb = 6f),
+            enabled = true,
+            softwareGainAllowed = true,
+        )
+
+        assertTrue(gain > 0.5f)
+    }
+
+    @Test
+    fun effectiveGain_usesNeutralGainWhenSoftwareGainIsBypassed() {
+        val gain = VolumeNormalizationPolicy.effectivePlayerGain(
+            baseGain = 0.5f,
+            metadata = VolumeNormalizationMetadata(trackGainDb = -6f),
+            enabled = true,
+            softwareGainAllowed = false,
+        )
+
+        assertEquals(1f, gain, 0.001f)
+    }
+
+    @Test
+    fun activeNormalizationIsSignalAlteringOnlyForNonNeutralGain() {
+        assertTrue(
+            VolumeNormalizationPolicy.isSignalAltering(
+                metadata = VolumeNormalizationMetadata(trackGainDb = -3f),
+                enabled = true,
+            ),
+        )
+        assertTrue(
+            !VolumeNormalizationPolicy.isSignalAltering(
+                metadata = VolumeNormalizationMetadata(trackGainDb = 0f),
+                enabled = true,
+            ),
+        )
+    }
+}

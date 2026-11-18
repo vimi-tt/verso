@@ -1,0 +1,131 @@
+package elovaire.music.droidbeauty.app.data.playback
+
+import elovaire.music.droidbeauty.app.domain.model.Album
+import elovaire.music.droidbeauty.app.domain.model.Song
+import kotlinx.coroutines.flow.StateFlow
+
+internal data class PlaybackPersistenceSnapshot(
+    val queueSongIds: List<Long>,
+    val currentSongId: Long?,
+    val currentIndex: Int,
+    val positionMs: Long,
+    val repeatMode: PlaybackRepeatMode,
+    val shuffleEnabled: Boolean,
+    val sourcePlaylistId: Long?,
+    val wasPlaying: Boolean,
+)
+
+interface PlaybackReader {
+    val nowPlayingState: StateFlow<PlaybackNowPlayingState>
+    val transportState: StateFlow<PlaybackTransportState>
+    val queueState: StateFlow<PlaybackQueueState>
+    val volumeState: StateFlow<PlaybackVolumeState>
+    val recentPlaybackState: StateFlow<RecentPlaybackState>
+}
+
+interface PlaybackController {
+    fun togglePlayback()
+    fun skipNext()
+    fun skipPrevious()
+    fun seekTo(positionMs: Long)
+    fun setPlaybackSpeed(speed: Float)
+}
+
+/** Commands that can change the shared playback queue. */
+interface PlaybackQueueCommands {
+    fun playSong(
+        song: Song,
+        collection: List<Song>,
+        sourceLabel: String? = song.album,
+        shuffleEnabled: Boolean = false,
+        sourcePlaylistId: Long? = null,
+    )
+
+    fun playAlbum(
+        album: Album,
+        startSongId: Long? = null,
+        sourceLabel: String? = album.title,
+        shuffleEnabled: Boolean = false,
+        sourcePlaylistId: Long? = null,
+    )
+
+    fun enqueueSong(song: Song)
+}
+
+/** The smallest playback surface needed by the player screen and its state holder. */
+interface NowPlayingPlayback : PlaybackReader, PlaybackController, PlaybackQueueCommands {
+    val progressState: StateFlow<PlaybackProgressState>
+    val sleepTimerState: StateFlow<PlaybackSleepTimerState>
+    val audiobookProgressRevision: StateFlow<Long>
+
+    fun setProgressConsumerActive(consumer: PlaybackProgressConsumer, active: Boolean)
+    fun cycleRepeatMode()
+    fun toggleShuffle()
+    fun setVolume(volume: Float)
+    fun setSleepTimer(option: SleepTimerOption)
+    fun playQueueIndex(index: Int)
+    fun removeQueueIndex(index: Int)
+    fun beginScrub()
+    fun updateScrubPosition(positionMs: Long)
+    fun finishScrub(positionMs: Long)
+    fun cancelScrub()
+    fun playSongAtPosition(
+        song: Song,
+        collection: List<Song>,
+        positionMs: Long,
+        sourceLabel: String? = song.album,
+        shuffleEnabled: Boolean = false,
+        sourcePlaylistId: Long? = null,
+        audiobookContext: AudiobookPlaybackContext? = null,
+    )
+    fun audiobookProgress(bookKey: String, songId: Long): Long
+    fun audiobookResumeSongId(bookKey: String): Long?
+    fun audiobookProgress(bookKey: String): AudiobookProgress?
+    fun restorePausedQueue(
+        songs: List<Song>,
+        currentIndex: Int,
+        positionMs: Long,
+        sourceLabel: String,
+    ) {}
+}
+
+/** Playback capabilities used by startup and recovery integration. */
+internal interface PlaybackIntegrationPort : PlaybackReader {
+    val progressState: StateFlow<PlaybackProgressState>
+
+    fun hasActiveQueue(): Boolean
+    fun reevaluateAudioOutputPath()
+    fun setCrossfadeEnabled(enabled: Boolean)
+    fun setCrossfadeDurationMs(value: Long)
+    fun setCrossfadeSilenceThresholdDb(value: Float)
+    fun setVolumeNormalizationEnabled(enabled: Boolean)
+
+    fun refreshQueuedLibraryMetadataIfNeeded(
+        updatedSongs: List<Song>,
+        authoritative: Boolean = false,
+    )
+
+    fun hydrateRecentPlayback(
+        songIds: List<Long>,
+        albumIds: List<Long>,
+        lastPlayedCollectionKind: PlaybackCollectionKind?,
+        lastPlayedCollectionId: Long?,
+    )
+
+    fun currentPositionForPersistence(): Long
+
+    fun capturePersistenceSnapshot(): PlaybackPersistenceSnapshot
+
+    fun checkpointAudiobookProgress(force: Boolean = false)
+
+    fun restoreSession(
+        songs: List<Song>,
+        currentIndex: Int,
+        persisted: PersistedPlaybackSession,
+    )
+}
+
+/** Queue mutation needed after a device delete has been committed. */
+internal interface PlaybackQueueMutationPort {
+    fun removeSongsFromQueue(songIds: Set<Long>)
+}

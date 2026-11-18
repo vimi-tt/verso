@@ -1,0 +1,196 @@
+package elovaire.music.droidbeauty.app.data.library.network
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+internal data class NetworkSourceMutationOutcome(
+    val probeResult: NetworkProbeResult,
+    val refreshRequired: Boolean,
+)
+
+internal interface NetworkSourceMutationBackend {
+    suspend fun save(
+        source: NetworkLibrarySource,
+        credentials: NetworkCredentials,
+    ): NetworkSourceMutationOutcome
+
+    suspend fun remove(source: NetworkLibrarySource)
+}
+
+/** Applies one already-serialized source mutation while preserving journal ordering. */
+internal class NetworkSourceCoordinator(
+    private val sourceStore: NetworkLibrarySourceStore,
+    private val credentialStoreProvider: () -> NetworkCredentialStore,
+    private val registryProvider: () -> NetworkFileSystemRegistry,
+    private val inventoryStore: NetworkInventoryStore,
+    private val mutationJournal: NetworkSourceMutationJournal,
+) : NetworkSourceMutationBackend {
+    private val mutationMutex = Mutex()
+
+    override suspend fun save(
+        source: NetworkLibrarySource,
+        credentials: NetworkCredentials,
+    ): NetworkSourceMutationOutcome {
+        val saved = mutationMutex.withLock { saveLocked(source, credentials) }
+        return NetworkSourceMutationOutcome(
+            probeResult = networkProbeResult(
+                attempt = { registryProvider().probeBlocking(saved.source, saved.credentials) },
+                onFailure = { failure ->
+                    NetworkProbeResult(
+                        availability = failure.remoteIoFailureKind().toNetworkAvailability(),
+                        message = failure::class.simpleName,
+                    )
+                },
+            ),
+            refreshRequired = saved.refreshRequired,
+        )
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun saveLocked(
+        source: NetworkLibrarySource,
+        credentials: NetworkCredentials,
+    ): PersistedNetworkSourceSave {
+        val credentialStore = credentialStoreProvider()
+        val previousSource = sourceStore.sources.value.firstOrNull { it.id == source.id }
+        val previousResult = credentialStore.read(
+            sourceId = source.id,
+            key = previousSource?.credentialKey ?: source.credentialKey,
+        )
+        val previous = when (previousResult) {
+            NetworkCredentialReadResult.Missing -> null
+            is NetworkCredentialReadResult.Available -> previousResult.credentials.also {
+                credentialStore.migrateIfNeeded(source.id, previousSource?.credentialKey ?: source.credentialKey, previousResult)
+            }
+            NetworkCredentialReadResult.KeyUnavailable,
+            is NetworkCredentialReadResult.Corrupt,
+            -> if (credentials.password.isBlank()) {
+                throw IllegalStateException("Stored network credentials are unavailable; enter the password again")
+            } else {
+                null
+            }
+        }
+        val effectiveCredentials = if (credentials.password.isBlank() && previous != null) {
+            previous.copy(
+                username = credentials.username.ifBlank { previous.username },
+                domain = credentials.domain ?: previous.domain,
+            )
+        } else {
+            credentials
+        }
+        val normalizedInput = sourceStore.normalized(source)
+        val credentialKey = if (shouldRotateCredentialKey(
+                previousSource = previousSource,
+                requestedKey = normalizedInput.credentialKey,
+                previousCredentials = previous,
+                newCredentials = effectiveCredentials,
+            )
+        ) {
+            sourceStore.newCredentialKey()
+        } else {
+            normalizedInput.credentialKey
+        }
+        val normalized = normalizedInput.copy(
+            username = effectiveCredentials.username.trim(),
+            credentialKey = credentialKey,
+        )
+        check(!hasCredentialKeyConflict(sourceStore.sources.value, normalized)) {
+            "Credential key is already assigned to another network source"
+        }
+        mutationJournal.prepareSave(
+            sourceId = normalized.id,
+            previousCredentialKey = previousSource?.credentialKey,
+            newCredentialKey = normalized.credentialKey,
+            previousLocationFingerprint = previousSource?.let(NetworkSourceIdentity::locationFingerprint),
+            newLocationFingerprint = NetworkSourceIdentity.locationFingerprint(normalized),
+            newConfigurationFingerprint = NetworkSourceIdentity.configurationFingerprint(normalized),
+        )
+        credentialStore.put(normalized.id, normalized.credentialKey, effectiveCredentials)
+        mutationJournal.markPhase(normalized.id, NetworkSourceMutationPhase.CredentialPersisted)
+        try {
+            sourceStore.upsert(normalized)
+        } catch (cancelled: CancellationException) {
+            // The source may already be durable when withContext resumes into a cancelled
+            // caller. Leave the marker and credentials for recovery to reconcile.
+            throw cancelled
+        } catch (failure: RuntimeException) {
+            val rollbackComplete = runCatching {
+                if (previous != null && previousSource?.credentialKey == normalized.credentialKey) {
+                    credentialStore.put(normalized.id, normalized.credentialKey, previous)
+                } else if (sourceStore.sources.value.none {
+                    it.id != normalized.id && it.credentialKey == normalized.credentialKey
+                }) {
+                    credentialStore.remove(normalized.credentialKey)
+                }
+            }.isSuccess
+            if (rollbackComplete) {
+                runCatching { mutationJournal.clear(normalized.id) }
+            }
+            throw failure
+        }
+        mutationJournal.markPhase(normalized.id, NetworkSourceMutationPhase.SourcePersisted)
+        if (previousSource != null && previousSource.credentialKey != normalized.credentialKey) {
+            unreferencedCredentialKeys(sourceStore.sources.value, listOf(previousSource.credentialKey))
+                .forEach(credentialStore::remove)
+        }
+        mutationJournal.markPhase(normalized.id, NetworkSourceMutationPhase.CredentialsCleaned)
+        if (previousSource != null && previousSource != normalized) {
+            inventoryStore.remove(source.id)
+        }
+        mutationJournal.markPhase(normalized.id, NetworkSourceMutationPhase.InventoryInvalidated)
+        if (previousSource != normalized || previous != effectiveCredentials) {
+            registryProvider().invalidate(source.id)
+        }
+        mutationJournal.markPhase(normalized.id, NetworkSourceMutationPhase.RuntimeInvalidated)
+        mutationJournal.clear(normalized.id)
+        return PersistedNetworkSourceSave(
+            source = normalized,
+            credentials = effectiveCredentials,
+            refreshRequired = previousSource != normalized || previous != effectiveCredentials,
+        )
+    }
+
+    override suspend fun remove(source: NetworkLibrarySource) = mutationMutex.withLock {
+        removeLocked(source)
+    }
+
+    private suspend fun removeLocked(source: NetworkLibrarySource) {
+        val currentSource = sourceStore.sources.value.firstOrNull { it.id == source.id }
+        mutationJournal.prepareRemove(currentSource ?: source)
+        registryProvider().invalidate(source.id)
+        mutationJournal.markPhase(source.id, NetworkSourceMutationPhase.RuntimeInvalidated)
+        sourceStore.remove(source.id)
+        mutationJournal.markPhase(source.id, NetworkSourceMutationPhase.SourceRemoved)
+        inventoryStore.remove(source.id)
+        mutationJournal.markPhase(source.id, NetworkSourceMutationPhase.InventoryRemoved)
+        val keys = listOfNotNull(source.credentialKey, currentSource?.credentialKey)
+        unreferencedCredentialKeys(sourceStore.sources.value, keys).forEach(credentialStoreProvider()::remove)
+        mutationJournal.clear(source.id)
+    }
+}
+
+private data class PersistedNetworkSourceSave(
+    val source: NetworkLibrarySource,
+    val credentials: NetworkCredentials,
+    val refreshRequired: Boolean,
+)
+
+internal fun hasCredentialKeyConflict(
+    sources: List<NetworkLibrarySource>,
+    candidate: NetworkLibrarySource,
+): Boolean = sources.any { it.id != candidate.id && it.credentialKey == candidate.credentialKey }
+
+internal fun unreferencedCredentialKeys(sources: List<NetworkLibrarySource>, keys: List<String>): List<String> {
+    val referenced = sources.mapTo(hashSetOf(), NetworkLibrarySource::credentialKey)
+    return keys.distinct().filterNot(referenced::contains)
+}
+
+internal fun shouldRotateCredentialKey(
+    previousSource: NetworkLibrarySource?,
+    requestedKey: String,
+    previousCredentials: NetworkCredentials?,
+    newCredentials: NetworkCredentials,
+): Boolean = previousSource != null &&
+    previousSource.credentialKey == requestedKey &&
+    previousCredentials != newCredentials

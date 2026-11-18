@@ -1,0 +1,2350 @@
+package elovaire.music.droidbeauty.app.ui.screens
+import elovaire.music.droidbeauty.app.ui.screens.common.ModuleCard
+import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
+import elovaire.music.droidbeauty.app.ui.screens.common.readableMutedIconColor
+import elovaire.music.droidbeauty.app.ui.screens.common.readableCardSurfaceColor
+
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import elovaire.music.droidbeauty.app.R
+import elovaire.music.droidbeauty.app.data.playback.EqualizerDspConfig
+import elovaire.music.droidbeauty.app.data.playback.EqualizerDspModel
+import elovaire.music.droidbeauty.app.data.playback.EqValuePolicy
+import elovaire.music.droidbeauty.app.domain.model.EqCustomPreset
+import elovaire.music.droidbeauty.app.domain.model.normalizeEqPresetName
+import elovaire.music.droidbeauty.app.domain.model.EqSettings
+import elovaire.music.droidbeauty.app.domain.model.ReverbProfile
+import elovaire.music.droidbeauty.app.domain.model.SpaciousnessMode
+import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.localizedEqualizerPreset
+import elovaire.music.droidbeauty.app.ui.i18n.navigationAccessibilityCopy
+import elovaire.music.droidbeauty.app.ui.i18n.preampLabel
+import elovaire.music.droidbeauty.app.ui.i18n.UiPhrase
+import elovaire.music.droidbeauty.app.ui.i18n.settingsCopy
+import elovaire.music.droidbeauty.app.ui.i18n.uiPhrase
+import elovaire.music.droidbeauty.app.ui.i18n.displayLabel
+import elovaire.music.droidbeauty.app.ui.i18n.rootUiCopy
+import elovaire.music.droidbeauty.app.ui.i18n.equalizerCopy
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireActionBump
+import elovaire.music.droidbeauty.app.ui.interaction.elovairePillActionMotion
+import elovaire.music.droidbeauty.app.ui.interaction.rememberElovaireInteractionSource
+import elovaire.music.droidbeauty.app.ui.motion.MotionDuration
+import elovaire.music.droidbeauty.app.ui.motion.PopupCardMotionHost
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.InkText
+import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.max
+import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+@Composable
+internal fun EqualizerScreen(
+    settings: EqSettings,
+    selectedPresetName: String?,
+    customPresets: List<EqCustomPreset>,
+    equalizerEnabled: Boolean,
+    onBack: () -> Unit,
+    onBandChanged: (Int, Float) -> Unit,
+    onPreampChanged: (Float) -> Unit,
+    onBassChanged: (Float) -> Unit,
+    onMidrangeChanged: (Float) -> Unit,
+    onTrebleChanged: (Float) -> Unit,
+    onSpaciousnessChanged: (Float) -> Unit,
+    onSpaciousnessModeChanged: (SpaciousnessMode) -> Unit,
+    onReverbDurationChanged: (Int) -> Unit,
+    onReverbProfileChanged: (ReverbProfile) -> Unit,
+    onResetReverb: () -> Unit,
+    onApplyPreset: (String, EqSettings) -> Unit,
+    onSaveCustomPreset: (String) -> Unit,
+    onDeleteCustomPreset: (String) -> Unit,
+    onReset: () -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val graphScrollState = rememberScrollState()
+    val reverbScrollState = rememberScrollState()
+    val language = LocalAppLanguage.current
+    val copy = remember(language) { settingsCopy(language) }
+    val graphContentWidth = EQ_GRAPH_EDGE_PADDING * 2 +
+        EQ_BAND_SPACING * (EqualizerDspModel.BAND_COUNT - 1).coerceAtLeast(0).toFloat()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .semantics { testTagsAsResourceId = true },
+    ) {
+        LazyColumn(
+            state = listState,
+            overscrollEffect = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("eq_content")
+                .ensureSingleItemRubberBand(listState),
+            contentPadding = PaddingValues(
+                start = ElovaireSpacing.screenHorizontalPadding,
+                top = topBarOccupiedHeight() + 20.dp,
+                end = ElovaireSpacing.screenHorizontalPadding,
+                bottom = navigationBarInsetDp() + 20.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item(key = "bands", contentType = "bands") {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(EQ_DB_SCALE_GAP),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        EqDbScale(
+                            modifier = Modifier
+                                .width(EQ_DB_SCALE_WIDTH)
+                                .height(EQ_BAND_PANEL_HEIGHT),
+                        )
+                        Column(
+                            modifier = Modifier
+                                .horizontalGestureSafe()
+                                .ensureHorizontalRubberBand(graphScrollState)
+                                .horizontalScroll(graphScrollState, overscrollEffect = null),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            EqResponseGraph(
+                                settings = settings,
+                                onBandChanged = onBandChanged,
+                                modifier = Modifier
+                                    .testTag("eq_band_graph")
+                                    .width(graphContentWidth)
+                                    .height(EQ_BAND_PANEL_HEIGHT),
+                            )
+                            EqBandFrequencyLabels(
+                                contentWidth = graphContentWidth,
+                                settings = settings,
+                                onBandChanged = onBandChanged,
+                            )
+                        }
+                    }
+                    EqHorizontalScrollbar(
+                        scrollState = graphScrollState,
+                        contentWidth = graphContentWidth,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp)
+                            .padding(vertical = 10.dp),
+                    ) {
+                        EqMiniResponseGraph(
+                            settings = settings,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    EqPresetMenu(
+                        currentSettings = settings,
+                        selectedPresetName = selectedPresetName,
+                        customPresets = customPresets,
+                        equalizerEnabled = equalizerEnabled,
+                        onApplyPreset = onApplyPreset,
+                        onSaveCustomPreset = onSaveCustomPreset,
+                        onDeleteCustomPreset = onDeleteCustomPreset,
+                        onReset = onReset,
+                    )
+                }
+            }
+            item(key = "preamp", contentType = "slider") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 2.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_lucide_volume_2),
+                            contentDescription = null,
+                            tint = readableMutedIconColor(),
+                            modifier = Modifier.size(15.dp),
+                        )
+                        Text(
+                            text = preampLabel(language),
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = formatPreampDb(settings.preampDb),
+                            style = MaterialTheme.typography.titleLarge.copy(fontSize = elovaireScaledSp(18f)),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.84f),
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    ThinContinuousSlider(
+                        value = settings.preampDb,
+                        onValueChange = { onPreampChanged(EqValuePolicy.snapPreamp(it, magnetizeCenter = true)) },
+                        valueRange = EqValuePolicy.MIN_PREAMP_DB..EqValuePolicy.MAX_PREAMP_DB,
+                        centerValue = 0f,
+                        stepSize = EqValuePolicy.GAIN_STEP_DB,
+                        visualStepSize = 1f,
+                        stepDotAlpha = 1f,
+                        modifier = Modifier.testTag("eq_preamp").semantics { contentDescription = preampLabel(language) },
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        listOf("−6", "0", "+6").forEach { label ->
+                            Text(label, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                color = readableSecondaryTextColor())
+                        }
+                    }
+                }
+            }
+            item(key = "tone", contentType = "effects") {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    SettingsCategoryText(
+                        title = uiPhrase(language, UiPhrase.ToneShaping),
+                        iconResId = R.drawable.ic_lucide_audio_waveform,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        EqMacroKnob(
+                            title = uiPhrase(language, UiPhrase.Bass),
+                            value = settings.bass.coerceIn(0f, 1f),
+                            valueRange = 0f..1f,
+                            onValueChange = onBassChanged,
+                            modifier = Modifier.testTag("eq_bass"),
+                        )
+                        EqMacroKnob(
+                            title = uiPhrase(language, UiPhrase.Midrange),
+                            value = settings.midrange.coerceIn(-1f, 1f),
+                            valueRange = -1f..1f,
+                            onValueChange = onMidrangeChanged,
+                            modifier = Modifier.testTag("eq_midrange"),
+                        )
+                        EqMacroKnob(
+                            title = uiPhrase(language, UiPhrase.Treble),
+                            value = settings.treble.coerceIn(-1f, 1f),
+                            valueRange = -1f..1f,
+                            onValueChange = onTrebleChanged,
+                            modifier = Modifier.testTag("eq_treble"),
+                        )
+                    }
+                }
+            }
+            item(key = "spaciousness", contentType = "effects") {
+                ModuleCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        SettingsCategoryText(
+                            title = copy.spaciousness,
+                            iconResId = R.drawable.ic_lucide_wind,
+                        )
+                        SpaciousnessModeMenu(
+                            currentMode = settings.spaciousnessMode,
+                            spaciousnessAmount = settings.spaciousness,
+                            onModeSelected = onSpaciousnessModeChanged,
+                            onReset = { onSpaciousnessModeChanged(SpaciousnessMode.Off) },
+                        )
+                        EqMacroSliderRow(
+                            title = uiPhrase(language, UiPhrase.EffectStrength),
+                            value = settings.spaciousness.coerceIn(0f, 1f),
+                            valueText = "${(settings.spaciousness.coerceIn(0f, 1f) * 100f).roundToInt()}%",
+                            onValueChange = onSpaciousnessChanged,
+                            valueRange = 0f..1f,
+                            enabled = settings.spaciousnessMode != SpaciousnessMode.Off,
+                            fullOpacityKnob = true,
+                        )
+                    }
+                }
+            }
+            item(key = "reverb", contentType = "effects") {
+                ModuleCard {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = uiPhrase(language, UiPhrase.Reverb),
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = if (settings.reverbDurationMs <= 0) uiPhrase(language, UiPhrase.Off) else "${settings.reverbDurationMs} ms",
+                                style = MaterialTheme.typography.titleLarge.copy(fontSize = elovaireScaledSp(18f)),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.84f),
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalGestureSafe()
+                                .ensureHorizontalRubberBand(reverbScrollState)
+                                .horizontalScroll(reverbScrollState, overscrollEffect = null),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            EqPresetPill(
+                                label = uiPhrase(language, UiPhrase.Reset),
+                                selected = false,
+                                emphasized = true,
+                                emphasisAlpha = if (settings.reverbDurationMs != 0 || settings.reverbProfile != ReverbProfile.Dry) 1f else 0.4f,
+                                useSubtleIdleBackground = true,
+                                onClick = onResetReverb,
+                            )
+                            ReverbProfile.entries.forEach { profile ->
+                                EqPresetPill(
+                                    label = when (profile) {
+                                        ReverbProfile.Dry -> uiPhrase(language, UiPhrase.Dry)
+                                        ReverbProfile.Wet -> uiPhrase(language, UiPhrase.Wet)
+                                    },
+                                    selected = settings.reverbDurationMs > 0 && settings.reverbProfile == profile,
+                                    useSubtleIdleBackground = true,
+                                    onClick = { onReverbProfileChanged(profile) },
+                                )
+                            }
+                        }
+                        ReverbStepSlider(
+                            valueMs = settings.reverbDurationMs,
+                            onValueChange = onReverbDurationChanged,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+        }
+        FastScrollbar(
+            state = listState,
+            topInset = sharedTopBarOccupiedHeight() + 20.dp,
+            bottomInset = navigationBarInsetDp() + 20.dp,
+        )
+        PinnedBackTopBar(
+            title = copy.equalizer,
+            onBack = onBack,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+    }
+}
+
+@Composable
+private fun ReverbStepSlider(
+    valueMs: Int,
+    onValueChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val label = uiPhrase(LocalAppLanguage.current, UiPhrase.Reverb)
+    ThinContinuousSlider(
+        value = valueMs.toFloat(),
+        onValueChange = { onValueChange(it.roundToInt()) },
+        valueRange = 0f..500f,
+        stepSize = 50f,
+        modifier = modifier.testTag("eq_reverb").semantics { contentDescription = label },
+    )
+}
+@Composable
+private fun DigitalSoundKnob(
+    title: String,
+    iconResId: Int,
+    value: Float,
+    modifier: Modifier = Modifier,
+    onValueChange: (Float) -> Unit,
+) {
+    var dragValue by remember(value) { mutableFloatStateOf(value.coerceIn(0f, 1f)) }
+    LaunchedEffect(value) {
+        dragValue = value.coerceIn(0f, 1f)
+    }
+    val displayedValue = dragValue
+    val glowColor = Color(0xFF61F6A2)
+    val inactiveDot = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.26f)
+    val trackColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+        InkText.copy(alpha = 0.3f)
+    } else {
+        Color.White.copy(alpha = 0.3f)
+    }
+    val activeArcColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+        InkText
+    } else {
+        Color.White
+    }
+    val tickColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+        InkText.copy(alpha = 0.2f)
+    } else {
+        Color.White.copy(alpha = 0.2f)
+    }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(134.dp)
+                .horizontalGestureSafe()
+                .pointerInput(title) {
+                    detectTapGestures { offset ->
+                        val widthPx = size.width.toFloat().coerceAtLeast(1f)
+                        val horizontalInsetPx = widthPx * 0.035f
+                        val activeWidthPx = (widthPx - (horizontalInsetPx * 2f)).coerceAtLeast(1f)
+                        dragValue = ((offset.x - horizontalInsetPx) / activeWidthPx).coerceIn(0f, 1f)
+                        onValueChange(dragValue)
+                    }
+                }
+                .pointerInput(title) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            val widthPx = size.width.toFloat().coerceAtLeast(1f)
+                            val horizontalInsetPx = widthPx * 0.035f
+                            val activeWidthPx = (widthPx - (horizontalInsetPx * 2f)).coerceAtLeast(1f)
+                            dragValue = ((offset.x - horizontalInsetPx) / activeWidthPx).coerceIn(0f, 1f)
+                            onValueChange(dragValue)
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            val widthPx = size.width.toFloat().coerceAtLeast(1f)
+                            dragValue = (dragValue + ((dragAmount / widthPx) * 0.99f)).coerceIn(0f, 1f)
+                            onValueChange(dragValue)
+                        },
+                    )
+                },
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize(),
+            ) {
+                val strokeWidth = 5.5.dp.toPx()
+                val horizontalInset = 8.dp.toPx()
+                val topInset = 12.dp.toPx()
+                val radius = min(
+                    ((size.width - (horizontalInset * 2f)) / 2f).coerceAtLeast(1f),
+                    ((size.height - topInset - 8.dp.toPx()) * 0.54f).coerceAtLeast(1f),
+                )
+                val center = Offset(size.width / 2f, topInset + radius)
+                val startAngle = 180f
+                val sweepAngle = 180f
+                val activeSweep = sweepAngle * displayedValue
+                val arcTopLeft = Offset(center.x - radius, center.y - radius)
+                val arcSize = Size(radius * 2f, radius * 2f)
+
+                drawArc(
+                    color = trackColor,
+                    startAngle = startAngle,
+                    sweepAngle = sweepAngle,
+                    useCenter = false,
+                    topLeft = arcTopLeft,
+                    size = arcSize,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                )
+
+                if (activeSweep > 0f) {
+                    drawArc(
+                        color = activeArcColor,
+                        startAngle = startAngle,
+                        sweepAngle = activeSweep,
+                        useCenter = false,
+                        topLeft = arcTopLeft,
+                        size = arcSize,
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                    )
+                }
+
+                val tickOuterRadius = (radius - 8.dp.toPx()).coerceAtLeast(1f)
+                val tickInnerRadius = (tickOuterRadius - 4.dp.toPx()).coerceAtLeast(1f)
+                val tickCount = 30
+                repeat(tickCount) { tickIndex ->
+                    val fraction = tickIndex / (tickCount - 1).toFloat()
+                    val angleDegrees = 180f + (180f * fraction)
+                    val angleRadians = Math.toRadians(angleDegrees.toDouble())
+                    val start = Offset(
+                        x = center.x + (cos(angleRadians) * tickInnerRadius).toFloat(),
+                        y = center.y + (sin(angleRadians) * tickInnerRadius).toFloat(),
+                    )
+                    val end = Offset(
+                        x = center.x + (cos(angleRadians) * tickOuterRadius).toFloat(),
+                        y = center.y + (sin(angleRadians) * tickOuterRadius).toFloat(),
+                    )
+                    drawLine(
+                        color = if (fraction > displayedValue) tickColor else Color.Transparent,
+                        start = start,
+                        end = end,
+                        strokeWidth = 1.2.dp.toPx(),
+                        cap = StrokeCap.Square,
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.padding(top = 34.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = "${(displayedValue * 100f).roundToInt()}",
+                    style = MaterialTheme.typography.displayLarge.copy(fontSize = elovaireScaledSp(20f)),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                )
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(if (displayedValue > 0f) glowColor else inactiveDot),
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .offset(y = (-28).dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                painter = painterResource(id = iconResId),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.84f),
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.84f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DetailScreenHeader(
+    title: String,
+    subtitle: String? = null,
+    onBack: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HeaderIconButton(
+            iconResId = R.drawable.ic_lucide_chevron_left,
+            contentDescription = navigationAccessibilityCopy(LocalAppLanguage.current).back,
+            showBackground = false,
+            onClick = onBack,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.displayLarge.copy(fontSize = elovaireScaledSp(26f)),
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
+                )
+            }
+        }
+    }
+}
+
+internal fun circularKnobValueForOffset(
+    offset: Offset,
+    size: Size,
+    startAngleDegrees: Float,
+    sweepAngleDegrees: Float,
+): Float {
+    if (size.width <= 0f || size.height <= 0f) return 0f
+    val centerX = size.width / 2f
+    val centerY = size.height / 2f
+    val angle = Math.toDegrees(
+        atan2(
+            (offset.y - centerY).toDouble(),
+            (offset.x - centerX).toDouble(),
+        ),
+    ).toFloat().let { if (it < 0f) it + 360f else it }
+    val relative = ((angle - startAngleDegrees) % 360f + 360f) % 360f
+    return when {
+        relative <= sweepAngleDegrees -> (relative / sweepAngleDegrees).coerceIn(0f, 1f)
+        relative < (sweepAngleDegrees + ((360f - sweepAngleDegrees) / 2f)) -> 1f
+        else -> 0f
+    }
+}
+
+@Composable
+internal fun EqToneKnob(
+    title: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    accentColor: Color,
+    modifier: Modifier = Modifier,
+    onValueChange: (Float) -> Unit,
+) {
+    val safeRange = remember(valueRange) {
+        if (valueRange.endInclusive > valueRange.start) valueRange else 0f..1f
+    }
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val clampedValue = value.coerceIn(safeRange.start, safeRange.endInclusive)
+    val targetFraction = ((clampedValue - safeRange.start) / (safeRange.endInclusive - safeRange.start))
+        .coerceIn(0f, 1f)
+    var dragFraction by remember { mutableFloatStateOf(targetFraction) }
+    LaunchedEffect(targetFraction) {
+        dragFraction = targetFraction
+    }
+    val displayedFraction = dragFraction
+    val tickIdleColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+    val glowColor = accentColor.copy(alpha = 0.28f)
+    val knobFaceColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+        InkText.copy(alpha = 0.92f)
+    } else {
+        Color(0xFF1A1A1C)
+    }
+    val knobEdgeColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    val valueText = remember(clampedValue, safeRange) {
+        val percent = if (safeRange.start < 0f) {
+            (clampedValue * 100f).roundToInt()
+        } else {
+            ((clampedValue.coerceAtLeast(0f)) * 100f).roundToInt()
+        }
+        if (safeRange.start < 0f && percent > 0) "+$percent" else percent.toString()
+    }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(110.dp)
+                .semantics {
+                    contentDescription = title
+                    progressBarRangeInfo = ProgressBarRangeInfo(clampedValue, safeRange)
+                    setProgress { requested ->
+                        currentOnValueChange(requested.coerceIn(safeRange))
+                        true
+                    }
+                }
+                .horizontalGestureSafe()
+                .pointerInput(title, safeRange.start, safeRange.endInclusive) {
+                    detectTapGestures { offset ->
+                        val fraction = circularKnobValueForOffset(
+                            offset = offset,
+                            size = Size(size.width.toFloat(), size.height.toFloat()),
+                            startAngleDegrees = 140f,
+                            sweepAngleDegrees = 260f,
+                        )
+                        dragFraction = fraction
+                        currentOnValueChange(
+                            safeRange.start + ((safeRange.endInclusive - safeRange.start) * fraction),
+                        )
+                    }
+                }
+                .pointerInput(title, safeRange.start, safeRange.endInclusive) {
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            val fraction = circularKnobValueForOffset(
+                                offset = offset,
+                                size = Size(size.width.toFloat(), size.height.toFloat()),
+                                startAngleDegrees = 140f,
+                                sweepAngleDegrees = 260f,
+                            )
+                            dragFraction = fraction
+                            currentOnValueChange(
+                                safeRange.start + ((safeRange.endInclusive - safeRange.start) * fraction),
+                            )
+                        },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            val fraction = circularKnobValueForOffset(
+                                offset = change.position,
+                                size = Size(size.width.toFloat(), size.height.toFloat()),
+                                startAngleDegrees = 140f,
+                                sweepAngleDegrees = 260f,
+                            )
+                            dragFraction = fraction
+                            currentOnValueChange(
+                                safeRange.start + ((safeRange.endInclusive - safeRange.start) * fraction),
+                            )
+                        },
+                    )
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidth = 6.dp.toPx()
+                val glowWidth = 12.dp.toPx()
+                val outerPadding = 9.dp.toPx()
+                val radius = ((size.minDimension - outerPadding * 2f) / 2f).coerceAtLeast(1f)
+                val center = Offset(size.width / 2f, size.height / 2f)
+                val arcTopLeft = Offset(center.x - radius, center.y - radius)
+                val arcSize = Size(radius * 2f, radius * 2f)
+                val startAngle = 140f
+                val sweepAngle = 260f
+                val activeSweep = sweepAngle * displayedFraction
+                val tickCount = 34
+                val tickOuterRadius = radius + 5.dp.toPx()
+                val tickInnerRadius = tickOuterRadius - 4.dp.toPx()
+                val activeTickCount = (displayedFraction * (tickCount - 1)).roundToInt()
+
+                repeat(tickCount) { tickIndex ->
+                    val fraction = tickIndex / (tickCount - 1).toFloat()
+                    val angleDegrees = startAngle + (sweepAngle * fraction)
+                    val angleRadians = Math.toRadians(angleDegrees.toDouble())
+                    val start = Offset(
+                        x = center.x + (cos(angleRadians) * tickInnerRadius).toFloat(),
+                        y = center.y + (sin(angleRadians) * tickInnerRadius).toFloat(),
+                    )
+                    val end = Offset(
+                        x = center.x + (cos(angleRadians) * tickOuterRadius).toFloat(),
+                        y = center.y + (sin(angleRadians) * tickOuterRadius).toFloat(),
+                    )
+                    drawLine(
+                        color = if (tickIndex > activeTickCount) tickIdleColor else Color.Transparent,
+                        start = start,
+                        end = end,
+                        strokeWidth = 1.2.dp.toPx(),
+                        cap = StrokeCap.Square,
+                    )
+                }
+                if (activeSweep > 0f) {
+                    drawArc(
+                        color = glowColor,
+                        startAngle = startAngle,
+                        sweepAngle = activeSweep,
+                        useCenter = false,
+                        topLeft = arcTopLeft,
+                        size = arcSize,
+                        style = Stroke(width = glowWidth, cap = StrokeCap.Round),
+                    )
+                    drawArc(
+                        color = accentColor,
+                        startAngle = startAngle,
+                        sweepAngle = activeSweep,
+                        useCenter = false,
+                        topLeft = arcTopLeft,
+                        size = arcSize,
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                    )
+                }
+
+                drawCircle(
+                    color = knobFaceColor,
+                    radius = radius * 0.64f,
+                    center = center,
+                )
+                drawCircle(
+                    color = knobEdgeColor,
+                    radius = radius * 0.66f,
+                    center = center,
+                    style = Stroke(width = 1.dp.toPx()),
+                )
+
+                val pointerAngle = Math.toRadians((startAngle + activeSweep).toDouble())
+                val pointerRadius = radius * 0.56f
+                val pointerCenter = Offset(
+                    x = center.x + (cos(pointerAngle) * pointerRadius).toFloat(),
+                    y = center.y + (sin(pointerAngle) * pointerRadius).toFloat(),
+                )
+                drawCircle(
+                    color = accentColor,
+                    radius = 3.dp.toPx(),
+                    center = pointerCenter,
+                )
+            }
+            Text(
+                text = valueText,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = elovaireScaledSp(16f),
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                color = Color.White.copy(alpha = 0.96f),
+            )
+        }
+        Text(
+            text = title.uppercase(),
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontSize = elovaireScaledSp(10f),
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 1.sp,
+            ),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+        )
+    }
+}
+
+@Composable
+private fun EqBandSlider(
+    label: String,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+) {
+    val clampedValue = value.coerceIn(-1f, 1f)
+    val accent = if (clampedValue >= 0f) Color(0xFF7D8BFF) else Color(0xFFFF6F61)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(46.dp)
+                .height(190.dp)
+                .clip(RoundedCornerShape(ElovaireRadii.module))
+                .background(readableCardSurfaceColor())
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            onValueChange((clampedValue - (dragAmount / 180f)).coerceIn(-1f, 1f))
+                        },
+                    )
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures { offset ->
+                        val fraction = 1f - (offset.y / size.height.toFloat())
+                        onValueChange(((fraction * 2f) - 1f).coerceIn(-1f, 1f))
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(28.dp),
+            ) {
+                val trackWidth = 4.dp.toPx()
+                val centerX = size.width / 2f
+                val centerY = size.height / 2f
+                val knobRadius = 8.dp.toPx()
+                val travel = (size.height / 2f) - knobRadius - 8.dp.toPx()
+                val knobY = centerY - (travel * clampedValue)
+
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.1f),
+                    topLeft = Offset(centerX - (trackWidth / 2f), 8.dp.toPx()),
+                    size = Size(trackWidth, size.height - 16.dp.toPx()),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackWidth, trackWidth),
+                )
+
+                val fillTop = minOf(centerY, knobY)
+                val fillBottom = maxOf(centerY, knobY)
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            accent.copy(alpha = 0.94f),
+                            accent.copy(alpha = 0.55f),
+                        ),
+                    ),
+                    topLeft = Offset(centerX - (trackWidth / 2f), fillTop),
+                    size = Size(trackWidth, (fillBottom - fillTop).coerceAtLeast(trackWidth)),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackWidth, trackWidth),
+                )
+
+                drawCircle(
+                    color = accent.copy(alpha = 0.28f),
+                    radius = knobRadius * 1.75f,
+                    center = Offset(centerX, knobY),
+                )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.96f),
+                    radius = knobRadius,
+                    center = Offset(centerX, knobY),
+                )
+            }
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = readableSecondaryTextColor(),
+        )
+    }
+}
+
+@Composable
+private fun EqMacroSliderRow(
+    title: String,
+    value: Float,
+    valueText: String,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    enabled: Boolean = true,
+    fullOpacityKnob: Boolean = false,
+    modifier: Modifier = Modifier,
+    centerValue: Float? = null,
+    visualStepSize: Float? = null,
+    stepDotAlpha: Float = 0.48f,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = elovaireScaledSp(16f),
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = valueText,
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = elovaireScaledSp(18f)),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.84f),
+            )
+        }
+        ThinContinuousSlider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            centerValue = centerValue,
+            visualStepSize = visualStepSize,
+            stepDotAlpha = stepDotAlpha,
+            enabled = enabled,
+            fullOpacityKnob = fullOpacityKnob,
+            modifier = modifier.semantics { contentDescription = title },
+        )
+    }
+}
+
+@Composable
+private fun EqMacroKnob(
+    title: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val safeValue = value.takeIf(Float::isFinite)?.coerceIn(valueRange) ?: 0f.coerceIn(valueRange)
+    val currentValue by rememberUpdatedState(safeValue)
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val range = valueRange.endInclusive - valueRange.start
+    val normalized = ((safeValue - valueRange.start) / range).coerceIn(0f, 1f)
+    val accent = Color(0xFF39E38E)
+    val valueText = formatTonePercent(safeValue, signed = valueRange.start < 0f)
+
+    Column(
+        modifier = modifier.width(84.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .semantics {
+                    contentDescription = title
+                    progressBarRangeInfo = ProgressBarRangeInfo(safeValue, valueRange, steps = (range * 100f).roundToInt() - 1)
+                    setProgress { requested ->
+                        currentOnValueChange(snapEqMacroValue(requested, valueRange))
+                        true
+                    }
+                }
+                .pointerInput(valueRange) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                            ?: return@awaitEachGesture
+                        var dragValue = currentValue.coerceIn(valueRange)
+                        var lastX = drag.position.x
+                        horizontalDrag(drag.id) { change ->
+                            val deltaX = change.position.x - lastX
+                            lastX = change.position.x
+                            change.consume()
+                            val fullRangeDragPx = size.width * 5f
+                            dragValue = snapEqMacroValue(
+                                dragValue + (deltaX / fullRangeDragPx) * range,
+                                valueRange,
+                            )
+                            currentOnValueChange(dragValue)
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.fillMaxSize()) {
+                val stroke = 2.4.dp.toPx()
+                val radius = size.minDimension / 2f - 3.dp.toPx()
+                val center = Offset(size.width / 2f, size.height / 2f)
+                drawCircle(
+                    color = accent.copy(alpha = 0.1f),
+                    radius = radius,
+                    center = center,
+                    style = Stroke(width = 4.dp.toPx()),
+                )
+                drawCircle(
+                    color = accent.copy(alpha = 0.36f),
+                    radius = radius,
+                    center = center,
+                    style = Stroke(width = stroke),
+                )
+                val angle = Math.toRadians((-135f + 270f * normalized).toDouble()).toFloat()
+                val markerCenter = Offset(
+                    x = center.x + cos(angle) * radius,
+                    y = center.y + kotlin.math.sin(angle) * radius,
+                )
+                drawCircle(
+                    color = accent.copy(alpha = 0.2f),
+                    radius = 5.dp.toPx(),
+                    center = markerCenter,
+                )
+                drawCircle(
+                    color = accent,
+                    radius = 2.5.dp.toPx(),
+                    center = markerCenter,
+                )
+            }
+            Text(
+                text = valueText,
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontSize = elovaireScaledSp(14f),
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+            color = readableSecondaryTextColor(),
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+internal fun snapEqMacroValue(
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+): Float {
+    if (!value.isFinite()) return 0f.coerceIn(valueRange)
+    val stepCount = ((valueRange.endInclusive - valueRange.start) * 100f).roundToInt().coerceAtLeast(1)
+    val normalizedStep = ((value.coerceIn(valueRange) - valueRange.start) * 100f)
+        .roundToInt()
+        .coerceIn(0, stepCount)
+    return (valueRange.start + normalizedStep / 100f).coerceIn(valueRange)
+}
+
+private fun formatTonePercent(value: Float, signed: Boolean): String {
+    val percent = (value.coerceIn(-1f, 1f) * 100f).roundToInt()
+    return if (signed && percent > 0) "+$percent%" else "$percent%"
+}
+
+private fun formatPreampDb(value: Float): String {
+    val rounded = (value * 2f).roundToInt() / 2f
+    val number = if (rounded == rounded.toInt().toFloat()) {
+        rounded.toInt().toString()
+    } else {
+        rounded.toString()
+    }
+    return if (rounded > 0f) "+$number dB" else "$number dB"
+}
+
+private data class EqPresetDefinition(
+    val name: String,
+    val settings: EqSettings,
+)
+
+@Composable
+private fun EqPresetMenu(
+    currentSettings: EqSettings,
+    selectedPresetName: String?,
+    customPresets: List<EqCustomPreset>,
+    equalizerEnabled: Boolean,
+    onApplyPreset: (String, EqSettings) -> Unit,
+    onSaveCustomPreset: (String) -> Unit,
+    onDeleteCustomPreset: (String) -> Unit,
+    onReset: () -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    val copy = equalizerCopy(language)
+    val presets = remember { eqPresetDefinitions() }
+    val builtInScroll = rememberScrollState()
+    val customScroll = rememberScrollState()
+    var showSaveDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingDeleteName by rememberSaveable { mutableStateOf<String?>(null) }
+    val sanitized = remember(currentSettings) { EqValuePolicy.sanitize(currentSettings) }
+    val activeCustom = customPresets.firstOrNull {
+        it.name == selectedPresetName && EqValuePolicy.sanitize(it.settings) == sanitized
+    } ?: customPresets.firstOrNull { EqValuePolicy.sanitize(it.settings) == sanitized }
+    val activeBuiltIn = if (activeCustom == null && equalizerEnabled) currentSettings.matchingEqPresetName(presets) else null
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = copy.presets,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            EqPresetPill(
+                label = copy.savePreset,
+                selected = false,
+                emphasized = true,
+                modifier = Modifier.testTag("eq_save_preset"),
+                onClick = { showSaveDialog = true },
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .horizontalGestureSafe()
+                .ensureHorizontalRubberBand(builtInScroll)
+                .horizontalScroll(builtInScroll, overscrollEffect = null),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            EqPresetPill(
+                label = uiPhrase(language, UiPhrase.Reset),
+                selected = false,
+                emphasized = true,
+                emphasisAlpha = if (sanitized != EqValuePolicy.sanitize(EqSettings())) 1f else 0.4f,
+                onClick = onReset,
+            )
+            presets.forEach { preset ->
+                EqPresetPill(
+                    label = localizedEqualizerPreset(preset.name, language),
+                    selected = preset.name == activeBuiltIn,
+                    onClick = { onApplyPreset(preset.name, currentSettings.copy(bands = preset.settings.bands)) },
+                )
+            }
+        }
+        if (customPresets.isNotEmpty()) {
+            Text("${copy.customPresets} · ${customPresets.size}/${EqCustomPreset.MAX_COUNT}", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = readableSecondaryTextColor())
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .horizontalGestureSafe()
+                    .ensureHorizontalRubberBand(customScroll)
+                    .horizontalScroll(customScroll, overscrollEffect = null),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                customPresets.forEach { preset ->
+                    androidx.compose.runtime.key(preset.id) {
+                        EqCustomPresetPill(
+                            preset = preset,
+                            selected = preset.id == activeCustom?.id,
+                            onApply = { onApplyPreset(preset.name, preset.settings) },
+                            onDelete = { pendingDeleteName = preset.name },
+                        )
+                    }
+                }
+            }
+        }
+    }
+    if (showSaveDialog) {
+        SaveEqPresetDialog(
+            initialName = activeCustom?.name.orEmpty(),
+            customPresets = customPresets,
+            onDismiss = { showSaveDialog = false },
+            onSave = onSaveCustomPreset,
+        )
+    }
+    pendingDeleteName?.let { name ->
+        var confirmed by remember(name) { mutableStateOf(false) }
+        EqPresetDialog(
+            title = uiPhrase(language, UiPhrase.Delete),
+            onDismiss = { pendingDeleteName = null },
+        ) { close ->
+            Text(name, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                EqPresetPill(
+                    label = uiPhrase(language, UiPhrase.Delete),
+                    selected = false,
+                    emphasized = true,
+                    modifier = Modifier.testTag("eq_confirm_delete"),
+                    enabled = !confirmed,
+                    onClick = {
+                        if (!confirmed) {
+                            confirmed = true
+                            onDeleteCustomPreset(name)
+                            close()
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EqCustomPresetPill(
+    preset: EqCustomPreset,
+    selected: Boolean,
+    onApply: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val interactionSource = rememberElovaireInteractionSource()
+    val deleteInteractionSource = rememberElovaireInteractionSource()
+    val background by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary else readableCardSurfaceColor(),
+        animationSpec = rememberMotionSpecs().tween(MotionDuration.Fast),
+        label = "eq_custom_selection",
+    )
+    val foreground = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    Surface(
+        modifier = Modifier.elovairePillActionMotion(interactionSource = interactionSource,
+            pressedScale = 0.96f, label = "eq_custom_preset"),
+        shape = CircleShape,
+        color = background,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = preset.name,
+                modifier = Modifier.widthIn(max = 200.dp).clip(CircleShape)
+                    .clickable(interactionSource = interactionSource, indication = null, onClick = onApply)
+                    .padding(start = 14.dp, top = 9.dp, bottom = 9.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = foreground,
+            )
+            Box(
+                modifier = Modifier.size(32.dp)
+                    .elovaireActionBump(interactionSource = deleteInteractionSource, label = "eq_delete_preset")
+                    .clip(CircleShape)
+                    .clickable(interactionSource = deleteInteractionSource, indication = null, onClick = onDelete),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_lucide_x),
+                    contentDescription = uiPhrase(LocalAppLanguage.current, UiPhrase.Delete) + " " + preset.name,
+                    tint = foreground,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EqPresetDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.(() -> Unit) -> Unit,
+) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    Dialog(
+        onDismissRequest = { visible = false },
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        PopupCardMotionHost(
+            visible = visible,
+            surfaceId = "eq.preset",
+            modifier = Modifier.fillMaxWidth().padding(20.dp).widthIn(max = 480.dp),
+            onExitFinished = onDismiss,
+        ) {
+            Surface(
+                shape = RoundedCornerShape(ElovaireRadii.card),
+                color = readableCardSurfaceColor(),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp).semantics { testTagsAsResourceId = true },
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                        HeaderIconButton(
+                            iconResId = R.drawable.ic_lucide_x,
+                            contentDescription = uiPhrase(LocalAppLanguage.current, UiPhrase.Cancel),
+                            onClick = { visible = false },
+                        )
+                    }
+                    content { visible = false }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SaveEqPresetDialog(
+    initialName: String,
+    customPresets: List<EqCustomPreset>,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    val copy = equalizerCopy(language)
+    var name by rememberSaveable { mutableStateOf(initialName) }
+    var submitted by remember { mutableStateOf(false) }
+    val normalized = normalizeEqPresetName(name)
+    val replacing = customPresets.any { it.name.equals(normalized, ignoreCase = true) }
+    val hasSpace = replacing || customPresets.size < EqCustomPreset.MAX_COUNT
+    EqPresetDialog(title = copy.savePreset, onDismiss = onDismiss) { close ->
+        val save = {
+            if (normalized.isNotBlank() && hasSpace && !submitted) {
+                submitted = true
+                onSave(normalized)
+                close()
+            }
+        }
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it.take(EqCustomPreset.MAX_NAME_LENGTH) },
+            modifier = Modifier.fillMaxWidth().testTag("eq_preset_name"),
+            label = { Text(copy.presetName) },
+            shape = RoundedCornerShape(ElovaireRadii.input),
+            singleLine = true,
+            enabled = !submitted,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { save() }),
+            supportingText = {
+                when {
+                    replacing -> Text(copy.replaceWarning)
+                    !hasSpace -> Text("${copy.customPresets}: ${customPresets.size}/${EqCustomPreset.MAX_COUNT}")
+                }
+            },
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            EqPresetPill(
+                label = if (replacing) copy.replace else rootUiCopy(language).save,
+                selected = false,
+                emphasized = true,
+                enabled = normalized.isNotBlank() && hasSpace && !submitted,
+                modifier = Modifier.testTag("eq_confirm_save"),
+                onClick = { save() },
+            )
+        }
+    }
+}
+private fun eqPresetDefinitions(): List<EqPresetDefinition> =
+    listOf(
+        eqPreset("Electronic", 0.40f, 0.58f, 0.42f, 0.26f, 0.10f, 0.08f, 0.16f, 0.24f),
+        eqPreset("Jazz", 0.18f, 0.26f, 0.14f, -0.08f, 0.10f, 0.22f, 0.18f, 0.12f),
+        eqPreset("Classical", 0.12f, 0.16f, 0.08f, -0.04f, 0.06f, 0.18f, 0.24f, 0.18f),
+        eqPreset("Acoustic", 0.10f, 0.14f, 0.06f, -0.12f, 0.14f, 0.20f, 0.18f, 0.10f),
+        eqPreset("Pop", 0.22f, 0.28f, 0.16f, -0.06f, 0.18f, 0.24f, 0.18f, 0.10f),
+        eqPreset("Rock", 0.28f, 0.22f, 0.10f, -0.12f, 0.08f, 0.18f, 0.28f, 0.22f),
+        eqPreset("Metal", 0.22f, 0.18f, 0.08f, -0.14f, 0.12f, 0.24f, 0.30f, 0.26f),
+        eqPreset("Vocal", -0.08f, -0.12f, -0.04f, -0.10f, 0.20f, 0.28f, 0.16f, 0.06f),
+        eqPreset("R&B", 0.28f, 0.32f, 0.20f, -0.06f, 0.20f, 0.22f, 0.10f, 0.06f),
+        eqPreset("Soul", 0.20f, 0.24f, 0.18f, -0.04f, 0.18f, 0.24f, 0.10f, 0.04f),
+        eqPreset("Hip-Hop", 0.42f, 0.46f, 0.22f, -0.12f, 0.10f, 0.12f, 0.08f, 0.04f),
+    )
+
+internal fun EqSettings.matchingEqPresetName(): String? = matchingEqPresetName(eqPresetDefinitions())
+
+private fun EqSettings.matchingEqPresetName(presets: List<EqPresetDefinition>): String? {
+    val currentBands = normalizedBandValues()
+    return presets.firstOrNull { it.settings.normalizedBandValues() == currentBands }?.name
+}
+
+@Composable
+private fun SpaciousnessModeMenu(
+    currentMode: SpaciousnessMode,
+    spaciousnessAmount: Float,
+    onModeSelected: (SpaciousnessMode) -> Unit,
+    onReset: () -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    val horizontalScrollState = rememberScrollState()
+    val modes = remember {
+        listOf(
+            SpaciousnessMode.StereoWidth,
+            SpaciousnessMode.CrossfeedDepth,
+            SpaciousnessMode.EarlyReflectionRoom,
+            SpaciousnessMode.Philharmony,
+            SpaciousnessMode.HaasSpace,
+            SpaciousnessMode.HarmonicAir,
+        )
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalGestureSafe()
+            .ensureHorizontalRubberBand(horizontalScrollState)
+            .horizontalScroll(horizontalScrollState, overscrollEffect = null),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        EqPresetPill(
+            label = uiPhrase(language, UiPhrase.Reset),
+            selected = false,
+            emphasized = true,
+            emphasisAlpha = if (spaciousnessAmount > 0.001f) 1f else 0.4f,
+            useSubtleIdleBackground = true,
+            onClick = onReset,
+        )
+        modes.forEach { mode ->
+            EqPresetPill(
+                label = mode.displayLabel(language),
+                selected = spaciousnessAmount > 0.001f && mode == currentMode,
+                useSubtleIdleBackground = true,
+                onClick = {
+                    onModeSelected(
+                        if (spaciousnessAmount > 0.001f && mode == currentMode) {
+                            SpaciousnessMode.Off
+                        } else {
+                            mode
+                        },
+                    )
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun EqPresetPill(
+    label: String,
+    selected: Boolean,
+    emphasized: Boolean = false,
+    emphasisAlpha: Float = 1f,
+    useSubtleIdleBackground: Boolean = false,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val targetBackgroundColor = if (emphasized) {
+        MaterialTheme.colorScheme.primary.copy(alpha = emphasisAlpha)
+    } else if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+    } else if (useSubtleIdleBackground) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+    }
+    val backgroundColor by animateColorAsState(
+        targetValue = targetBackgroundColor,
+        animationSpec = rememberMotionSpecs().tween(MotionDuration.Fast),
+        label = "eq_preset_selection",
+    )
+    val contentColor = if (emphasized) {
+        MaterialTheme.colorScheme.onPrimary
+    } else if (selected) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+    }
+    val interactionSource = remember { MutableInteractionSource() }
+    Surface(
+        modifier = modifier.elovairePillActionMotion(
+            interactionSource = interactionSource,
+            pressedScale = 0.96f,
+            label = "${label}_eq_preset_scale",
+        ),
+        shape = RoundedCornerShape(ElovaireRadii.pill),
+        color = backgroundColor.copy(alpha = if (enabled) backgroundColor.alpha else 0.3f),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier
+                .clip(RoundedCornerShape(ElovaireRadii.pill))
+                .clickable(
+                    enabled = enabled,
+                    interactionSource = interactionSource,
+                    indication = null,
+                    role = androidx.compose.ui.semantics.Role.Button,
+                    onClick = onClick,
+                )
+                .then(if (selected) Modifier.semantics { this.selected = true } else Modifier)
+                .padding(horizontal = 14.dp, vertical = 9.dp),
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+            color = contentColor,
+        )
+    }
+}
+
+@Composable
+private fun EqResponseGraph(
+    settings: EqSettings,
+    onBandChanged: (Int, Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val motionSpecs = rememberMotionSpecs()
+    val eqGraphConfig = remember { EqualizerDspConfig() }
+    val graphPointCount = EqualizerDspModel.BAND_COUNT
+    val isDragging = remember { mutableStateOf(false) }
+    val currentOnBandChanged by rememberUpdatedState(onBandChanged)
+    val animatedBandValues = List(graphPointCount) { index ->
+        val target = settings.bands.getOrElse(index) { 0f }.coerceIn(-1f, 1f)
+        animateFloatAsState(
+            targetValue = target,
+            animationSpec = if (isDragging.value) {
+                snap()
+            } else {
+                motionSpecs.tween(120, easing = FastOutSlowInEasing)
+            },
+            label = "eq_band_$index",
+        )
+    }
+    val bandFractions = remember { eqBandFractions() }
+    val dbLevels = remember { eqDbLevels() }
+    val accentColor = Color(0xFF39E38E)
+    val guideColor = MaterialTheme.colorScheme.onSurface
+    val density = LocalDensity.current
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(ElovaireRadii.module))
+            .pointerInput(bandFractions) {
+                detectTapGestures { offset ->
+                    if (size.width == 0 || size.height == 0) return@detectTapGestures
+                    val horizontalPadding = with(density) { EQ_GRAPH_EDGE_PADDING.toPx() }
+                    val graphWidth = (size.width.toFloat() - horizontalPadding * 2f).coerceAtLeast(1f)
+                    val bandIndex = nearestEqBandIndex(
+                        fraction = ((offset.x - horizontalPadding) / graphWidth).coerceIn(0f, 1f),
+                        bandFractions = bandFractions,
+                    )
+                    currentOnBandChanged(
+                        bandIndex,
+                        eqGraphYToNormalized(
+                            y = offset.y,
+                            height = size.height.toFloat(),
+                            config = eqGraphConfig,
+                        ),
+                    )
+                }
+            }
+            .pointerInput(bandFractions) {
+                var activeBandIndex = 0
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    var active = false
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            val delta = change.position - down.position
+                            if (!active && kotlin.math.abs(delta.y) > viewConfiguration.touchSlop &&
+                                kotlin.math.abs(delta.y) > kotlin.math.abs(delta.x)
+                            ) {
+                                if (size.width == 0 || size.height == 0) break
+                                val horizontalPadding = with(density) { EQ_GRAPH_EDGE_PADDING.toPx() }
+                                val graphWidth = (size.width.toFloat() - horizontalPadding * 2f).coerceAtLeast(1f)
+                                activeBandIndex = nearestEqBandIndex(
+                                    fraction = ((down.position.x - horizontalPadding) / graphWidth).coerceIn(0f, 1f),
+                                    bandFractions = bandFractions,
+                                )
+                                active = true
+                                isDragging.value = true
+                            }
+                            if (active) {
+                                change.consume()
+                                currentOnBandChanged(
+                                    activeBandIndex,
+                                    eqGraphYToNormalized(
+                                        y = change.position.y,
+                                        height = size.height.toFloat(),
+                                        config = eqGraphConfig,
+                                    ),
+                                )
+                            }
+                            if (!change.pressed) break
+                        }
+                    } finally {
+                        isDragging.value = false
+                    }
+                }
+            },
+    ) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val topPadding = size.height * 0.08f
+            val bottomPadding = size.height * 0.12f
+            val graphHeight = size.height - topPadding - bottomPadding
+            val horizontalPadding = EQ_GRAPH_EDGE_PADDING.toPx()
+            val graphWidth = (size.width - horizontalPadding * 2f).coerceAtLeast(1f)
+            val zeroDbFraction = ((0f - eqGraphConfig.minBandGainDb) / (eqGraphConfig.maxBandGainDb - eqGraphConfig.minBandGainDb))
+                .coerceIn(0f, 1f)
+            val midY = topPadding + (graphHeight * (1f - zeroDbFraction))
+
+            val trackWidth = 2.dp.toPx()
+            val activeWidth = 3.dp.toPx()
+            val thumbWidth = 8.dp.toPx()
+            val thumbHeight = 18.dp.toPx()
+            dbLevels.forEach { levelDb ->
+                val y = topPadding + (graphHeight * (1f - eqLevelFraction(levelDb, eqGraphConfig)))
+                drawLine(
+                    color = guideColor.copy(alpha = if (levelDb == 0f) 0.12f else 0.05f),
+                    start = Offset(0f, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            }
+
+            repeat(graphPointCount) { index ->
+                val band = animatedBandValues[index].value.coerceIn(-1f, 1f)
+                val x = horizontalPadding + graphWidth * bandFractions.getOrElse(index) { 0f }
+                val y = topPadding + (graphHeight * (1f - EqualizerDspModel.bandGraphFraction(band, eqGraphConfig)))
+                val activeTop = min(y, midY)
+                val activeHeight = max(2.dp.toPx(), kotlin.math.abs(y - midY))
+                drawRoundRect(
+                    color = guideColor.copy(alpha = 0.05f),
+                    topLeft = Offset(x - trackWidth / 2f, topPadding),
+                    size = Size(trackWidth, graphHeight),
+                    cornerRadius = CornerRadius(trackWidth, trackWidth),
+                )
+                drawRoundRect(
+                    color = accentColor.copy(alpha = 0.58f),
+                    topLeft = Offset(x - activeWidth / 2f, activeTop),
+                    size = Size(activeWidth, activeHeight),
+                    cornerRadius = CornerRadius(activeWidth, activeWidth),
+                )
+                drawRoundRect(
+                    color = accentColor,
+                    topLeft = Offset(x - thumbWidth / 2f, y - thumbHeight / 2f),
+                    size = Size(thumbWidth, thumbHeight),
+                    cornerRadius = CornerRadius(thumbWidth, thumbWidth),
+                )
+            }
+        }
+    }
+}
+
+private fun eqGraphYToNormalized(
+    y: Float,
+    height: Float,
+    config: EqualizerDspConfig,
+): Float {
+    if (height <= 0f) return 0f
+    val topPadding = height * 0.08f
+    val bottomPadding = height * 0.12f
+    val graphHeight = (height - topPadding - bottomPadding).coerceAtLeast(1f)
+    val graphFraction = (1f - ((y - topPadding) / graphHeight)).coerceIn(0f, 1f)
+    return EqualizerDspModel.graphFractionToNormalized(graphFraction, config)
+}
+
+@Composable
+private fun EqMiniResponseGraph(
+    settings: EqSettings,
+    modifier: Modifier = Modifier,
+) {
+    val motionSpecs = rememberMotionSpecs()
+    val eqGraphConfig = remember { EqualizerDspConfig() }
+    val graphPointCount = EqualizerDspModel.BAND_COUNT
+    val animatedBandValues = List(graphPointCount) { index ->
+        val target = settings.bands.getOrElse(index) { 0f }.coerceIn(-1f, 1f)
+        animateFloatAsState(
+            targetValue = target,
+            animationSpec = motionSpecs.tween(160, easing = FastOutSlowInEasing),
+            label = "eq_mini_band_$index",
+        )
+    }
+    val bandFractions = remember { eqBandFractions() }
+    val accentColor = Color(0xFF39E38E)
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(ElovaireRadii.module))
+            .drawWithCache {
+                val horizontalPadding = 14.dp.toPx()
+                val topPadding = size.height * 0.18f
+                val bottomPadding = size.height * 0.2f
+                val graphHeight = size.height - topPadding - bottomPadding
+                val graphWidth = size.width - horizontalPadding * 2f
+                val zeroDbFraction = ((0f - eqGraphConfig.minBandGainDb) / (eqGraphConfig.maxBandGainDb - eqGraphConfig.minBandGainDb))
+                    .coerceIn(0f, 1f)
+                val midY = topPadding + (graphHeight * (1f - zeroDbFraction))
+                val pointX = FloatArray(graphPointCount)
+                val pointY = FloatArray(graphPointCount)
+                val strokePath = Path()
+                val fillPath = Path()
+                val gradient = Brush.verticalGradient(
+                    colors = listOf(
+                        accentColor.copy(alpha = 0.18f),
+                        accentColor.copy(alpha = 0.07f),
+                        Color.Transparent,
+                    ),
+                    startY = 0f,
+                    endY = size.height,
+                )
+                val glowWidth = 4.dp.toPx()
+                val lineWidth = 2.4.dp.toPx()
+                onDrawBehind {
+                    repeat(graphPointCount) { index ->
+                        val band = animatedBandValues[index].value.coerceIn(-1f, 1f)
+                        pointX[index] = horizontalPadding + graphWidth * bandFractions[index]
+                        pointY[index] = topPadding + (graphHeight * (1f - EqualizerDspModel.bandGraphFraction(band, eqGraphConfig)))
+                    }
+                    strokePath.reset()
+                    strokePath.moveTo(pointX[0], pointY[0])
+                    for (index in 1 until graphPointCount) {
+                        val previousX = pointX[index - 1]
+                        val previousY = pointY[index - 1]
+                        val currentX = pointX[index]
+                        val currentY = pointY[index]
+                        strokePath.quadraticTo(
+                            previousX,
+                            previousY,
+                            (previousX + currentX) / 2f,
+                            (previousY + currentY) / 2f,
+                        )
+                    }
+                    strokePath.lineTo(pointX[graphPointCount - 1], pointY[graphPointCount - 1])
+                    fillPath.reset()
+                    fillPath.addPath(strokePath)
+                    fillPath.lineTo(pointX[graphPointCount - 1], midY)
+                    fillPath.lineTo(pointX[0], midY)
+                    fillPath.close()
+                    drawPath(path = fillPath, brush = gradient)
+                    drawPath(
+                        path = strokePath,
+                        color = accentColor.copy(alpha = 0.12f),
+                        style = Stroke(width = glowWidth, cap = StrokeCap.Round),
+                    )
+                    drawPath(
+                        path = strokePath,
+                        color = accentColor,
+                        style = Stroke(width = lineWidth, cap = StrokeCap.Round),
+                    )
+                }
+            }
+    )
+}
+
+@Composable
+private fun EqDbScale(
+    modifier: Modifier = Modifier,
+) {
+    val eqGraphConfig = remember { EqualizerDspConfig() }
+    val markerColor = readableSecondaryTextColor().copy(alpha = 0.78f)
+    val levels = remember { eqDbLevels() }
+    BoxWithConstraints(modifier = modifier) {
+        val topPadding = maxHeight * 0.08f
+        val bottomPadding = maxHeight * 0.12f
+        val graphHeight = maxHeight - topPadding - bottomPadding
+        levels.forEach { levelDb ->
+            val positionY = topPadding + (graphHeight * (1f - eqLevelFraction(levelDb, eqGraphConfig)))
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(y = positionY - 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = formatEqDbLabel(levelDb),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = elovaireScaledSp(9f)),
+                    color = markerColor,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    repeat(3) { markerIndex ->
+                        Box(
+                            modifier = Modifier
+                                .width((5 - markerIndex).dp)
+                                .height(1.5.dp)
+                                .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                .background(markerColor.copy(alpha = 0.65f - (markerIndex * 0.14f))),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EqBandFrequencyLabels(
+    contentWidth: Dp,
+    settings: EqSettings,
+    onBandChanged: (Int, Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val labels = remember {
+        EqualizerDspModel.BAND_CENTER_FREQUENCIES_HZ.map(::formatEqFrequencyLabel)
+    }
+    val bandFractions = remember { eqBandFractions() }
+    BoxWithConstraints(
+        modifier = modifier
+            .width(contentWidth)
+            .height(40.dp),
+    ) {
+        val labelWidth = 36.dp
+        val graphWidth = maxWidth - (EQ_GRAPH_EDGE_PADDING * 2)
+        labels.forEachIndexed { index, label ->
+            val fraction = bandFractions.getOrElse(index) { 0f }
+            val gainDb = EqValuePolicy.normalizedToDb(settings.bands.getOrElse(index) { 0f })
+            Column(
+                modifier = Modifier
+                    .width(labelWidth)
+                    .align(Alignment.CenterStart)
+                    .offset(x = EQ_GRAPH_EDGE_PADDING + graphWidth * fraction - (labelWidth / 2))
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "$label Hz"
+                        progressBarRangeInfo = ProgressBarRangeInfo(gainDb, -8f..8f, 31)
+                        setProgress { requested ->
+                            onBandChanged(index, EqValuePolicy.dbToNormalized(requested))
+                            true
+                        }
+                    },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = elovaireScaledSp(10f)),
+                    color = readableSecondaryTextColor().copy(alpha = 0.88f),
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                )
+                Text(
+                    text = formatEqDbLabel(gainDb),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = elovaireScaledSp(9.6f), fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (gainDb == 0f) 0.45f else 0.9f),
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun EqHorizontalScrollbar(
+    scrollState: androidx.compose.foundation.ScrollState,
+    contentWidth: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    val motionSpecs = rememberMotionSpecs()
+    var isDragging by remember { mutableStateOf(false) }
+    var visible by remember { mutableStateOf(true) }
+    var scrollJob by remember { mutableStateOf<Job?>(null) }
+    LaunchedEffect(scrollState.isScrollInProgress, isDragging) {
+        if (scrollState.isScrollInProgress || isDragging) {
+            visible = true
+        } else {
+            delay(2000L)
+            visible = false
+        }
+    }
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(16.dp)
+            .horizontalGestureSafe(),
+    ) {
+        val density = LocalDensity.current
+        val viewportWidthPx = with(density) { maxWidth.toPx() }
+        val contentWidthPx = with(density) { contentWidth.toPx() }.coerceAtLeast(viewportWidthPx)
+        val maxScrollPx = scrollState.maxValue.toFloat().coerceAtLeast(0f)
+        val scrollPosition by remember(scrollState) {
+            derivedStateOf { scrollState.value }
+        }
+        val viewportFraction = (viewportWidthPx / contentWidthPx).coerceIn(0.08f, 1f)
+        val thumbWidthPx = (viewportWidthPx * viewportFraction).coerceAtLeast(with(density) { 46.dp.toPx() })
+        val thumbTravelPx = (viewportWidthPx - thumbWidthPx).coerceAtLeast(0f)
+        val thumbOffsetFraction = if (maxScrollPx <= 0f) 0f else (scrollPosition / maxScrollPx).coerceIn(0f, 1f)
+        val thumbOffsetPx = thumbTravelPx * thumbOffsetFraction
+        val trackColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+            InkText.copy(alpha = 0.12f)
+        } else {
+            Color.White.copy(alpha = 0.14f)
+        }
+        val thumbColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+            InkText.copy(alpha = 0.58f)
+        } else {
+            Color.White.copy(alpha = 0.62f)
+        }
+        val updateScrollFromX: (Float) -> Unit = { xPosition ->
+            if (maxScrollPx > 0f && viewportWidthPx > 0f) {
+                val fraction = ((xPosition - (thumbWidthPx / 2f)) / thumbTravelPx.coerceAtLeast(1f)).coerceIn(0f, 1f)
+                val targetScroll = (maxScrollPx * fraction).roundToInt()
+                scrollJob?.cancel()
+                scrollJob = scope.launch {
+                    scrollState.scrollTo(targetScroll)
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(animationSpec = motionSpecs.tween(120)),
+            exit = fadeOut(animationSpec = motionSpecs.tween(220)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .pointerInput(viewportWidthPx, maxScrollPx) {
+                        detectTapGestures { offset ->
+                            isDragging = true
+                            updateScrollFromX(offset.x)
+                            isDragging = false
+                        }
+                    }
+                    .pointerInput(viewportWidthPx, maxScrollPx) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { offset ->
+                                isDragging = true
+                                updateScrollFromX(offset.x)
+                            },
+                            onHorizontalDrag = { change, _ ->
+                                change.consume()
+                                updateScrollFromX(change.position.x)
+                            },
+                            onDragEnd = { isDragging = false },
+                            onDragCancel = { isDragging = false },
+                        )
+                    },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .clip(RoundedCornerShape(ElovaireRadii.pill))
+                        .background(trackColor),
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .offset { IntOffset(x = thumbOffsetPx.roundToInt(), y = 0) }
+                        .width(with(density) { thumbWidthPx.toDp() })
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(ElovaireRadii.pill))
+                        .background(thumbColor),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsCategoryText(
+    title: String,
+    @DrawableRes iconResId: Int? = null,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (iconResId != null) {
+            Icon(
+                painter = painterResource(id = iconResId),
+                contentDescription = null,
+                tint = readableMutedIconColor(),
+                modifier = Modifier.size(15.dp),
+            )
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+        )
+    }
+}
+
+@Composable
+internal fun ThinContinuousSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    centerValue: Float? = null,
+    stepSize: Float? = null,
+    visualStepSize: Float? = null,
+    stepDotAlpha: Float = 0.48f,
+    lineThickness: Dp = 2.dp,
+    knobSize: Dp = 20.dp,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    fullOpacityKnob: Boolean = false,
+) {
+    val motionSpecs = rememberMotionSpecs()
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val safeValue = value.takeIf(Float::isFinite)?.coerceIn(valueRange) ?: valueRange.start
+    val step = stepSize?.takeIf { it.isFinite() && it > 0f }
+    val stepCount = step?.let { ((valueRange.endInclusive - valueRange.start) / it).roundToInt() }
+        ?.coerceIn(1, 100) ?: 0
+    val visualStepCount = visualStepSize?.takeIf { it.isFinite() && it > 0f }
+        ?.let { ((valueRange.endInclusive - valueRange.start) / it).roundToInt().coerceIn(1, 100) }
+        ?: stepCount
+    val range = valueRange.endInclusive - valueRange.start
+    val knobColor = MaterialTheme.colorScheme.onSurface
+    val centerFraction = centerValue?.let { ((it - valueRange.start) / range).coerceIn(0f, 1f) } ?: 0f
+    var dragging by remember { mutableStateOf(false) }
+    val fraction by animateFloatAsState(
+        targetValue = (safeValue - valueRange.start) / range,
+        animationSpec = if (dragging) snap() else motionSpecs.tween(80),
+        label = "eq_slider_position",
+    )
+    Canvas(
+        modifier = modifier.fillMaxWidth().height(48.dp).horizontalGestureSafe()
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(safeValue, valueRange, (stepCount - 1).coerceAtLeast(0))
+                if (enabled) {
+                    setProgress { requested ->
+                        if (!requested.isFinite()) {
+                            false
+                        } else {
+                            val raw = requested.coerceIn(valueRange)
+                            val next = if (step != null && centerValue == null) {
+                                valueRange.start + ((raw - valueRange.start) / step).roundToInt() * step
+                            } else raw
+                            currentOnValueChange(next.coerceIn(valueRange))
+                            true
+                        }
+                    }
+                } else {
+                    disabled()
+                }
+            }
+            .pointerInput(valueRange, step, centerValue, knobSize, enabled) {
+                if (!enabled) return@pointerInput
+                val inset = knobSize.toPx() / 2f
+                val width = (size.width - inset * 2f).coerceAtLeast(1f)
+                fun update(x: Float) {
+                    val raw = valueRange.start + ((x - inset) / width).coerceIn(0f, 1f) * range
+                    // Centered controls apply their magnetic value policy in the callback.
+                    val next = if (step != null && centerValue == null) {
+                        valueRange.start + ((raw - valueRange.start) / step).roundToInt() * step
+                    } else raw
+                    currentOnValueChange(next.coerceIn(valueRange))
+                }
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                    if (drag != null) {
+                        dragging = true
+                        try {
+                            update(drag.position.x)
+                            val completed = horizontalDrag(drag.id) { change ->
+                                change.consume()
+                                update(change.position.x)
+                            }
+                            if (completed) {
+                                currentEvent.changes.firstOrNull { it.changedToUpIgnoreConsumed() }
+                                    ?.let { update(it.position.x) }
+                            }
+                        } finally {
+                            dragging = false
+                        }
+                    } else {
+                        val up = currentEvent.changes.firstOrNull { it.id == down.id }
+                        if (up != null && up.changedToUpIgnoreConsumed() && !up.isConsumed) {
+                            up.consume()
+                            update(up.position.x)
+                        }
+                    }
+                }
+            },
+    ) {
+        val inset = knobSize.toPx() / 2f
+        val width = (size.width - inset * 2f).coerceAtLeast(1f)
+        val y = size.height / 2f
+        val x = inset + width * fraction
+        val alpha = if (enabled) 1f else 0.38f
+        drawLine(knobColor.copy(alpha = 0.2f * alpha), Offset(inset, y), Offset(inset + width, y),
+            strokeWidth = lineThickness.toPx(), cap = StrokeCap.Round)
+        drawLine(knobColor.copy(alpha = alpha), Offset(inset + width * centerFraction, y), Offset(x, y),
+            strokeWidth = lineThickness.toPx(), cap = StrokeCap.Round)
+        if (visualStepCount > 0) repeat(visualStepCount + 1) { index ->
+            val stepX = inset + width * index / visualStepCount
+            if (abs(stepX - x) > inset) {
+                drawCircle(knobColor.copy(alpha = stepDotAlpha * alpha), 2.dp.toPx(), Offset(stepX, y))
+            }
+        }
+        drawCircle(knobColor.copy(alpha = if (fullOpacityKnob) 1f else alpha), inset, Offset(x, y))
+    }
+}
+private fun eqBandFractions(): List<Float> {
+    val count = EqualizerDspModel.BAND_COUNT
+    if (count <= 1) return emptyList()
+    return List(count) { index -> index.toFloat() / (count - 1).toFloat() }
+}
+
+private fun eqDbLevels(): List<Float> = listOf(8f, 4f, 0f, -4f, -8f)
+
+private fun eqLevelFraction(
+    levelDb: Float,
+    config: EqualizerDspConfig = EqualizerDspConfig(),
+): Float {
+    return ((levelDb - config.minBandGainDb) / (config.maxBandGainDb - config.minBandGainDb))
+        .coerceIn(0f, 1f)
+}
+
+private fun formatEqDbLabel(levelDb: Float): String {
+    return formatPreampDb(levelDb).removeSuffix(" dB")
+}
+
+private fun nearestEqBandIndex(
+    fraction: Float,
+    bandFractions: List<Float>,
+): Int {
+    return bandFractions
+        .withIndex()
+        .minByOrNull { (_, value) -> kotlin.math.abs(value - fraction) }
+        ?.index
+        ?: 0
+}
+
+private fun formatEqFrequencyLabel(frequencyHz: Float): String {
+    return when {
+        frequencyHz >= 1_000f -> {
+            val kilo = frequencyHz / 1_000f
+            formatEqKiloLabel(kilo)
+        }
+        frequencyHz % 1f == 0f -> frequencyHz.roundToInt().toString()
+        else -> frequencyHz.toString()
+    }
+}
+
+private fun formatEqKiloLabel(kiloValue: Float): String {
+    val rawLabel = when {
+        kiloValue >= 10f || kiloValue % 1f == 0f -> kiloValue.roundToInt().toString()
+        (kiloValue * 10f) % 1f == 0f -> String.format(java.util.Locale.ROOT, "%.1f", kiloValue)
+        else -> String.format(java.util.Locale.ROOT, "%.2f", kiloValue)
+    }
+    val formatted = if ('.' in rawLabel) rawLabel.trimEnd('0').trimEnd('.') else rawLabel
+    return "${formatted}k"
+}
+
+private fun eqPreset(
+    name: String,
+    bass: Float,
+    subBass: Float,
+    lowBass: Float,
+    lowMid: Float,
+    presence: Float,
+    upperMid: Float,
+    brilliance: Float,
+    air: Float,
+): EqPresetDefinition {
+    fun adjustedPresetBandValue(value: Float): Float {
+        return if (value < 0f) {
+            (value * 1.25f).coerceIn(-1f, 0f)
+        } else {
+            value
+        }
+    }
+    val bandShape = List(EqualizerDspModel.BAND_COUNT) { index ->
+        when (EqualizerDspModel.bandDefinition(index).frequencyHz) {
+            in 0f..30f -> adjustedPresetBandValue(bass)
+            in 30.0001f..60f -> adjustedPresetBandValue(subBass)
+            in 60.0001f..350f -> adjustedPresetBandValue(lowBass)
+            in 350.0001f..750f -> adjustedPresetBandValue(lowMid)
+            in 750.0001f..1_500f -> adjustedPresetBandValue(presence)
+            in 1_500.0001f..3_000f -> adjustedPresetBandValue(upperMid)
+            in 3_000.0001f..8_000f -> adjustedPresetBandValue(brilliance)
+            else -> adjustedPresetBandValue(air)
+        }.coerceIn(-1f, 1f)
+    }
+    val settings = EqSettings(
+        bands = bandShape,
+        bass = 0f,
+        treble = 0f,
+        spaciousness = 0f,
+        spaciousnessMode = SpaciousnessMode.Off,
+    ).normalizedEqSettings()
+    return EqPresetDefinition(name = name, settings = settings)
+}
+
+private fun EqSettings.normalizedBandValues(): List<Float> {
+    return List(EqualizerDspModel.BAND_COUNT) { index ->
+        bands.getOrElse(index) { 0f }.coerceIn(-1f, 1f)
+    }
+}
+
+private fun EqSettings.normalizedEqSettings(): EqSettings {
+    return copy(
+        bands = normalizedBandValues(),
+        bass = bass.coerceIn(-1f, 1f),
+        treble = treble.coerceIn(-1f, 1f),
+        spaciousness = spaciousness.coerceIn(0f, 1f),
+    )
+}
+
+@Composable
+private fun SectionHeader(
+    title: String,
+    subtitle: String? = null,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(text = title, style = MaterialTheme.typography.headlineMedium)
+        if (!subtitle.isNullOrBlank()) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectablePill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = rememberElovaireInteractionSource()
+    Surface(
+        color = if (selected) {
+            MaterialTheme.colorScheme.onSurface.copy(
+                alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.12f else 0.06f,
+            )
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        },
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(ElovaireRadii.pill),
+        modifier = Modifier
+            .elovairePillActionMotion(
+                interactionSource = interactionSource,
+                pressedScale = 0.96f,
+                label = "equalizer_selectable_pill_bump",
+            )
+            .clip(RoundedCornerShape(ElovaireRadii.pill))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.labelLarge,
+        )
+    }
+}
+
+@Composable
+private fun ControlButton(
+    iconResId: Int,
+    contentDescription: String,
+    onClick: () -> Unit,
+    emphasized: Boolean = false,
+) {
+    val interactionSource = rememberElovaireInteractionSource()
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = if (emphasized) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
+        contentColor = if (emphasized) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurface,
+        shadowElevation = if (emphasized) 22.dp else 0.dp,
+        modifier = Modifier
+            .size(if (emphasized) 88.dp else 64.dp)
+            .elovaireActionBump(
+                interactionSource = interactionSource,
+                label = "${contentDescription}_equalizer_control_bump",
+            ),
+        interactionSource = interactionSource,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(id = iconResId),
+                contentDescription = contentDescription,
+            )
+        }
+    }
+}

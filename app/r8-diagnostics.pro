@@ -1,0 +1,2 @@
+-printusage build/release/usage.txt
+-printseeds build/release/seeds.txt

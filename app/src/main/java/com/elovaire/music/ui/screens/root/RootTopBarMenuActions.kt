@@ -1,0 +1,70 @@
+package elovaire.music.droidbeauty.app.ui.screens
+
+import androidx.annotation.DrawableRes
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import elovaire.music.droidbeauty.app.R
+import elovaire.music.droidbeauty.app.domain.model.AppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.rootUiCopy
+
+internal data class RootTopBarMenuActions(
+    val openSettings: () -> Unit,
+    val openEqualizer: () -> Unit,
+    val openChangelogSheet: () -> Unit,
+    val openAbout: () -> Unit,
+)
+
+@Composable
+internal fun rememberRootTopBarMenuActions(
+    navigationState: RootNavigationState,
+    overlayState: RootOverlayStateHolder,
+): RootTopBarMenuActions {
+    return remember(navigationState, overlayState) {
+        RootTopBarMenuActions(
+            openSettings = {
+                overlayState.dismissTopBarMenu()
+                lazyListPositionCache["settings_screen"] = 0 to 0
+                navigationState.navigateTo(SETTINGS_ROUTE)
+            },
+            openEqualizer = {
+                overlayState.dismissTopBarMenu()
+                navigationState.navigateTo(EQUALIZER_ROUTE)
+            },
+            openChangelogSheet = {
+                overlayState.openChangelogSheet()
+            },
+            openAbout = {
+                overlayState.dismissTopBarMenu()
+                navigationState.navigateTo(ABOUT_ROUTE)
+            },
+        )
+    }
+}
+
+internal fun rootSharedTopBarSpec(
+    currentRoute: String?,
+    showTopLevelChrome: Boolean,
+    language: AppLanguage,
+    onRequestCreatePlaylist: () -> Unit,
+    onOpenMenu: () -> Unit,
+): SharedTopBarSpec? {
+    return if (showTopLevelChrome) {
+        SharedTopBarSpec.Unified(
+            title = topBarTitle(currentRoute, language),
+            showSettings = currentRoute in TopMenuRoutes,
+            supplementalActionIconResId = playlistSupplementalActionIcon(currentRoute),
+            supplementalActionContentDescription = if (currentRoute == PLAYLISTS_ROUTE) rootUiCopy(language).createPlaylistButton else null,
+            onSupplementalAction = if (currentRoute == PLAYLISTS_ROUTE) onRequestCreatePlaylist else null,
+            onOpenMenu = onOpenMenu,
+        )
+    } else {
+        null
+    }
+}
+
+@DrawableRes
+private fun playlistSupplementalActionIcon(currentRoute: String?): Int? {
+    return if (currentRoute == PLAYLISTS_ROUTE) R.drawable.ic_lucide_plus else null
+}
+
+private val TopMenuRoutes = setOf(HOME_ROUTE, ALBUMS_ROUTE, PLAYLISTS_ROUTE)

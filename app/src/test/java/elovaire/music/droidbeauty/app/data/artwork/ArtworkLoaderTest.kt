@@ -1,0 +1,136 @@
+package elovaire.music.droidbeauty.app.data.artwork
+
+import android.graphics.Bitmap
+import android.net.TestUri
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executors
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class ArtworkLoaderTest {
+    @Test
+    fun artworkRequestKey_normalizesSizeAndSeparatesPurpose() {
+        val uri = TestUri("content://artwork/1")
+        val uiKey = artworkRequestKey(uri, 240, ArtworkPurpose.UiLarge)
+        val notificationKey = artworkRequestKey(uri, 240, ArtworkPurpose.Notification)
+
+        requireNotNull(uiKey)
+        requireNotNull(notificationKey)
+        assertEquals(256, uiKey.targetPx)
+        assertNotEquals(uiKey.cacheKey, notificationKey.cacheKey)
+    }
+
+    @Test
+    fun artworkCacheKeyUriMatchesTheWholeUriWithoutPrefixCollisions() {
+        assertEquals(
+            "content://artwork/12",
+            artworkCacheKeyUri("content://artwork/12|256|rgb565-stream"),
+        )
+        assertEquals(null, artworkCacheKeyUri("content://artwork/12"))
+        assertNotEquals(
+            artworkCacheKeyUri("content://artwork/12|256|rgb565-stream"),
+            "content://artwork/123",
+        )
+    }
+
+    @Test
+    fun normalizeArtworkRequestSize_usesBoundedBuckets() {
+        assertEquals(96, normalizeArtworkRequestSize(1))
+        assertEquals(256, normalizeArtworkRequestSize(240))
+        assertEquals(1024, normalizeArtworkRequestSize(2048))
+    }
+
+    @Test
+    fun audioSources_skipImageStreamProbe_thatCouldReadTheWholeTrack() {
+        assertTrue(isLikelyAudioMediaUri(TestUri("content://media/external/audio/media/42")))
+        assertTrue(isLikelyAudioMediaUri(TestUri("content://documents/song.m4b")))
+        assertTrue(isLikelyAudioMediaUri(TestUri("content://documents/song.mp3?raw=1")))
+        assertFalse(isLikelyAudioMediaUri(TestUri("content://images/cover.jpg")))
+        assertFalse(shouldUseContentResolverThumbnail(TestUri("content://documents/song.m4b"), ArtworkPurpose.UiLarge))
+        assertTrue(shouldUseContentResolverThumbnail(TestUri("content://images/cover.jpg"), ArtworkPurpose.UiLarge))
+        assertFalse(shouldUseContentResolverThumbnail(TestUri("content://images/cover.jpg"), ArtworkPurpose.Notification))
+    }
+
+    @Test
+    fun bitmapConfig_preservesQualityForLargeAndEditorArtwork() {
+        assertEquals(Bitmap.Config.RGB_565, bitmapConfigForPurpose(ArtworkPurpose.UiGrid))
+        assertEquals(Bitmap.Config.ARGB_8888, bitmapConfigForPurpose(ArtworkPurpose.UiLarge))
+        assertEquals(Bitmap.Config.ARGB_8888, bitmapConfigForPurpose(ArtworkPurpose.Notification))
+        assertEquals(Bitmap.Config.ARGB_8888, bitmapConfigForPurpose(ArtworkPurpose.TagEditorPreview))
+    }
+
+    @Test
+    fun artworkBounds_rejectInvalidAndDecompressionBombDimensions() {
+        assertTrue(isArtworkBoundsSafe(4_000, 4_000))
+        assertFalse(isArtworkBoundsSafe(0, 512))
+        assertFalse(isArtworkBoundsSafe(8_193, 1))
+        assertFalse(isArtworkBoundsSafe(8_192, 8_192))
+    }
+
+    @Test
+    fun paletteAccentCache_isBoundedAndInvalidatesByArtworkIdentity() {
+        ArtworkGradientCache.clear()
+        repeat(161) { index ->
+            ArtworkGradientCache.putAccent("content://artwork/$index|UI|accent", index)
+        }
+
+        assertEquals(null, ArtworkGradientCache.accent("content://artwork/0|UI|accent"))
+        assertEquals(160, ArtworkGradientCache.accent("content://artwork/160|UI|accent"))
+
+        ArtworkGradientCache.removeMatching(setOf("content://artwork/160"))
+
+        assertEquals(null, ArtworkGradientCache.accent("content://artwork/160|UI|accent"))
+        ArtworkGradientCache.clear()
+    }
+
+    @Test
+    fun paletteInvalidationPreservesUriBoundariesAndHandlesPipes() {
+        ArtworkGradientCache.clear()
+        val keys = listOf("content://artwork/1|UI", "content://artwork/10|UI", "content://artwork/part|two|UI")
+        keys.forEach { key ->
+            ArtworkGradientCache.putGradient(key, listOf(1, 2))
+            ArtworkGradientCache.putAccent("$key|accent", 3)
+        }
+
+        ArtworkGradientCache.removeMatching(setOf("content://artwork/1", "content://artwork/part|two"))
+
+        for (key in keys) {
+            val survives = key == keys[1]
+            assertEquals(if (survives) listOf(1, 2) else null, ArtworkGradientCache.gradient(key))
+            assertEquals(if (survives) 3 else null, ArtworkGradientCache.accent("$key|accent"))
+        }
+        ArtworkGradientCache.clear()
+    }
+
+    @Test
+    fun awaitingSharedDecodeDoesNotBlockItsDispatcher() = runBlocking {
+        val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val future = CompletableFuture<String>()
+        val waiterEntered = CompletableDeferred<Unit>()
+        val waiter = async(dispatcher) {
+            waiterEntered.complete(Unit)
+            awaitArtworkLoad(future).getOrThrow()
+        }
+        try {
+            waiterEntered.await()
+            val dispatcherProbe = CompletableDeferred<Unit>()
+            async(dispatcher) { dispatcherProbe.complete(Unit) }
+
+            withTimeout(1_000L) { dispatcherProbe.await() }
+            assertFalse(waiter.isCompleted)
+            future.complete("decoded")
+            assertEquals("decoded", waiter.await())
+        } finally {
+            future.complete("released")
+            dispatcher.close()
+        }
+    }
+}

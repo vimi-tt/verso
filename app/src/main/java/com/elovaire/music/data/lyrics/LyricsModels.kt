@@ -1,0 +1,181 @@
+package elovaire.music.droidbeauty.app.data.lyrics
+
+import elovaire.music.droidbeauty.app.core.isWallTimeDeadlineFresh
+
+enum class SyncedLyricsTimingProfile {
+    ExactIntervals,
+}
+
+data class LyricsIdentity(
+    val title: String,
+    val artist: String,
+    val album: String,
+    val durationMs: Long,
+    val mediaId: String?,
+    val contentUri: String?,
+    val normalizedTitle: String,
+    val normalizedArtist: String,
+    val normalizedAlbum: String,
+    val normalizedLookupKey: String,
+    val cacheKeys: List<String>,
+)
+
+data class LyricsWordSpan(
+    val text: String,
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+)
+
+data class LyricsLine(
+    val text: String,
+    val startTimeMs: Long?,
+    val endTimeMs: Long? = null,
+    val index: Int = 0,
+    val words: List<LyricsWordSpan> = emptyList(),
+)
+
+data class LyricsPayload(
+    val lines: List<LyricsLine>,
+    val isSynced: Boolean,
+    val displayTimingOffsetMs: Long = 0L,
+    val timingScale: Float = 1f,
+    val timingProfile: SyncedLyricsTimingProfile = SyncedLyricsTimingProfile.ExactIntervals,
+    val sourceTextForEmbedding: String? = null,
+) {
+    fun currentLineIndexAt(
+        positionMs: Long,
+        timingOffsetMs: Long = 0L,
+        switchGraceMs: Long = 180L,
+    ): Int? = currentLineIndexAtFast(positionMs, timingOffsetMs, switchGraceMs)
+
+    fun currentLineIndexAtFast(
+        positionMs: Long,
+        timingOffsetMs: Long = 0L,
+        switchGraceMs: Long = 120L,
+    ): Int? {
+        if (!isSynced || lines.isEmpty()) return null
+        val correctedPositionMs = correctedLyricPositionMs(
+            positionMs = positionMs,
+            timingOffsetMs = timingOffsetMs,
+            switchGraceMs = switchGraceMs,
+        )
+        if (correctedPositionMs < 0L) return null
+
+        var low = 0
+        var high = lines.lastIndex
+        var result = -1
+
+        while (low <= high) {
+            val mid = (low + high) ushr 1
+            val startTimeMs = lines[mid].startTimeMs ?: Long.MAX_VALUE
+            if (startTimeMs <= correctedPositionMs) {
+                result = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+
+        if (result < 0) return null
+        val endTimeMs = lines[result].endTimeMs
+        if (endTimeMs != null && correctedPositionMs > saturatingAdd(endTimeMs, 500L)) return null
+        return result
+    }
+
+    fun currentLineAt(
+        positionMs: Long,
+        timingOffsetMs: Long = 0L,
+        switchGraceMs: Long = 180L,
+    ): LyricsLine? = currentLineIndexAt(positionMs, timingOffsetMs, switchGraceMs)?.let(lines::get)
+
+    private fun correctedLyricPositionMs(
+        positionMs: Long,
+        timingOffsetMs: Long,
+        switchGraceMs: Long,
+    ): Long {
+        val delayedPositionMs = saturatingSubtract(
+            saturatingSubtract(
+                saturatingSubtract(positionMs, displayTimingOffsetMs),
+                timingOffsetMs,
+            ),
+            switchGraceMs,
+        )
+        if (timingScale == 1f) return delayedPositionMs
+        return (delayedPositionMs / timingScale).toLong()
+    }
+}
+
+internal fun LyricsPayload.validatedForPlayback(): LyricsPayload? {
+    if (!timingScale.isFinite() || timingScale <= 0f) return null
+    if (displayTimingOffsetMs !in -MAX_LYRICS_TIMING_OFFSET_MS..MAX_LYRICS_TIMING_OFFSET_MS) return null
+    if (sourceTextForEmbedding != null && sourceTextForEmbedding.length > MAX_LYRICS_CHARACTERS) return null
+    if (lines.size > MAX_LYRICS_LINES) return null
+    var previousStart: Long? = null
+    lines.forEach { line ->
+        if (line.text.length > MAX_LYRIC_LINE_CHARACTERS) return null
+        val start = line.startTimeMs
+        val end = line.endTimeMs
+        if (isSynced && start == null) return null
+        if (start != null) {
+            val previous = previousStart
+            if (start < 0L || (previous != null && start < previous)) return null
+            previousStart = start
+            if (end != null && end < start) return null
+        } else if (end != null) {
+            return null
+        }
+    }
+    return this
+}
+
+private fun saturatingAdd(value: Long, amount: Long): Long = when {
+    amount > 0L && value > Long.MAX_VALUE - amount -> Long.MAX_VALUE
+    amount < 0L && value < Long.MIN_VALUE - amount -> Long.MIN_VALUE
+    else -> value + amount
+}
+
+private fun saturatingSubtract(value: Long, amount: Long): Long = when {
+    amount > 0L && value < Long.MIN_VALUE + amount -> Long.MIN_VALUE
+    amount < 0L && value > Long.MAX_VALUE + amount -> Long.MAX_VALUE
+    else -> value - amount
+}
+
+sealed interface LyricsResult {
+    data class Found(val payload: LyricsPayload) : LyricsResult
+    data object NotFound : LyricsResult
+    data object Timeout : LyricsResult
+    data object Unavailable : LyricsResult
+    data object MalformedResponse : LyricsResult
+    data class RateLimited(val retryAfterMs: Long?) : LyricsResult
+    data class Rejected(val statusCode: Int) : LyricsResult
+}
+
+internal fun lrclibResponseResult(statusCode: Int, retryAfterMs: Long?): LyricsResult = when {
+    statusCode == 404 -> LyricsResult.NotFound
+    statusCode == 429 -> LyricsResult.RateLimited(retryAfterMs)
+    statusCode == 408 || statusCode in 500..599 -> LyricsResult.Timeout
+    statusCode in 400..499 -> LyricsResult.Rejected(statusCode)
+    else -> LyricsResult.Unavailable
+}
+
+internal data class LyricsCacheEntry(
+    val result: LyricsResult,
+    val expiresAtMillis: Long,
+    val online: Boolean = false,
+) {
+    fun isExpired(nowMillis: Long): Boolean =
+        !isWallTimeDeadlineFresh(
+            nowMillis,
+            expiresAtMillis,
+            if (online && result == LyricsResult.NotFound) MAX_NEGATIVE_LYRICS_CACHE_TTL_MS else MAX_LYRICS_CACHE_TTL_MS,
+        )
+}
+
+private const val MAX_LYRICS_CACHE_TTL_MS = 30L * 24L * 60L * 60L * 1_000L
+private const val MAX_NEGATIVE_LYRICS_CACHE_TTL_MS = 24L * 60L * 60L * 1_000L
+internal const val MAX_LYRICS_TIMING_OFFSET_MS = 24L * 60L * 60L * 1_000L
+private const val MAX_LYRIC_LINE_CHARACTERS = 16 * 1024
+
+internal data class LocalLyricsMatch(
+    val payload: LyricsPayload,
+)

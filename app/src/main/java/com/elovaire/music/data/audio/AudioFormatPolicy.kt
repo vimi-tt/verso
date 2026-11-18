@@ -1,0 +1,716 @@
+package elovaire.music.droidbeauty.app.data.audio
+
+import java.util.Locale
+
+internal enum class AudioContainerFormat {
+    Mp3,
+    Mp4Audio,
+    AacAdts,
+    Flac,
+    Wav,
+    OggVorbis,
+    OggOpus,
+    OggFlac,
+    Opus,
+    Amr,
+    ThreeGpAudio,
+    MatroskaAudio,
+    Unknown,
+}
+
+internal enum class PlaybackSupport {
+    Supported,
+    PlatformDependent,
+    Unsupported,
+}
+
+internal enum class MetadataReadSupport {
+    Strong,
+    Partial,
+    Weak,
+    Unsupported,
+}
+
+internal enum class TagWriteSupport {
+    Safe,
+    Partial,
+    Unsupported,
+}
+
+internal enum class CapabilityLevel {
+    Strong,
+    Partial,
+    Weak,
+    Unsupported,
+}
+
+internal enum class DecoderRequirement {
+    Platform,
+    None,
+}
+
+internal enum class TagFamily {
+    Id3,
+    Mp4Atoms,
+    VorbisComments,
+    OpusTags,
+    Riff,
+    None,
+}
+
+internal enum class SeekSupport {
+    Indexed,
+    ConstantBitrateFallback,
+    ExtractorDependent,
+}
+
+internal data class TagMutationCapabilities(
+    val textFields: CapabilityLevel,
+    val trackDiscNumbers: CapabilityLevel,
+    val artwork: CapabilityLevel,
+    val unsyncedLyrics: CapabilityLevel,
+    val syncedLyrics: CapabilityLevel,
+    val replayGain: CapabilityLevel,
+    val preservesUnknownFields: CapabilityLevel,
+    val canCreateTag: CapabilityLevel,
+    val canModifyExistingTag: CapabilityLevel,
+)
+
+internal data class ContainerCapability(
+    val container: AudioContainerFormat,
+    val extensions: Set<String>,
+    val mimeTypes: Set<String>,
+    val requiresInspection: Boolean,
+)
+
+internal data class PlaybackCapability(
+    val extractorSupport: CapabilityLevel,
+    val decoderRequirement: DecoderRequirement,
+    val platformDependent: Boolean,
+    val supportedCodecMimeTypes: Set<String>,
+)
+
+internal data class MetadataCapability(
+    val read: CapabilityLevel,
+    val textWrite: CapabilityLevel,
+    val artworkWrite: CapabilityLevel,
+    val lyricsWrite: LyricsWriteCapability,
+)
+
+internal data class LyricsWriteCapability(
+    val unsynced: CapabilityLevel,
+    val synced: CapabilityLevel,
+)
+
+internal data class ResolvedFormatCapability(
+    val container: ContainerCapability,
+    val playback: PlaybackCapability,
+    val metadata: MetadataCapability,
+)
+
+internal sealed interface FormatEligibility {
+    data class Supported(val capability: ResolvedFormatCapability) : FormatEligibility
+    data class PlatformDependent(val reason: String) : FormatEligibility
+    data class Unsupported(val reason: String) : FormatEligibility
+    data class Malformed(val cause: Throwable?) : FormatEligibility
+}
+
+internal data class AudioFormatCapability(
+    val format: AudioContainerFormat,
+    val displayName: String,
+    val extensions: Set<String>,
+    val mimeTypes: Set<String>,
+    val playbackMimeType: String?,
+    val allowedCodecMimeTypes: Set<String>,
+    val requiresContainerValidation: Boolean,
+    val playbackSupport: PlaybackSupport,
+    val metadataReadSupport: MetadataReadSupport,
+    val tagWriteSupport: TagWriteSupport,
+    val canEmbedArtwork: Boolean,
+    val tagFamily: TagFamily,
+    val mutation: TagMutationCapabilities,
+    val seekSupport: SeekSupport,
+    val losslessCodecMimeTypes: Set<String> = emptySet(),
+    val voiceOrSpokenWord: Boolean = false,
+    val notes: String,
+)
+
+private val UnsupportedMutation = TagMutationCapabilities(
+    textFields = CapabilityLevel.Unsupported,
+    trackDiscNumbers = CapabilityLevel.Unsupported,
+    artwork = CapabilityLevel.Unsupported,
+    unsyncedLyrics = CapabilityLevel.Unsupported,
+    syncedLyrics = CapabilityLevel.Unsupported,
+    replayGain = CapabilityLevel.Unsupported,
+    preservesUnknownFields = CapabilityLevel.Unsupported,
+    canCreateTag = CapabilityLevel.Unsupported,
+    canModifyExistingTag = CapabilityLevel.Unsupported,
+)
+
+private fun safeMutation(syncedLyrics: Boolean) = TagMutationCapabilities(
+    textFields = CapabilityLevel.Strong,
+    trackDiscNumbers = CapabilityLevel.Strong,
+    artwork = CapabilityLevel.Strong,
+    unsyncedLyrics = CapabilityLevel.Strong,
+    syncedLyrics = if (syncedLyrics) CapabilityLevel.Strong else CapabilityLevel.Unsupported,
+    replayGain = CapabilityLevel.Unsupported,
+    preservesUnknownFields = CapabilityLevel.Partial,
+    canCreateTag = CapabilityLevel.Partial,
+    canModifyExistingTag = CapabilityLevel.Strong,
+)
+
+internal object AudioFormatPolicy {
+    val capabilities = listOf(
+        AudioFormatCapability(
+            format = AudioContainerFormat.Mp3,
+            displayName = "MP3",
+            extensions = setOf("mp3"),
+            mimeTypes = setOf("audio/mpeg"),
+            playbackMimeType = "audio/mpeg",
+            allowedCodecMimeTypes = setOf("audio/mpeg"),
+            requiresContainerValidation = false,
+            playbackSupport = PlaybackSupport.Supported,
+            metadataReadSupport = MetadataReadSupport.Strong,
+            tagWriteSupport = TagWriteSupport.Safe,
+            canEmbedArtwork = true,
+            tagFamily = TagFamily.Id3,
+            mutation = safeMutation(syncedLyrics = true),
+            seekSupport = SeekSupport.ConstantBitrateFallback,
+            notes = "ID3 metadata and artwork are supported.",
+        ),
+        AudioFormatCapability(
+            format = AudioContainerFormat.Mp4Audio,
+            displayName = "M4A/MP4 Audio",
+            extensions = setOf("m4a", "m4b", "mp4"),
+            mimeTypes = setOf("audio/mp4", "audio/mp4a-latm", "video/mp4"),
+            playbackMimeType = "audio/mp4",
+            allowedCodecMimeTypes = setOf(
+                "audio/mp4a-latm", "audio/aac", "audio/mpeg", "audio/opus", "audio/alac",
+                "audio/ac3", "audio/eac3", "audio/eac3-joc",
+            ),
+            requiresContainerValidation = true,
+            playbackSupport = PlaybackSupport.Supported,
+            metadataReadSupport = MetadataReadSupport.Strong,
+            tagWriteSupport = TagWriteSupport.Safe,
+            canEmbedArtwork = true,
+            tagFamily = TagFamily.Mp4Atoms,
+            mutation = safeMutation(syncedLyrics = false),
+            seekSupport = SeekSupport.Indexed,
+            losslessCodecMimeTypes = setOf("audio/alac"),
+            notes = "MP4 files must contain audio and no video track.",
+        ),
+        AudioFormatCapability(
+            format = AudioContainerFormat.AacAdts,
+            displayName = "AAC",
+            extensions = setOf("aac"),
+            mimeTypes = setOf("audio/aac", "audio/aac-adts"),
+            playbackMimeType = "audio/aac",
+            allowedCodecMimeTypes = setOf("audio/aac", "audio/mp4a-latm"),
+            requiresContainerValidation = false,
+            playbackSupport = PlaybackSupport.Supported,
+            metadataReadSupport = MetadataReadSupport.Weak,
+            tagWriteSupport = TagWriteSupport.Unsupported,
+            canEmbedArtwork = false,
+            tagFamily = TagFamily.None,
+            mutation = UnsupportedMutation,
+            seekSupport = SeekSupport.ConstantBitrateFallback,
+            notes = "ADTS metadata writes are unsafe.",
+        ),
+        AudioFormatCapability(
+            format = AudioContainerFormat.Flac,
+            displayName = "FLAC",
+            extensions = setOf("flac"),
+            mimeTypes = setOf("audio/flac", "audio/x-flac"),
+            playbackMimeType = "audio/flac",
+            allowedCodecMimeTypes = setOf("audio/flac", "audio/raw"),
+            requiresContainerValidation = false,
+            playbackSupport = PlaybackSupport.Supported,
+            metadataReadSupport = MetadataReadSupport.Strong,
+            tagWriteSupport = TagWriteSupport.Safe,
+            canEmbedArtwork = true,
+            tagFamily = TagFamily.VorbisComments,
+            mutation = safeMutation(syncedLyrics = true),
+            seekSupport = SeekSupport.Indexed,
+            losslessCodecMimeTypes = setOf("audio/flac"),
+            notes = "Vorbis comments and artwork are supported.",
+        ),
+        AudioFormatCapability(
+            format = AudioContainerFormat.Wav,
+            displayName = "WAV",
+            extensions = setOf("wav"),
+            mimeTypes = setOf("audio/wav", "audio/x-wav"),
+            playbackMimeType = "audio/wav",
+            allowedCodecMimeTypes = setOf("audio/raw", "audio/g711-alaw", "audio/g711-mlaw"),
+            requiresContainerValidation = false,
+            playbackSupport = PlaybackSupport.Supported,
+            metadataReadSupport = MetadataReadSupport.Partial,
+            tagWriteSupport = TagWriteSupport.Partial,
+            canEmbedArtwork = false,
+            tagFamily = TagFamily.Riff,
+            mutation = UnsupportedMutation,
+            seekSupport = SeekSupport.Indexed,
+            notes = "WAV metadata layouts are inconsistent.",
+        ),
+        AudioFormatCapability(
+            format = AudioContainerFormat.OggVorbis,
+            displayName = "OGG/VORBIS",
+            extensions = setOf("ogg", "oga"),
+            mimeTypes = setOf("audio/ogg", "application/ogg", "audio/vorbis"),
+            playbackMimeType = "audio/ogg",
+            allowedCodecMimeTypes = setOf("audio/vorbis", "audio/ogg"),
+            requiresContainerValidation = true,
+            playbackSupport = PlaybackSupport.Supported,
+            metadataReadSupport = MetadataReadSupport.Partial,
+            tagWriteSupport = TagWriteSupport.Partial,
+            canEmbedArtwork = false,
+            tagFamily = TagFamily.VorbisComments,
+            mutation = UnsupportedMutation,
+            seekSupport = SeekSupport.Indexed,
+            notes = "Codec is detected before playback; writes remain disabled.",
+        ),
+        AudioFormatCapability(
+            format = AudioContainerFormat.OggOpus,
+            displayName = "OGG/OPUS",
+            extensions = setOf("ogg", "oga"),
+            mimeTypes = setOf("audio/ogg", "application/ogg", "audio/opus"),
+            playbackMimeType = "audio/ogg",
+            allowedCodecMimeTypes = setOf("audio/opus"),
+            requiresContainerValidation = true,
+            playbackSupport = PlaybackSupport.Supported,
+            metadataReadSupport = MetadataReadSupport.Partial,
+            tagWriteSupport = TagWriteSupport.Partial,
+            canEmbedArtwork = false,
+            tagFamily = TagFamily.OpusTags,
+            mutation = UnsupportedMutation,
+            seekSupport = SeekSupport.Indexed,
+            notes = "Codec is detected before playback; writes remain disabled.",
+        ),
+        AudioFormatCapability(
+            format = AudioContainerFormat.OggFlac,
+            displayName = "OGG/FLAC",
+            extensions = setOf("ogg", "oga"),
+            mimeTypes = setOf("audio/ogg", "application/ogg", "audio/flac"),
+            playbackMimeType = "audio/ogg",
+            allowedCodecMimeTypes = setOf("audio/flac", "audio/raw"),
+            requiresContainerValidation = true,
+            playbackSupport = PlaybackSupport.Supported,
+            metadataReadSupport = MetadataReadSupport.Partial,
+            tagWriteSupport = TagWriteSupport.Partial,
+            canEmbedArtwork = false,
+            tagFamily = TagFamily.VorbisComments,
+            mutation = UnsupportedMutation,
+            seekSupport = SeekSupport.Indexed,
+            losslessCodecMimeTypes = setOf("audio/flac"),
+            notes = "Codec is detected before playback; writes remain disabled.",
+        ),
+        AudioFormatCapability(
+            format = AudioContainerFormat.Opus,
+            displayName = "OGG/OPUS",
+            extensions = setOf("opus"),
+            mimeTypes = setOf("audio/opus"),
+            playbackMimeType = "audio/opus",
+            allowedCodecMimeTypes = setOf("audio/opus"),
+            requiresContainerValidation = true,
+            playbackSupport = PlaybackSupport.Supported,
+            metadataReadSupport = MetadataReadSupport.Partial,
+            tagWriteSupport = TagWriteSupport.Partial,
+            canEmbedArtwork = false,
+            tagFamily = TagFamily.OpusTags,
+            mutation = UnsupportedMutation,
+            seekSupport = SeekSupport.Indexed,
+            notes = "The .opus extension is an Ogg Opus mapping and is inspected before playback; writes remain disabled.",
+        ),
+        AudioFormatCapability(
+            format = AudioContainerFormat.Amr,
+            displayName = "AMR",
+            extensions = setOf("amr"),
+            mimeTypes = setOf("audio/amr", "audio/amr-wb"),
+            playbackMimeType = "audio/amr",
+            allowedCodecMimeTypes = setOf("audio/3gpp", "audio/amr-wb", "audio/amr"),
+            requiresContainerValidation = true,
+            playbackSupport = PlaybackSupport.PlatformDependent,
+            metadataReadSupport = MetadataReadSupport.Weak,
+            tagWriteSupport = TagWriteSupport.Unsupported,
+            canEmbedArtwork = false,
+            tagFamily = TagFamily.None,
+            mutation = UnsupportedMutation,
+            seekSupport = SeekSupport.ConstantBitrateFallback,
+            voiceOrSpokenWord = true,
+            notes = "Usually voice content and device-decoder dependent.",
+        ),
+        AudioFormatCapability(
+            format = AudioContainerFormat.ThreeGpAudio,
+            displayName = "3GP Audio",
+            extensions = setOf("3gp"),
+            mimeTypes = setOf("audio/3gpp", "video/3gpp"),
+            playbackMimeType = "audio/3gpp",
+            allowedCodecMimeTypes = setOf("audio/3gpp", "audio/amr-wb", "audio/mp4a-latm", "audio/aac"),
+            requiresContainerValidation = true,
+            playbackSupport = PlaybackSupport.PlatformDependent,
+            metadataReadSupport = MetadataReadSupport.Weak,
+            tagWriteSupport = TagWriteSupport.Unsupported,
+            canEmbedArtwork = false,
+            tagFamily = TagFamily.None,
+            mutation = UnsupportedMutation,
+            seekSupport = SeekSupport.ExtractorDependent,
+            voiceOrSpokenWord = true,
+            notes = "Only audio-only files with a device decoder are eligible.",
+        ),
+        AudioFormatCapability(
+            format = AudioContainerFormat.MatroskaAudio,
+            displayName = "MKA",
+            extensions = setOf("mka"),
+            mimeTypes = setOf("audio/x-matroska", "video/x-matroska"),
+            playbackMimeType = "audio/x-matroska",
+            allowedCodecMimeTypes = setOf("audio/opus", "audio/vorbis", "audio/flac", "audio/mpeg", "audio/mp4a-latm"),
+            requiresContainerValidation = true,
+            playbackSupport = PlaybackSupport.PlatformDependent,
+            metadataReadSupport = MetadataReadSupport.Weak,
+            tagWriteSupport = TagWriteSupport.Unsupported,
+            canEmbedArtwork = false,
+            tagFamily = TagFamily.None,
+            mutation = UnsupportedMutation,
+            seekSupport = SeekSupport.ExtractorDependent,
+            notes = "Codec playback depends on the device decoder.",
+        ),
+    )
+
+    private val capabilityByExtension: Map<String, AudioFormatCapability> = buildMap {
+        capabilities.forEach { capability ->
+            capability.extensions.forEach { extension ->
+                val key = extension.lowercase(Locale.ROOT)
+                if (!containsKey(key)) put(key, capability)
+            }
+        }
+    }
+
+    private val capabilityByMimeType: Map<String, AudioFormatCapability> = buildMap {
+        capabilities.forEach { capability ->
+            capability.mimeTypes.forEach { mimeType ->
+                val key = mimeType.lowercase(Locale.ROOT)
+                if (!containsKey(key)) put(key, capability)
+            }
+        }
+    }
+
+    private val capabilityByFormat: Map<AudioContainerFormat, AudioFormatCapability> = buildMap {
+        capabilities.forEach { capability ->
+            if (!containsKey(capability.format)) put(capability.format, capability)
+        }
+    }
+
+    val scannerExtensions: Set<String> = capabilities
+        .filter { it.playbackSupport != PlaybackSupport.Unsupported }
+        .flatMapTo(linkedSetOf()) { it.extensions }
+
+    val safelyTaggableExtensions: Set<String> = capabilities
+        .filter { it.tagWriteSupport == TagWriteSupport.Safe }
+        .flatMapTo(linkedSetOf()) { it.extensions }
+
+    val validationRequiredExtensions: Set<String> = capabilities
+        .filter { it.requiresContainerValidation }
+        .flatMapTo(linkedSetOf()) { it.extensions }
+
+    val voiceOrSpokenWordExtensions: Set<String> = capabilities
+        .filter(AudioFormatCapability::voiceOrSpokenWord)
+        .flatMapTo(linkedSetOf()) { it.extensions }
+
+    fun requiresContainerValidation(extension: String?): Boolean {
+        return extension.orEmpty().trim().lowercase(Locale.ROOT) in validationRequiredExtensions
+    }
+
+    fun shouldDetectContainer(
+        extension: String?,
+        enrichMetadata: Boolean,
+    ): Boolean {
+        return enrichMetadata || requiresContainerValidation(extension)
+    }
+
+    fun capabilityForExtension(extension: String?): AudioFormatCapability? {
+        val normalized = extension.orEmpty().trim().lowercase(Locale.ROOT)
+        return capabilityByExtension[normalized]
+    }
+
+    fun capabilityForFileName(fileName: String): AudioFormatCapability? {
+        return capabilityForExtension(fileName.substringAfterLast('.', ""))
+    }
+
+    fun capabilityFor(format: AudioContainerFormat): AudioFormatCapability? {
+        return capabilityByFormat[format]
+    }
+
+    fun resolveContainer(
+        extension: String?,
+        mediaStoreMimeType: String?,
+        codecMimeType: String?,
+    ): AudioContainerFormat {
+        val ext = extension.orEmpty().lowercase(Locale.ROOT)
+        val codec = codecMimeType.orEmpty().lowercase(Locale.ROOT)
+        if (isOggExtension(ext)) {
+            return when (codec) {
+                "audio/opus" -> AudioContainerFormat.OggOpus
+                "audio/flac" -> AudioContainerFormat.OggFlac
+                "audio/vorbis", "audio/ogg" -> AudioContainerFormat.OggVorbis
+                "" -> AudioContainerFormat.OggVorbis
+                else -> AudioContainerFormat.Unknown
+            }
+        }
+        return when (ext) {
+            "mp3" -> AudioContainerFormat.Mp3
+            "m4a", "m4b", "mp4" -> AudioContainerFormat.Mp4Audio
+            "aac" -> AudioContainerFormat.AacAdts
+            "flac" -> AudioContainerFormat.Flac
+            "wav" -> AudioContainerFormat.Wav
+            "opus" -> AudioContainerFormat.Opus
+            "amr" -> AudioContainerFormat.Amr
+            "3gp" -> AudioContainerFormat.ThreeGpAudio
+            "mka" -> AudioContainerFormat.MatroskaAudio
+            else -> capabilityForMimeType(mediaStoreMimeType)?.format ?: AudioContainerFormat.Unknown
+        }
+    }
+
+    fun displayName(
+        container: AudioContainerFormat,
+        extension: String,
+        codecMimeType: String? = null,
+    ): String {
+        return when (container) {
+            AudioContainerFormat.Mp3 -> "MP3"
+            AudioContainerFormat.Mp4Audio -> when {
+                codecMimeType.equals("audio/eac3-joc", true) -> "E-AC-3 JOC"
+                codecMimeType.equals("audio/eac3", true) -> "E-AC-3"
+                codecMimeType.equals("audio/ac3", true) -> "AC-3"
+                codecMimeType.equals("audio/alac", true) && extension.equals("m4a", true) -> "M4A/ALAC"
+                codecMimeType.equals("audio/alac", true) && extension.equals("m4b", true) -> "M4B/ALAC"
+                codecMimeType.equals("audio/alac", true) -> "ALAC"
+                extension.equals("m4a", true) -> "M4A"
+                extension.equals("m4b", true) -> "M4B"
+                else -> "MP4 Audio"
+            }
+            AudioContainerFormat.AacAdts -> "AAC"
+            AudioContainerFormat.Flac -> "FLAC"
+            AudioContainerFormat.Wav -> "WAV"
+            AudioContainerFormat.OggVorbis -> if (codecMimeType.isNullOrBlank()) "OGG" else "OGG/VORBIS"
+            AudioContainerFormat.OggOpus -> "OGG/OPUS"
+            AudioContainerFormat.OggFlac -> "OGG/FLAC"
+            AudioContainerFormat.Opus -> "OPUS"
+            AudioContainerFormat.Amr -> "AMR"
+            AudioContainerFormat.ThreeGpAudio -> "3GP Audio"
+            AudioContainerFormat.MatroskaAudio -> "MKA"
+            AudioContainerFormat.Unknown -> extension.uppercase(Locale.ROOT).ifBlank {
+                codecMimeType?.substringAfter('/')?.uppercase(Locale.ROOT).orEmpty().ifBlank { "AUDIO" }
+            }
+        }
+    }
+
+    fun playbackSupport(detected: DetectedAudioFormat): PlaybackSupport {
+        if (!detected.detectionSucceeded) return PlaybackSupport.Unsupported
+        if (!detected.hasAudioTrack || detected.hasVideoTrack || detected.isProtected) return PlaybackSupport.Unsupported
+        if (!isCodecAllowed(detected.container, detected.codecMimeType)) return PlaybackSupport.Unsupported
+        if (detected.decoderAvailable == false) return PlaybackSupport.Unsupported
+        return capabilityFor(detected.container)?.playbackSupport ?: PlaybackSupport.Unsupported
+    }
+
+    fun resolvedCapability(format: AudioContainerFormat): ResolvedFormatCapability? {
+        val capability = capabilityFor(format) ?: return null
+        return ResolvedFormatCapability(
+            container = ContainerCapability(
+                container = capability.format,
+                extensions = capability.extensions,
+                mimeTypes = capability.mimeTypes,
+                requiresInspection = capability.requiresContainerValidation,
+            ),
+            playback = PlaybackCapability(
+                extractorSupport = when (capability.playbackSupport) {
+                    PlaybackSupport.Supported -> CapabilityLevel.Strong
+                    PlaybackSupport.PlatformDependent -> CapabilityLevel.Partial
+                    PlaybackSupport.Unsupported -> CapabilityLevel.Unsupported
+                },
+                decoderRequirement = DecoderRequirement.Platform,
+                platformDependent = capability.playbackSupport == PlaybackSupport.PlatformDependent,
+                supportedCodecMimeTypes = capability.allowedCodecMimeTypes,
+            ),
+            metadata = MetadataCapability(
+                read = capability.metadataReadSupport.toCapabilityLevel(),
+                textWrite = capability.mutation.textFields,
+                artworkWrite = capability.mutation.artwork,
+                lyricsWrite = LyricsWriteCapability(
+                    unsynced = capability.mutation.unsyncedLyrics,
+                    synced = capability.mutation.syncedLyrics,
+                ),
+            ),
+        )
+    }
+
+    fun eligibility(detected: DetectedAudioFormat): FormatEligibility {
+        if (!detected.detectionSucceeded) return FormatEligibility.Malformed(null)
+        if (!detected.hasAudioTrack || detected.hasVideoTrack) {
+            return FormatEligibility.Unsupported("The file is not audio-only.")
+        }
+        if (detected.isProtected) return FormatEligibility.Unsupported("Protected audio is unsupported.")
+        val capability = resolvedCapability(detected.container)
+            ?: return FormatEligibility.Unsupported("The audio container is unsupported.")
+        if (!isCodecAllowed(detected.container, detected.codecMimeType)) {
+            return FormatEligibility.Unsupported("The audio codec is unsupported in this container.")
+        }
+        if (detected.decoderAvailable == false) {
+            return FormatEligibility.Unsupported("No decoder is available on this device.")
+        }
+        if (capability.playback.platformDependent || detected.decoderAvailable == null) {
+            return FormatEligibility.PlatformDependent("Playback depends on this device's decoder.")
+        }
+        return FormatEligibility.Supported(capability)
+    }
+
+    fun tagWriteSupport(
+        detected: DetectedAudioFormat?,
+        fileName: String,
+    ): TagWriteSupport {
+        val base = capabilityForFileName(fileName) ?: return TagWriteSupport.Unsupported
+        if (base.tagWriteSupport != TagWriteSupport.Safe) return base.tagWriteSupport
+        if (detected == null) return base.tagWriteSupport
+        if (detected.container != base.format) return TagWriteSupport.Unsupported
+        if (!detected.detectionSucceeded || !detected.hasAudioTrack || detected.hasVideoTrack || detected.isProtected) {
+            return TagWriteSupport.Unsupported
+        }
+        return when (detected.container) {
+            AudioContainerFormat.Mp3,
+            AudioContainerFormat.Flac,
+            -> TagWriteSupport.Safe
+
+            AudioContainerFormat.Mp4Audio -> when (detected.codecMimeType.orEmpty().lowercase(Locale.ROOT)) {
+                "audio/mp4a-latm",
+                "audio/aac",
+                "audio/alac",
+                "audio/mpeg",
+                "audio/ac3",
+                "audio/eac3",
+                "audio/eac3-joc",
+                -> TagWriteSupport.Safe
+
+                else -> TagWriteSupport.Partial
+            }
+
+            else -> TagWriteSupport.Unsupported
+        }
+    }
+
+    fun embeddedLyricsWriteSupport(
+        detected: DetectedAudioFormat?,
+        fileName: String,
+    ): TagWriteSupport {
+        return if (lyricsWriteCapability(detected, fileName).unsynced == CapabilityLevel.Strong) {
+            TagWriteSupport.Safe
+        } else {
+            TagWriteSupport.Unsupported
+        }
+    }
+
+    fun lyricsWriteCapability(
+        detected: DetectedAudioFormat?,
+        fileName: String,
+    ): LyricsWriteCapability {
+        val capability = capabilityFor(detected?.container ?: resolveContainer(
+            extension = fileName.substringAfterLast('.', ""),
+            mediaStoreMimeType = null,
+            codecMimeType = null,
+        )) ?: return LyricsWriteCapability(CapabilityLevel.Unsupported, CapabilityLevel.Unsupported)
+        if (tagWriteSupport(detected, fileName) != TagWriteSupport.Safe) {
+            return LyricsWriteCapability(CapabilityLevel.Unsupported, CapabilityLevel.Unsupported)
+        }
+        return LyricsWriteCapability(capability.mutation.unsyncedLyrics, capability.mutation.syncedLyrics)
+    }
+
+    fun canEmbedArtwork(
+        detected: DetectedAudioFormat?,
+        fileName: String,
+    ): Boolean {
+        return capabilityForFileName(fileName)?.canEmbedArtwork == true &&
+            tagWriteSupport(detected, fileName) == TagWriteSupport.Safe
+    }
+
+    private fun isCodecAllowed(container: AudioContainerFormat, codecMimeType: String?): Boolean {
+        if (container == AudioContainerFormat.Wav && codecMimeType.orEmpty().equals("audio/raw", ignoreCase = true)) {
+            return true
+        }
+        val codec = codecMimeType.orEmpty().lowercase(Locale.ROOT)
+        if (codec.isBlank()) return false
+        return codec in capabilityFor(container).orEmptyAllowedCodecs()
+    }
+
+    fun canFingerprint(fileName: String): Boolean {
+        val capability = capabilityForFileName(fileName) ?: return false
+        return capability.playbackSupport != PlaybackSupport.Unsupported
+    }
+
+    fun playbackMimeType(fileName: String): String? {
+        return capabilityForFileName(fileName)?.playbackMimeType
+    }
+
+    fun isLossless(container: AudioContainerFormat, codecMimeType: String?): Boolean {
+        val codec = codecMimeType.orEmpty().trim().lowercase(Locale.ROOT)
+        return codec == "audio/raw" || codec in capabilityFor(container)?.losslessCodecMimeTypes.orEmpty()
+    }
+
+    fun registryViolations(): List<String> {
+        val violations = mutableListOf<String>()
+        capabilities.groupBy(AudioFormatCapability::format)
+            .filterValues { it.size > 1 }
+            .keys
+            .forEach { violations += "Duplicate format descriptor: $it" }
+        capabilities.forEach { capability ->
+            if (capability.extensions.isEmpty()) violations += "${capability.format} has no extension"
+            if (capability.playbackSupport != PlaybackSupport.Unsupported && capability.allowedCodecMimeTypes.isEmpty()) {
+                violations += "${capability.format} has no codec policy"
+            }
+            if (capability.tagWriteSupport == TagWriteSupport.Safe &&
+                capability.mutation.textFields != CapabilityLevel.Strong
+            ) {
+                violations += "${capability.format} claims safe writes without strong text mutation"
+            }
+        }
+        capabilities.flatMap { capability -> capability.extensions.map { it to capability } }
+            .groupBy({ it.first }, { it.second })
+            .filterValues { entries -> entries.size > 1 }
+            .forEach { (extension, entries) ->
+                if (entries.any { !it.requiresContainerValidation }) {
+                    violations += "Ambiguous extension without inspection: $extension"
+                }
+            }
+        capabilities.flatMap { capability -> capability.mimeTypes.map { it to capability } }
+            .groupBy({ it.first }, { it.second })
+            .filterValues { entries -> entries.size > 1 }
+            .forEach { (mimeType, entries) ->
+                if (entries.none(AudioFormatCapability::requiresContainerValidation)) {
+                    violations += "Ambiguous MIME type without inspection: $mimeType"
+                }
+            }
+        return violations
+    }
+
+    private fun isOggExtension(extension: String): Boolean {
+        return extension == "ogg" || extension == "oga"
+    }
+
+    fun capabilityForMimeType(mimeType: String?): AudioFormatCapability? {
+        val normalized = mimeType.orEmpty().lowercase(Locale.ROOT)
+        return capabilityByMimeType[normalized]
+    }
+
+    private fun AudioFormatCapability?.orEmptyAllowedCodecs(): Set<String> {
+        return this?.allowedCodecMimeTypes.orEmpty()
+    }
+
+    private fun MetadataReadSupport.toCapabilityLevel(): CapabilityLevel = when (this) {
+        MetadataReadSupport.Strong -> CapabilityLevel.Strong
+        MetadataReadSupport.Partial -> CapabilityLevel.Partial
+        MetadataReadSupport.Weak -> CapabilityLevel.Weak
+        MetadataReadSupport.Unsupported -> CapabilityLevel.Unsupported
+    }
+
+    private fun TagWriteSupport.toCapabilityLevel(): CapabilityLevel = when (this) {
+        TagWriteSupport.Safe -> CapabilityLevel.Strong
+        TagWriteSupport.Partial -> CapabilityLevel.Partial
+        TagWriteSupport.Unsupported -> CapabilityLevel.Unsupported
+    }
+}

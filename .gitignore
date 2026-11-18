@@ -1,0 +1,52 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Gradle / Android build output
+.gradle/
+build/
+app/build/
+macrobenchmark/build/
+app/debug/
+app/release/
+/app/github/
+/app/play/
+captures/
+externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# Local machine config
+local.properties
+/prompts/
+.idea/
+*.iml
+*.log
+
+# Signing keys / certificates / private material
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.der
+
+# Local environment / secrets
+.env
+.env.*
+*.properties.local
+keystore.properties
+signing.properties
+secrets.properties
+ytmusic-api-key.properties
+youtube-music-api-key.properties
+ytmusic-api-key.*
+youtube-music-api-key.*
+ytmusic_api_key.properties
+youtube_music_api_key.properties
+youtube-api-key.properties
+
+# Kotlin / IntelliJ caches
+.kotlin/
+out/

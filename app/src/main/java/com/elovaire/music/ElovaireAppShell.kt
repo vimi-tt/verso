@@ -1,0 +1,132 @@
+package elovaire.music.droidbeauty.app
+
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.activity.compose.ReportDrawnWhen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import elovaire.music.droidbeauty.app.core.AppContainer
+import elovaire.music.droidbeauty.app.ui.motion.ElovaireAnimatedVisibility
+import elovaire.music.droidbeauty.app.ui.motion.MotionDuration
+import elovaire.music.droidbeauty.app.ui.motion.MotionEasing
+import elovaire.music.droidbeauty.app.ui.motion.MotionRuntimeProvider
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionRuntime
+import elovaire.music.droidbeauty.app.ui.screens.ElovaireRoot
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireTheme
+import elovaire.music.droidbeauty.app.ui.theme.themeBackgroundForMode
+import kotlinx.coroutines.delay
+import elovaire.music.droidbeauty.app.core.performance.ElovaireTrace
+import elovaire.music.droidbeauty.app.ui.LocalBackendResourceTracker
+import elovaire.music.droidbeauty.app.ui.performance.PerformanceState
+
+@Composable
+internal fun ElovaireAppShell(
+    container: AppContainer,
+    shouldShowColdStartSplash: Boolean,
+    resetHomeScrollOnColdStart: Boolean,
+) {
+    val motionRuntime = rememberMotionRuntime()
+    MotionRuntimeProvider(runtime = motionRuntime) {
+        val motionSpecs = rememberMotionSpecs()
+        val rootSettings = container.rootSettingsReader
+        val themeMode = rootSettings.themeMode.collectAsStateWithLifecycle()
+        val textSizePreset = rootSettings.textSizePreset.collectAsStateWithLifecycle()
+        val systemDark = isSystemInDarkTheme()
+        var previousThemeMode by remember { mutableStateOf(themeMode.value) }
+        var overlayColor by remember {
+            mutableStateOf(themeBackgroundForMode(themeMode.value, systemDark))
+        }
+        val themeOverlayAlpha = remember { Animatable(0f) }
+        var showSplash by remember { mutableStateOf(shouldShowColdStartSplash) }
+        val libraryReader = container.rootLibraryReader
+        val libraryContentState by libraryReader.contentState.collectAsStateWithLifecycle()
+        val libraryScanState by libraryReader.scanState.collectAsStateWithLifecycle()
+        ReportDrawnWhen {
+            !libraryScanState.permissionGranted ||
+                !libraryScanState.isLoading ||
+                libraryContentState.songs.isNotEmpty() ||
+                libraryContentState.albums.isNotEmpty() ||
+                libraryScanState.errorMessage != null
+        }
+        LaunchedEffect(themeMode.value, systemDark) {
+            if (previousThemeMode != themeMode.value) {
+                overlayColor = themeBackgroundForMode(previousThemeMode, systemDark)
+                previousThemeMode = themeMode.value
+                themeOverlayAlpha.snapTo(1f)
+                themeOverlayAlpha.animateTo(
+                    targetValue = 0f,
+                    animationSpec = motionSpecs.tween(
+                        durationMillis = MotionDuration.ScreenExpand,
+                        easing = MotionEasing.EmphasizedDecelerate,
+                    ),
+                )
+            }
+        }
+
+        LaunchedEffect(container) {
+            withFrameNanos { }
+            ElovaireTrace.section("deferred_app_start") {
+                container.start()
+            }
+            ElovaireTrace.section("deferred_startup") {
+                container.scheduleDeferredStartupWork()
+            }
+        }
+
+        ElovaireTheme(
+            themeMode = themeMode.value,
+            textSizePreset = textSizePreset.value,
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                AppRootSurface(container, resetHomeScrollOnColdStart)
+                if (themeOverlayAlpha.value > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(overlayColor.copy(alpha = themeOverlayAlpha.value)),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppRootSurface(
+    container: AppContainer,
+    resetHomeScrollOnColdStart: Boolean,
+) {
+    CompositionLocalProvider(
+        LocalBackendResourceTracker provides container.backendDiagnosticsRuntime.resources,
+    ) {
+        ElovaireRoot(
+            container = container,
+            resetHomeScrollOnColdStart = resetHomeScrollOnColdStart,
+        )
+    }
+}

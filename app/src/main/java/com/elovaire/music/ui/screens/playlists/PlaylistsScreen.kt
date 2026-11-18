@@ -1,0 +1,698 @@
+package elovaire.music.droidbeauty.app.ui.screens
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireCombinedClickable
+import elovaire.music.droidbeauty.app.ui.interaction.rememberElovaireInteractionSource
+import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import elovaire.music.droidbeauty.app.ui.motion.InlineActionMotionHost
+import elovaire.music.droidbeauty.app.ui.motion.MotionDuration
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import elovaire.music.droidbeauty.app.R
+import elovaire.music.droidbeauty.app.data.settings.PlaylistMutationResult
+import elovaire.music.droidbeauty.app.data.smartplaylists.SmartPlaylistResult
+import kotlinx.coroutines.launch
+import elovaire.music.droidbeauty.app.domain.model.Playlist
+import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
+import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.MiscPhrase
+import elovaire.music.droidbeauty.app.ui.i18n.PlaylistMainCopy
+import elovaire.music.droidbeauty.app.ui.i18n.UiPhrase
+import elovaire.music.droidbeauty.app.ui.i18n.localizedCountLabel
+import elovaire.music.droidbeauty.app.ui.i18n.builtInSmartPlaylistTitle
+import elovaire.music.droidbeauty.app.ui.i18n.miscPhrase
+import elovaire.music.droidbeauty.app.ui.i18n.playlistMainCopy
+import elovaire.music.droidbeauty.app.ui.i18n.rootUiCopy
+import elovaire.music.droidbeauty.app.ui.i18n.smartPlaylistSortLabel
+import elovaire.music.droidbeauty.app.ui.i18n.uiPhrase
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionTransitions
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+
+@Composable
+internal fun PlaylistsScreen(
+    playlists: List<Playlist>,
+    smartPlaylists: List<SmartPlaylistResult>,
+    songsById: Map<Long, Song>,
+    topPadding: Dp,
+    bottomPadding: Dp,
+    scrollToTopRequestVersion: Long,
+    onRenamePlaylist: (Long, String) -> PlaylistMutationRequest,
+    onDeletePlaylists: (Set<Long>) -> PlaylistMutationRequest,
+    onOpenPlaylist: (Playlist, ExpandOrigin) -> Unit,
+    onOpenSmartPlaylist: (SmartPlaylistResult, ExpandOrigin) -> Unit,
+    youTubePlaylists: List<elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary> = emptyList(),
+    onOpenYouTubePlaylist: (elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary) -> Unit = {},
+    isYouTubeLoggedIn: Boolean = false,
+    isYouTubeSyncing: Boolean = false,
+    favoritesCount: Int = 0,
+    downloadsCount: Int = 0,
+    onOpenFavorites: () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
+    onSyncYouTube: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+) {
+    val motionTransitions = rememberMotionTransitions()
+    val motionSpecs = rememberMotionSpecs()
+    val playlistGridColumns = adaptiveGridColumnCount(2, LocalRootWindowSizeClass.current.width)
+    val scope = rememberCoroutineScope()
+    var playlistBeingRenamed by remember { mutableStateOf<Playlist?>(null) }
+    var selectedPlaylistIds by rememberSaveable { mutableStateOf(setOf<Long>()) }
+    val playlistRows = remember(playlists, songsById) {
+        buildPlaylistRowModels(
+            playlists = playlists,
+            songsById = songsById,
+        )
+    }
+    val gridState = rememberElovaireLazyGridState("playlists_screen")
+    val editMode = selectedPlaylistIds.isNotEmpty()
+    val selectionTopInset by animateDpAsState(
+        targetValue = if (editMode) 50.dp else 0.dp,
+        animationSpec = motionSpecs.contentSize(),
+        label = "playlist_selection_top_inset",
+    )
+    BackHandler(enabled = editMode) {
+        selectedPlaylistIds = emptySet()
+    }
+    LaunchedEffect(playlists) {
+        val existingUserIds = playlists.asSequence()
+            .filterNot(Playlist::isSystem)
+            .mapTo(mutableSetOf(), Playlist::id)
+        val retainedSelection = selectedPlaylistIds.filterTo(linkedSetOf()) { it in existingUserIds }
+        if (retainedSelection != selectedPlaylistIds) {
+            selectedPlaylistIds = retainedSelection
+        }
+        if (playlistBeingRenamed?.id?.let { it !in existingUserIds } == true) {
+            playlistBeingRenamed = null
+        }
+    }
+    LaunchedEffect(scrollToTopRequestVersion) {
+        if (scrollToTopRequestVersion > 0L) {
+            gridState.animateScrollToItem(0)
+        }
+    }
+    Box(
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        val language = LocalAppLanguage.current
+        val accountCopy = remember(language) { elovaire.music.droidbeauty.app.ui.i18n.youtubeAccountCopy(language) }
+        val dlCopy = remember(language) { elovaire.music.droidbeauty.app.ui.i18n.youtubeDownloadCopy(language) }
+        val nonEmptySmartPlaylists = remember(smartPlaylists) {
+            smartPlaylists.filter { it.songs.isNotEmpty() }
+        }
+        LazyVerticalGrid(
+            state = gridState,
+            overscrollEffect = null,
+            columns = GridCells.Fixed(playlistGridColumns),
+            modifier = Modifier
+                .fillMaxSize()
+                .ensureSingleItemRubberBand(gridState),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                top = topPadding + selectionTopInset + 8.dp,
+                end = 20.dp,
+                bottom = bottomPadding + 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item(
+                key = "streaming_quick_collections",
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = "streaming_quick_collections",
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(ElovaireRadii.card))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .elovaireClickable(
+                                interactionSource = rememberElovaireInteractionSource(),
+                                onClick = onOpenFavorites,
+                            )
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_lucide_star_filled),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = accountCopy.favoritesTitle,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = localizedCountLabel(favoritesCount, "song", language),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(ElovaireRadii.card))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .elovaireClickable(
+                                interactionSource = rememberElovaireInteractionSource(),
+                                onClick = onOpenDownloads,
+                            )
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_lucide_download),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = dlCopy.downloadsTitle,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = localizedCountLabel(downloadsCount, "song", language),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+
+            item(
+                key = "youtube_playlists_header",
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = "playlist_section_header",
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PlaylistSectionHeader(elovaire.music.droidbeauty.app.ui.i18n.youtubeCopy(language).sectionTitle)
+                    if (isYouTubeLoggedIn) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                .elovaireClickable(
+                                    interactionSource = rememberElovaireInteractionSource(),
+                                    onClick = onSyncYouTube,
+                                )
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = if (isYouTubeSyncing) accountCopy.syncingLabel else accountCopy.syncNowLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!isYouTubeLoggedIn) {
+                item(
+                    key = "youtube_playlists_signin_prompt",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "youtube_signin_prompt",
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(ElovaireRadii.card))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f))
+                            .elovaireClickable(
+                                interactionSource = rememberElovaireInteractionSource(),
+                                onClick = onOpenSettings,
+                            )
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = accountCopy.signInToSyncMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f).padding(end = 12.dp),
+                        )
+                        Text(
+                            text = accountCopy.signInLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            } else if (youTubePlaylists.isEmpty() && !isYouTubeSyncing) {
+                item(
+                    key = "youtube_playlists_empty",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "youtube_playlists_empty",
+                ) {
+                    Text(
+                        text = accountCopy.noPlaylistsMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
+            } else {
+                items(
+                    items = youTubePlaylists,
+                    key = { "yt_playlist_${it.id}" },
+                    contentType = { "youtube_playlist_tile" },
+                ) { ytPlaylist ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(ElovaireRadii.card))
+                            .elovaireClickable(
+                                interactionSource = rememberElovaireInteractionSource(),
+                                onClick = { onOpenYouTubePlaylist(ytPlaylist) },
+                            )
+                            .padding(bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ArtworkImage(
+                            uri = ytPlaylist.thumbnailUri,
+                            title = ytPlaylist.title,
+                            placeholderIconResId = R.drawable.ic_lucide_list_music,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1f),
+                            cornerRadius = ElovaireRadii.card,
+                        )
+                        Text(
+                            text = ytPlaylist.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (ytPlaylist.subtitle.isNotBlank()) {
+                            Text(
+                                text = ytPlaylist.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (playlistRows.isNotEmpty()) {
+                items(
+                    items = playlistRows,
+                    key = { it.playlist.id },
+                    contentType = { "playlist_tile" },
+                ) { row ->
+                    PlaylistGridTile(
+                        playlist = row.playlist,
+                        previewSongs = row.previewSongs,
+                        selected = row.playlist.id in selectedPlaylistIds,
+                        selectionMode = editMode,
+                        onClick = { origin ->
+                            if (editMode && !row.playlist.isSystem) {
+                                selectedPlaylistIds = selectedPlaylistIds.togglePlaylistSelection(row.playlist.id)
+                            } else {
+                                onOpenPlaylist(row.playlist, origin)
+                            }
+                        },
+                        onLongPress = {
+                            if (!row.playlist.isSystem) {
+                                selectedPlaylistIds = selectedPlaylistIds.togglePlaylistSelection(row.playlist.id)
+                            }
+                        },
+                    )
+                }
+            }
+
+            if (nonEmptySmartPlaylists.isNotEmpty()) {
+                item(
+                    key = "smart_mix_separator",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "playlist_section_separator",
+                ) {
+                    SmartMixSeparator()
+                }
+                item(
+                    key = "smart_mix_header",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "playlist_section_header",
+                ) {
+                    PlaylistSectionHeader(playlistMainCopy(language).smartMixes)
+                }
+                item(
+                    key = "smart_mix_rows",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "smart_mix_rows",
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        nonEmptySmartPlaylists.forEach { row ->
+                            SmartPlaylistListRow(
+                                result = row,
+                                copy = playlistMainCopy(language),
+                                onClick = { origin -> onOpenSmartPlaylist(row, origin) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        FastScrollbar(
+            state = gridState,
+            topInset = topPadding + selectionTopInset + 12.dp,
+            bottomInset = bottomPadding + 16.dp,
+        )
+
+        AnimatedVisibility(
+            visible = editMode,
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .zIndex(3f),
+            enter = motionTransitions.verticalRevealEnter(),
+            exit = motionTransitions.verticalRevealExit(),
+        ) {
+            TopBarDualActionMenu(
+                topBarHeight = topPadding,
+                leadingAction = TopBarMenuAction(
+                    iconResId = R.drawable.ic_lucide_square_pen,
+                    label = uiPhrase(LocalAppLanguage.current, UiPhrase.Rename),
+                    tint = if (selectedPlaylistIds.size == 1) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.32f)
+                    },
+                    enabled = selectedPlaylistIds.size == 1,
+                    onClick = {
+                        if (selectedPlaylistIds.size == 1) {
+                            playlistBeingRenamed = playlists.firstOrNull { it.id == selectedPlaylistIds.firstOrNull() }
+                        }
+                    },
+                ),
+                trailingAction = TopBarMenuAction(
+                    iconResId = R.drawable.ic_lucide_trash_2,
+                    label = uiPhrase(LocalAppLanguage.current, UiPhrase.RemoveFromList),
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = {
+                        val ids = selectedPlaylistIds
+                        scope.launch {
+                            if (onDeletePlaylists(ids).await() is PlaylistMutationResult.Success) {
+                                selectedPlaylistIds = emptySet()
+                            }
+                        }
+                    },
+                ),
+            )
+        }
+
+        val playlistToRename = playlistBeingRenamed
+        val copy = rootUiCopy(LocalAppLanguage.current)
+        PlaylistNameDialog(
+            visible = playlistToRename != null,
+            surfaceId = "playlists.rename_dialog",
+            title = copy.renamePlaylistTitle,
+            confirmLabel = copy.save,
+            initialName = playlistToRename?.name.orEmpty(),
+            onDismiss = { playlistBeingRenamed = null },
+            onConfirm = { name ->
+                playlistToRename?.let { playlist ->
+                    scope.launch {
+                        if (onRenamePlaylist(playlist.id, name).await() is PlaylistMutationResult.Success) {
+                            playlistBeingRenamed = null
+                            selectedPlaylistIds = emptySet()
+                        }
+                    }
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SmartMixSeparator() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp)
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)),
+    )
+}
+
+@Composable
+private fun PlaylistSectionHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun SmartPlaylistListRow(
+    result: SmartPlaylistResult,
+    copy: PlaylistMainCopy,
+    onClick: (ExpandOrigin) -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    val title = result.playlist.builtInType?.let { builtInSmartPlaylistTitle(it, language) } ?: result.playlist.name
+    val screenSizePx = screenContainerSizePx()
+    var bounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val songs = result.songs
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { bounds = it.boundsInWindow() }
+            .elovaireCombinedClickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                onClick = { onClick(bounds.toExpandOrigin(screenSizePx.width.toFloat(), screenSizePx.height.toFloat())) },
+                onLongClick = {},
+            )
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ArtworkImage(
+            uri = songs.firstOrNull()?.artUri,
+            title = title,
+            modifier = Modifier.size(62.dp),
+            cornerRadius = ElovaireRadii.artworkSmall,
+            placeholderIconSize = 20.dp,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${localizedCountLabel(songs.size, "song", language)} • ${copy.autoUpdating}",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = readableSecondaryTextColor(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = smartPlaylistSortLabel(language, result.playlist.sort.field),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = readableSecondaryTextColor().copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun PlaylistGridTile(
+    playlist: Playlist,
+    previewSongs: List<Song>,
+    selected: Boolean,
+    selectionMode: Boolean,
+    onClick: (ExpandOrigin) -> Unit,
+    onLongPress: () -> Unit,
+) {
+    val screenSizePx = screenContainerSizePx()
+    val screenWidthPx = screenSizePx.width.toFloat()
+    val screenHeightPx = screenSizePx.height.toFloat()
+    val language = LocalAppLanguage.current
+    var bounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+
+    Column(
+        modifier = Modifier
+            .onGloballyPositioned { bounds = it.boundsInWindow() }
+            .elovaireCombinedClickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                onClick = { onClick(bounds.toExpandOrigin(screenWidthPx, screenHeightPx)) },
+                onLongClick = onLongPress,
+            ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box {
+            PlaylistArtworkPreview(
+                songs = previewSongs,
+                title = playlist.name,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (selectionMode && !playlist.isSystem) {
+                PlaylistSelectionIndicator(
+                    selected = selected,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(10.dp),
+                )
+            }
+        }
+        Text(
+            text = playlist.name,
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = localizedCountLabel(playlist.songIds.size, "song", language),
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun Set<Long>.togglePlaylistSelection(playlistId: Long): Set<Long> {
+    return if (playlistId in this) this - playlistId else this + playlistId
+}
+
+@Composable
+internal fun PlaylistSelectionIndicator(
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val tint = MaterialTheme.colorScheme.onSurface
+    val motionSpecs = rememberMotionSpecs()
+    val background by animateColorAsState(
+        targetValue = if (selected) tint.copy(alpha = 0.3f) else Color.Transparent,
+        animationSpec = motionSpecs.tween(MotionDuration.Standard),
+        label = "playlist_selection_background",
+    )
+    val border by animateColorAsState(
+        targetValue = tint.copy(alpha = if (selected) 0f else 0.64f),
+        animationSpec = motionSpecs.tween(MotionDuration.Standard),
+        label = "playlist_selection_border",
+    )
+    Box(
+        modifier = modifier
+            .size(26.dp)
+            .clip(CircleShape)
+            .background(background)
+            .border(
+                width = 1.dp,
+                color = border,
+                shape = CircleShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        InlineActionMotionHost(visible = selected, surfaceId = "playlist_selection_check") {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_lucide_check),
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun EmptyPlaylistState(
+    modifier: Modifier = Modifier,
+) {
+    val language = LocalAppLanguage.current
+    Column(
+        modifier = modifier.fillMaxWidth(0.74f),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = miscPhrase(language, MiscPhrase.NothingInHere),
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = miscPhrase(language, MiscPhrase.TapPlusToCreatePlaylist),
+            style = MaterialTheme.typography.bodyLarge,
+            color = readableSecondaryTextColor(),
+        )
+    }
+}

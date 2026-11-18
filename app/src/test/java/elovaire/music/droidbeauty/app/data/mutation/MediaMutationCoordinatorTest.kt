@@ -1,0 +1,123 @@
+package elovaire.music.droidbeauty.app.data.mutation
+
+import android.net.Uri
+import java.util.AbstractCollection
+import java.util.Collections
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class MediaMutationCoordinatorTest {
+    @Test
+    fun closeBetweenEntryCheckAndLockRegistrationRejectsMutation() {
+        val runtime = MediaMutationRuntime()
+        var blockEntered = false
+        val uris = object : AbstractCollection<Uri>() {
+            override val size: Int get() = 1
+
+            override fun iterator(): MutableIterator<Uri> {
+                runtime.close()
+                return Collections.singletonList(android.net.TestUri("file:///music/a.mp3")).iterator()
+            }
+        }
+
+        val failure = runCatching {
+            runBlocking {
+                runtime.withTargets(uris) { blockEntered = true }
+            }
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertFalse(blockEntered)
+        assertEquals(0, runtime.activeTargetLockCount())
+    }
+
+    @Test
+    fun scopedRuntimesHaveIndependentTargetLockRegistries() {
+        val first = MediaMutationRuntime()
+        val second = MediaMutationRuntime()
+        runBlocking {
+            first.withTarget(android.net.TestUri("file:///music/a.mp3")) { }
+            second.withTarget(android.net.TestUri("file:///music/a.mp3")) { }
+        }
+        assertEquals(0, first.activeTargetLockCount())
+        assertEquals(0, second.activeTargetLockCount())
+        first.close()
+        second.close()
+    }
+
+    @Test
+    fun sameTargetIsSerialized() {
+        runBlocking {
+        val target = android.net.TestUri("file:///music/song.mp3")
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val secondEntered = CompletableDeferred<Unit>()
+
+        val first = async {
+            MediaMutationCoordinator.withTarget(target) {
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+        entered.await()
+        val second = async {
+            MediaMutationCoordinator.withTarget(target) {
+                secondEntered.complete(Unit)
+            }
+        }
+
+        yield()
+        assertFalse(secondEntered.isCompleted)
+        release.complete(Unit)
+        first.await()
+        second.await()
+        assertTrue(secondEntered.isCompleted)
+        }
+    }
+
+    @Test
+    fun independentTargetsCanProceedTogether() {
+        runBlocking {
+        val firstEntered = CompletableDeferred<Unit>()
+        val secondEntered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val events = Collections.synchronizedList(mutableListOf<String>())
+
+        val first = async {
+            MediaMutationCoordinator.withTarget(android.net.TestUri("file:///music/a.mp3")) {
+                events += "a"
+                firstEntered.complete(Unit)
+                release.await()
+            }
+        }
+        firstEntered.await()
+        val second = async {
+            MediaMutationCoordinator.withTarget(android.net.TestUri("file:///music/b.mp3")) {
+                events += "b"
+                secondEntered.complete(Unit)
+            }
+        }
+
+        secondEntered.await()
+        assertTrue(events.containsAll(listOf("a", "b")))
+        release.complete(Unit)
+        first.await()
+        second.await()
+        }
+    }
+
+    @Test
+    fun targetLockRegistryIsReclaimedAfterIndependentMutations() = runBlocking {
+        repeat(256) { index ->
+            MediaMutationCoordinator.withTarget(android.net.TestUri("file:///music/$index.mp3")) { }
+        }
+
+        assertEquals(0, MediaMutationCoordinator.activeTargetLockCount())
+    }
+}

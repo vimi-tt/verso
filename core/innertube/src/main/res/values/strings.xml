@@ -1,0 +1,5 @@
+<resources>
+    <string name="label_album">Album</string>
+    <string name="label_ep">EP</string>
+    <string name="label_single">Single</string>
+</resources>

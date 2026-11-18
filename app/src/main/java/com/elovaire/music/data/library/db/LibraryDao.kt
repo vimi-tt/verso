@@ -1,0 +1,140 @@
+package elovaire.music.droidbeauty.app.data.library.db
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Upsert
+
+@Dao
+internal interface MediaMutationDao {
+    @Query(
+        "SELECT * FROM media_mutations " +
+            "WHERE recoveryBackupPath IS NOT NULL OR status NOT IN ('Completed', 'Cancelled', 'Failed', 'NeedsRepair') " +
+            "ORDER BY updatedAtMs ASC, mutationId ASC LIMIT :limit",
+    )
+    suspend fun recoverableMutations(limit: Int): List<LibraryMutationEntity>
+
+    @Query(
+        "SELECT COUNT(*) FROM media_mutations " +
+            "WHERE recoveryBackupPath IS NOT NULL OR status NOT IN ('Completed', 'Cancelled', 'Failed', 'NeedsRepair')",
+    )
+    suspend fun recoverableMutationCount(): Int
+
+    @Query(
+        "SELECT * FROM media_mutations WHERE recoveryNetworkSourceFingerprint IS NULL AND " +
+            "(recoveryBackupPath IS NOT NULL OR status NOT IN ('Completed', 'Cancelled', 'Failed', 'NeedsRepair')) " +
+            "ORDER BY updatedAtMs ASC, mutationId ASC LIMIT :limit",
+    )
+    suspend fun recoverableLocalMutations(limit: Int): List<LibraryMutationEntity>
+
+    @Query(
+        "SELECT COUNT(*) FROM media_mutations WHERE recoveryNetworkSourceFingerprint IS NULL AND " +
+            "(recoveryBackupPath IS NOT NULL OR status NOT IN ('Completed', 'Cancelled', 'Failed', 'NeedsRepair'))",
+    )
+    suspend fun recoverableLocalMutationCount(): Int
+
+    @Query(
+        "SELECT * FROM media_mutations WHERE recoveryNetworkSourceFingerprint IS NOT NULL " +
+            "AND recoveryBackupPath IS NOT NULL ORDER BY updatedAtMs ASC, mutationId ASC LIMIT :limit",
+    )
+    suspend fun recoverableNetworkMutations(limit: Int): List<LibraryMutationEntity>
+
+    @Transaction
+    suspend fun recoverableLocalMutationBatch(limit: Int): RecoverableMutationBatch = RecoverableMutationBatch(
+        totalCount = recoverableLocalMutationCount(),
+        mutations = recoverableLocalMutations(limit),
+    )
+
+    @Transaction
+    suspend fun recoverableMutationBatch(limit: Int): RecoverableMutationBatch = RecoverableMutationBatch(
+        totalCount = recoverableMutationCount(),
+        mutations = recoverableMutations(limit),
+    )
+
+    @Query("SELECT * FROM media_mutations WHERE mutationId = :mutationId")
+    suspend fun mutation(mutationId: String): LibraryMutationEntity?
+
+    @Query("SELECT mutationId FROM media_mutations WHERE uri = :uri AND recoveryBackupPath IS NOT NULL LIMIT 1")
+    suspend fun mutationAwaitingFileRecovery(uri: String): String?
+
+    @Upsert
+    suspend fun upsertMutation(mutation: LibraryMutationEntity)
+}
+
+internal data class RecoverableMutationBatch(
+    val totalCount: Int,
+    val mutations: List<LibraryMutationEntity>,
+)
+
+@Dao
+internal interface NetworkInventoryDao {
+    @Query(
+        "UPDATE network_inventory SET title = :title, artist = :artist, album = :album, albumArtist = :albumArtist, " +
+            "releaseYear = :releaseYear, genre = :genre, trackNumber = :trackNumber, discNumber = :discNumber, " +
+            "description = :description, metadataResolved = 0 WHERE sourceId = :sourceId AND relativePath = :path " +
+            "AND songId = :songId AND EXISTS (SELECT 1 FROM network_inventory_sources WHERE sourceId = :sourceId " +
+            "AND locationFingerprint = :fingerprint)",
+    )
+    suspend fun updateVerifiedNetworkTags(
+        sourceId: String,
+        path: String,
+        songId: Long,
+        fingerprint: String,
+        title: String,
+        artist: String,
+        album: String,
+        albumArtist: String?,
+        releaseYear: Int?,
+        genre: String,
+        trackNumber: Int,
+        discNumber: Int,
+        description: String?,
+    ): Int
+
+    @Query("SELECT * FROM network_inventory WHERE sourceId = :sourceId ORDER BY relativePath ASC")
+    suspend fun networkInventory(sourceId: String): List<NetworkInventoryEntity>
+
+    @Query("SELECT * FROM network_inventory_sources WHERE sourceId = :sourceId")
+    suspend fun networkInventorySource(sourceId: String): NetworkInventorySourceEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertNetworkInventory(entries: List<NetworkInventoryEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertNetworkInventorySource(source: NetworkInventorySourceEntity)
+
+    @Query("UPDATE network_inventory_sources SET committedAtMs = :committedAtMs, availability = :availability, locationFingerprint = :locationFingerprint WHERE sourceId = :sourceId")
+    suspend fun refreshNetworkInventorySource(
+        sourceId: String,
+        committedAtMs: Long,
+        availability: String,
+        locationFingerprint: String,
+    )
+
+    @Query("DELETE FROM network_inventory WHERE sourceId = :sourceId AND lastSeenGeneration != :generation")
+    suspend fun deleteUnseenNetworkInventory(sourceId: String, generation: Long)
+
+    @Query("DELETE FROM network_inventory WHERE sourceId = :sourceId")
+    suspend fun deleteNetworkInventory(sourceId: String)
+
+    @Query("DELETE FROM network_inventory_sources WHERE sourceId = :sourceId")
+    suspend fun deleteNetworkInventorySource(sourceId: String)
+
+    @Transaction
+    suspend fun removeNetworkInventory(sourceId: String) {
+        deleteNetworkInventory(sourceId)
+        deleteNetworkInventorySource(sourceId)
+    }
+
+    @Transaction
+    suspend fun replaceNetworkInventory(
+        source: NetworkInventorySourceEntity,
+        entries: List<NetworkInventoryEntity>,
+    ) {
+        if (entries.isNotEmpty()) upsertNetworkInventory(entries)
+        deleteUnseenNetworkInventory(source.sourceId, source.generation)
+        upsertNetworkInventorySource(source)
+    }
+}

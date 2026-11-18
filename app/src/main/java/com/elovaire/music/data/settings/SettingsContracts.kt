@@ -1,0 +1,195 @@
+package elovaire.music.droidbeauty.app.data.settings
+
+import elovaire.music.droidbeauty.app.data.library.LibraryFolderSelection
+import elovaire.music.droidbeauty.app.data.playback.PlaybackCollectionKind
+import elovaire.music.droidbeauty.app.data.smartplaylists.SmartPlaylist
+import elovaire.music.droidbeauty.app.data.smartplaylists.BuiltInSmartPlaylistType
+import elovaire.music.droidbeauty.app.domain.model.AppLanguage
+import elovaire.music.droidbeauty.app.domain.model.AudiobookSettings
+import elovaire.music.droidbeauty.app.domain.model.UpscalerSettings
+import elovaire.music.droidbeauty.app.domain.model.EqSettings
+import elovaire.music.droidbeauty.app.domain.model.EqCustomPreset
+import elovaire.music.droidbeauty.app.domain.model.NowPlayingBarStyle
+import elovaire.music.droidbeauty.app.domain.model.Playlist
+import elovaire.music.droidbeauty.app.domain.model.SearchHistoryEntry
+import elovaire.music.droidbeauty.app.domain.model.TextSizePreset
+import elovaire.music.droidbeauty.app.domain.model.ThemeMode
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.flow.StateFlow
+
+internal interface AppearanceSettingsStore {
+    val upscalerSettings: StateFlow<UpscalerSettings>
+    val eqSettings: StateFlow<EqSettings>
+    val themeMode: StateFlow<ThemeMode>
+    val textSizePreset: StateFlow<TextSizePreset>
+    val appLanguage: StateFlow<AppLanguage>
+    val albumCollectionLayoutMode: StateFlow<String>
+    val songCollectionGridEnabled: StateFlow<Boolean>
+    val albumCollectionSortMode: StateFlow<String>
+    val songCollectionSortMode: StateFlow<String>
+    val volumeNormalizationEnabled: StateFlow<Boolean>
+    val onlineLyricsEnabled: StateFlow<Boolean>
+    val nowPlayingBarStyle: StateFlow<NowPlayingBarStyle>
+    val crossfadeDurationMs: StateFlow<Long>
+    val crossfadeSilenceThresholdDb: StateFlow<Float>
+    val audiobookSettings: StateFlow<AudiobookSettings>
+    val audiobookPlaybackSpeed: StateFlow<Float>
+    val smartPlaylistEnabledTypes: StateFlow<Set<BuiltInSmartPlaylistType>>
+    val smartPlaylistMaxSongs: StateFlow<Int>
+}
+
+internal interface CollectionSettingsStore {
+    val userDataReadiness: StateFlow<UserDataReadiness>
+    val playlists: StateFlow<List<Playlist>>
+    val smartPlaylists: StateFlow<List<SmartPlaylist>>
+    val favoriteSongIds: StateFlow<List<Long>>
+    val albumPlayCounts: StateFlow<Map<Long, Int>>
+    val songPlayCounts: StateFlow<Map<Long, Int>>
+    val recentSongIds: StateFlow<List<Long>>
+    val recentAlbumIds: StateFlow<List<Long>>
+    val lastPlayedCollectionKind: StateFlow<PlaybackCollectionKind?>
+    val lastPlayedCollectionId: StateFlow<Long?>
+}
+
+/** The MediaLibrary bridge only needs these two user-data streams for invalidation. */
+internal interface MediaLibraryInvalidationReader {
+    val favoriteSongIds: StateFlow<List<Long>>
+    val playlists: StateFlow<List<Playlist>>
+}
+
+internal interface MediaLibraryUserDataReader : MediaLibraryInvalidationReader {
+    val userDataSnapshot: StateFlow<UserDataSnapshot>
+    val revisionedUserDataSnapshot: StateFlow<RevisionedUserDataSnapshot>
+}
+
+internal data class RevisionedUserDataSnapshot(
+    val revision: Long,
+    val snapshot: UserDataSnapshot,
+)
+
+internal interface PlaybackIntegrationSettings {
+    val upscalerSettings: StateFlow<UpscalerSettings>
+    val eqSettings: StateFlow<EqSettings>
+    val audiobookPlaybackSpeed: StateFlow<Float>
+    val crossfadeEnabled: StateFlow<Boolean>
+    val crossfadeDurationMs: StateFlow<Long>
+    val crossfadeSilenceThresholdDb: StateFlow<Float>
+    val volumeNormalizationEnabled: StateFlow<Boolean>
+}
+
+/** Settings owned by the equalizer screen and consumed by the playback runtime. */
+internal interface EqualizerSettingsStore {
+    val eqSettings: StateFlow<EqSettings>
+    val eqCustomPresets: StateFlow<List<EqCustomPreset>>
+    fun setEqSettings(settings: EqSettings)
+    fun saveEqCustomPreset(name: String, settings: EqSettings)
+    fun deleteEqCustomPreset(name: String)
+}
+
+/** Settings that affect the player presentation and playback transition policy. */
+internal interface NowPlayingSettingsStore {
+    val crossfadeEnabled: StateFlow<Boolean>
+    fun setCrossfadeEnabled(enabled: Boolean)
+}
+
+/** Read/write settings used only by search discovery. */
+internal interface AppearanceSettingsWriter {
+    fun setThemeMode(themeMode: ThemeMode)
+    fun setTextSizePreset(textSizePreset: TextSizePreset)
+    fun setAppLanguage(language: AppLanguage)
+    fun setNowPlayingBarStyle(style: NowPlayingBarStyle)
+}
+
+internal interface LibrarySettingsWriter {
+    val libraryFolders: StateFlow<List<LibraryFolderSelection>>
+    fun addLibraryFolder(selection: LibraryFolderSelection)
+    fun removeLibraryFolder(selection: LibraryFolderSelection)
+    fun setLibraryFolders(selections: List<LibraryFolderSelection>)
+    fun restoreDefaultLibraryFolderIfEmpty()
+    fun setAlbumCollectionLayoutMode(mode: String)
+    fun setSongCollectionGridEnabled(enabled: Boolean)
+    fun setAlbumCollectionSortMode(sortMode: String)
+    fun setSongCollectionSortMode(sortMode: String)
+}
+
+internal interface PlaybackSettingsWriter {
+    fun setUpscalerSettings(settings: UpscalerSettings)
+    fun setPlaybackVolume(value: Float)
+    fun setAudiobookPlaybackSpeed(value: Float)
+    fun setCrossfadeEnabled(enabled: Boolean)
+    fun setCrossfadeDurationMs(value: Long)
+    fun setCrossfadeSilenceThresholdDb(value: Float)
+    fun setVolumeNormalizationEnabled(enabled: Boolean)
+    fun setOnlineLyricsEnabled(enabled: Boolean)
+    fun updateBass(value: Float)
+    fun updateMidrange(value: Float)
+    fun updateTreble(value: Float)
+    fun setAudiobookRewindSeconds(value: Int)
+    fun setAudiobookForwardSeconds(value: Int)
+    fun setAudiobookResumePlayback(enabled: Boolean)
+    fun setAudiobookRewindOnResume(enabled: Boolean)
+    fun setSmartPlaylistEnabled(type: BuiltInSmartPlaylistType, enabled: Boolean)
+    fun setSmartPlaylistMaxSongs(value: Int)
+}
+
+internal interface PlaylistStore {
+    fun createPlaylist(name: String): Deferred<PlaylistMutationResult>
+    fun createPlaylistWithSongs(name: String, songIds: List<Long>): Deferred<PlaylistMutationResult>
+    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>): Deferred<PlaylistMutationResult>
+    fun renamePlaylist(playlistId: Long, name: String): Deferred<PlaylistMutationResult>
+    fun updatePlaylistSongIds(playlistId: Long, songIds: List<Long>): Deferred<PlaylistMutationResult>
+    fun importPlaylists(playlists: List<Playlist>): Deferred<PlaylistMutationResult>
+    fun deletePlaylists(playlistIds: Set<Long>): Deferred<PlaylistMutationResult>
+    fun removeSongReferences(songIds: Set<Long>): Deferred<PlaylistMutationResult>
+    fun createSmartPlaylist(name: String): Deferred<PlaylistMutationResult>
+    fun createSmartPlaylist(playlist: SmartPlaylist): Deferred<PlaylistMutationResult>
+    fun updateSmartPlaylist(playlist: SmartPlaylist): Deferred<PlaylistMutationResult>
+    fun deleteSmartPlaylists(playlistIds: Set<Long>): Deferred<PlaylistMutationResult>
+}
+
+internal sealed interface PlaylistMutationResult {
+    data class Success(
+        val playlistId: Long? = null,
+        val changed: Boolean = true,
+    ) : PlaylistMutationResult
+
+    data object NotFound : PlaylistMutationResult
+    data object InvalidInput : PlaylistMutationResult
+    data object NotAllowed : PlaylistMutationResult
+    data class Failure(val reason: String, val cause: Throwable? = null) : PlaylistMutationResult
+}
+
+internal interface FavoritesStore {
+    fun toggleFavoriteSong(songId: Long): Deferred<PlaylistMutationResult>
+    fun setFavoriteSongs(songIds: List<Long>, favorite: Boolean): Deferred<PlaylistMutationResult>
+}
+
+internal interface PlaybackHistoryStore {
+    val albumPlayCounts: StateFlow<Map<Long, Int>>
+    val songPlayCounts: StateFlow<Map<Long, Int>>
+    val recentSongIds: StateFlow<List<Long>>
+    val recentAlbumIds: StateFlow<List<Long>>
+    val lastPlayedCollectionKind: StateFlow<PlaybackCollectionKind?>
+    val lastPlayedCollectionId: StateFlow<Long?>
+
+    fun recordPlaybackTransition(songId: Long?, albumId: Long?)
+    fun setRecentPlaybackIds(
+        songIds: List<Long>,
+        albumIds: List<Long>,
+        lastPlayedCollectionKind: PlaybackCollectionKind?,
+        lastPlayedCollectionId: Long?,
+    )
+}
+
+internal interface SearchHistoryStore {
+    val searchHistory: StateFlow<List<SearchHistoryEntry>>
+    fun addSearchHistoryEntry(entry: SearchHistoryEntry)
+    fun clearSearchHistoryEntries()
+}
+
+internal interface UpdatePreferencesStore {
+    val dismissedUpdateVersion: StateFlow<String?>
+    fun setDismissedUpdateVersion(versionName: String?)
+    fun lastAutomaticUpdateCheckAtMs(): Long
+    fun setLastAutomaticUpdateCheckAtMs(timestampMs: Long)
+}

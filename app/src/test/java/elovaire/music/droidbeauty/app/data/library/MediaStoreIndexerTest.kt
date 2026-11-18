@@ -1,0 +1,65 @@
+package elovaire.music.droidbeauty.app.data.library
+
+import java.io.File
+import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import kotlinx.coroutines.CancellationException
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+class MediaStoreIndexerTest {
+    @get:Rule
+    val temp = TemporaryFolder()
+
+    @Test
+    fun audioFilesForPaths_includesDirectAudioFile() {
+        val file = temp.newFile("track.mp3")
+
+        assertEquals(listOf(file.absolutePath), audioFilesForPaths(listOf(file.absolutePath)).map(File::getAbsolutePath))
+    }
+
+    @Test
+    fun audioFilesForPaths_expandsNestedDirectories() {
+        val root = temp.newFolder("Music")
+        val nested = File(root, "Nested").apply { mkdirs() }
+        val track = File(nested, "track.flac").apply { writeText("x") }
+        File(nested, "cover.jpg").writeText("x")
+
+        assertEquals(listOf(track.absolutePath), audioFilesForPaths(listOf(root.absolutePath)).map(File::getAbsolutePath))
+    }
+
+    @Test
+    fun audioFilesForPaths_ignoresMissingAndUnsupportedFiles() {
+        val root = temp.newFolder("Music")
+        File(root, "notes.txt").writeText("x")
+
+        assertEquals(emptyList<File>(), audioFilesForPaths(listOf(root.absolutePath, File(root, "missing.mp3").absolutePath)))
+    }
+
+    @Test
+    fun audioFilesForPaths_doesNotFollowAudioFileSymlinksOutsideTheSelectedFolder() {
+        val selectedRoot = temp.newFolder("selected")
+        val outsideTrack = File(temp.newFolder("outside"), "track.mp3").apply { writeText("x") }
+        Files.createSymbolicLink(File(selectedRoot, "linked.mp3").toPath(), outsideTrack.toPath())
+
+        assertEquals(emptyList<File>(), audioFilesForPaths(listOf(selectedRoot.absolutePath)))
+    }
+
+    @Test
+    fun awaitMediaScannerCallbacks_checksCancellationWhileWaiting() {
+        val checks = intArrayOf(0)
+        val failure = assertThrows(CancellationException::class.java) {
+            awaitMediaScannerCallbacks(CountDownLatch(1), timeoutSeconds = 5L) {
+                checks[0] += 1
+                if (checks[0] > 1) throw CancellationException("cancelled")
+            }
+        }
+
+        assertTrue(checks[0] > 1)
+        assertEquals("cancelled", failure.message)
+    }
+}

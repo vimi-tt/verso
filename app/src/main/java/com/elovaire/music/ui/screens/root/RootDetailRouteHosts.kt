@@ -1,0 +1,726 @@
+package elovaire.music.droidbeauty.app.ui.screens
+
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import elovaire.music.droidbeauty.app.data.artist.ArtistBackdropState
+import elovaire.music.droidbeauty.app.data.artist.ArtistImageReader
+import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
+import elovaire.music.droidbeauty.app.data.playback.AudiobookChapterReader
+import elovaire.music.droidbeauty.app.data.library.AudiobookDescriptionReader
+import elovaire.music.droidbeauty.app.domain.model.AudiobookPart
+import elovaire.music.droidbeauty.app.data.playback.AudiobookProgress
+import kotlinx.coroutines.CancellationException
+
+@Composable
+internal fun LibraryHubRouteHost(
+    navState: RootNavigationState,
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+    downloadedSongsCount: Int = 0,
+    activeDownloadsCount: Int = 0,
+    onOpenDownloads: () -> Unit = {},
+    favoritesCount: Int = 0,
+    onOpenFavorites: () -> Unit = {},
+    youTubeSongsCount: Int = 0,
+    youTubeAlbumsCount: Int = 0,
+    youTubeArtistsCount: Int = 0,
+    onOpenStats: () -> Unit = {},
+) {
+    val audiobookProgressRevision by routeActions.playback.audiobookProgressRevision.collectAsStateWithLifecycle()
+    val audiobookProgressByKey = remember(routeState.appState.library.audiobooks, audiobookProgressRevision) {
+        routeState.appState.library.audiobooks.mapNotNull { book ->
+            routeActions.playback.audiobookProgress(book.stableKey)?.let { progress ->
+                book.stableKey to progress
+            }
+        }.toMap()
+    }
+    LibraryHubScreen(
+        libraryState = routeState.appState.library,
+        audiobookProgressByKey = audiobookProgressByKey,
+        currentSongId = routeState.appState.playback.currentSong?.id.takeIf { routeState.isPlaybackActuallyPlaying },
+        topPadding = padding.topContent,
+        bottomPadding = padding.bottomContent,
+        scrollToTopRequestVersion = navState.libraryScrollRequestVersion,
+        onOpenCollection = { kind -> routeActions.openLibraryCollection(kind, localOnly = false) },
+        onOpenLocalCollection = { kind -> routeActions.openLibraryCollection(kind, localOnly = true) },
+        onOpenRecentlyAdded = routeActions::openRecentlyAdded,
+        onOpenAudiobooks = routeActions::openAudiobooks,
+        onAudiobookSelected = { book -> routeActions.openAudiobook(book.stableKey) },
+        onAlbumSelected = { album, origin ->
+            routeActions.openAlbum(album, origin, AlbumOpenSource.LibraryAlbums)
+        },
+        downloadedSongsCount = downloadedSongsCount,
+        activeDownloadsCount = activeDownloadsCount,
+        onOpenDownloads = onOpenDownloads,
+        favoritesCount = favoritesCount,
+        onOpenFavorites = onOpenFavorites,
+        youTubeSongsCount = youTubeSongsCount,
+        youTubeAlbumsCount = youTubeAlbumsCount,
+        youTubeArtistsCount = youTubeArtistsCount,
+        onOpenStats = onOpenStats,
+    )
+}
+
+@Composable
+internal fun AudiobooksRouteHost(
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    val audiobookProgressRevision by routeActions.playback.audiobookProgressRevision.collectAsStateWithLifecycle()
+    val progressByBookKey = remember(routeState.appState.library.audiobooks, audiobookProgressRevision) {
+        routeState.appState.library.audiobooks.mapNotNull { book ->
+            routeActions.playback.audiobookProgress(book.stableKey)?.let { book.stableKey to it }
+        }.toMap()
+    }
+    AudiobooksScreen(
+        books = routeState.appState.library.audiobooks,
+        progressByBookKey = progressByBookKey,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onBookSelected = { book -> routeActions.openAudiobook(book.stableKey) },
+        playlists = routeState.appState.playlists,
+        playlistSongsById = routeState.libraryDerivedState.songsById,
+        onAddSongsToPlaylist = routeActions.playlists::addSongsToPlaylist,
+        onCreatePlaylist = routeActions.playlists::createPlaylist,
+        onDeleteSongsFromDevice = routeActions.delete::deleteSongsFromDevice,
+    )
+}
+
+@Composable
+internal fun AudiobookDetailRouteHost(
+    stableKey: String,
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+    chapterReader: AudiobookChapterReader,
+    descriptionReader: AudiobookDescriptionReader,
+) {
+    val book = routeState.appState.library.audiobooks.firstOrNull { it.stableKey == stableKey }
+    if (book == null) {
+        AudiobookUnavailableScreen(bottomPadding = padding.detailBottom, onBack = routeActions::navigateUp)
+        return
+    }
+    val progress by routeActions.playback.progressState.collectAsStateWithLifecycle()
+    val audiobookSettings by routeActions.settings.appearanceSettings.audiobookSettings.collectAsStateWithLifecycle()
+    val audiobookProgressRevision by routeActions.playback.audiobookProgressRevision.collectAsStateWithLifecycle()
+    val savedProgress: AudiobookProgress? = remember(book.stableKey, audiobookProgressRevision) {
+        routeActions.playback.audiobookProgress(book.stableKey)
+    }
+    val chapterLoadState by androidx.compose.runtime.produceState<AudiobookChapterLoadState>(
+        initialValue = AudiobookChapterLoadState.Loading,
+        key1 = book.stableKey,
+        key2 = book.parts,
+    ) {
+        try {
+            val expandedParts = buildList {
+                book.parts.forEach { part ->
+                    val chapters = chapterReader.chapters(part.song)
+                    if (chapters.isEmpty()) {
+                        add(part)
+                    } else {
+                        chapters.forEach { chapter ->
+                            add(
+                                AudiobookPart(
+                                    song = part.song,
+                                    number = size + 1,
+                                    titleOverride = chapter.title,
+                                    startMs = chapter.startMs,
+                                    endMs = chapter.endMs,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+            value = if (expandedParts.isNotEmpty() && expandedParts != book.parts) {
+                AudiobookChapterLoadState.Loaded(expandedParts)
+            } else {
+                AudiobookChapterLoadState.UnavailableFallback
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: RuntimeException) {
+            value = AudiobookChapterLoadState.UnavailableFallback
+        }
+    }
+    val descriptionState by androidx.compose.runtime.produceState<AudiobookDescriptionLoadState>(
+        initialValue = AudiobookDescriptionLoadState.Loading,
+        key1 = book.stableKey,
+        key2 = book.title,
+        key3 = book.author to book.description,
+    ) {
+        try {
+            val embeddedDescription = book.description
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+            value = (embeddedDescription ?: descriptionReader.description(book))
+                ?.let(AudiobookDescriptionLoadState::Loaded)
+                ?: AudiobookDescriptionLoadState.Unavailable
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: RuntimeException) {
+            value = AudiobookDescriptionLoadState.Unavailable
+        }
+    }
+    val displayedBook = remember(book, chapterLoadState) {
+        (chapterLoadState as? AudiobookChapterLoadState.Loaded)
+            ?.parts
+            ?.let { book.copy(parts = it) }
+            ?: book
+    }
+    AudiobookDetailScreen(
+        book = displayedBook,
+        currentSongId = routeState.appState.playback.currentSong?.id,
+        isPlaying = routeState.appState.playback.isPlaying,
+        progressMs = progress.positionMs,
+        savedProgress = savedProgress,
+        descriptionState = descriptionState,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onOpenTagEditor = { routeActions.openAudiobookTagEditor(book.stableKey) },
+        onPlay = { part, resume ->
+            routeActions.playback.playAudiobook(
+                displayedBook,
+                part,
+                resume = resume && audiobookSettings.resumePlayback,
+                rewindOnResumeSeconds = if (audiobookSettings.rewindOnResume) audiobookSettings.rewindSeconds else 0,
+            )
+        },
+        onStartOver = {
+            displayedBook.parts.firstOrNull()?.let { routeActions.playback.playAudiobook(displayedBook, it, resume = false) }
+        },
+    )
+}
+
+private sealed interface AudiobookChapterLoadState {
+    data object Loading : AudiobookChapterLoadState
+    data class Loaded(val parts: List<AudiobookPart>) : AudiobookChapterLoadState
+    data object UnavailableFallback : AudiobookChapterLoadState
+}
+
+internal sealed interface AudiobookDescriptionLoadState {
+    data object Loading : AudiobookDescriptionLoadState
+    data class Loaded(val text: String) : AudiobookDescriptionLoadState
+    data object Unavailable : AudiobookDescriptionLoadState
+}
+
+@Composable
+internal fun AlbumRouteHost(
+    albumId: Long?,
+    navState: RootNavigationState,
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    val appState = routeState.appState
+    val libraryState = routeState.appState.library
+    var routedAlbumSongIds by remember(albumId) { mutableStateOf<Set<Long>>(emptySet()) }
+    val album = resolveRoutedAlbum(
+        albumId = albumId,
+        albums = libraryState.albums,
+        albumsById = routeState.libraryDerivedState.albumsById,
+        routedSongIds = routedAlbumSongIds,
+    )
+    LaunchedEffect(album?.id) {
+        album?.songs?.mapTo(linkedSetOf(), Song::id)?.let { routedAlbumSongIds = it }
+    }
+    val previousRoute = navState.navController.previousBackStackEntry?.destination?.route
+    AlbumScreen(
+        album = album,
+        removingSongIds = libraryState.removingSongIds,
+        favoriteSongIds = appState.favoriteSongIds,
+        currentSongId = routeState.appState.playback.currentSong?.id,
+        isCurrentSongPlaying = routeState.isPlaybackActuallyPlaying,
+        bottomPadding = padding.detailBottom,
+        collapsedTopBarTitle = detailFallbackTitle(previousRoute, appState.appLanguage),
+        onBack = routeActions::navigateUp,
+        onOpenTagEditor = { selectedAlbum -> routeActions.openTagEditor(selectedAlbum.id) },
+        onPlayAlbum = { selectedAlbum -> routeActions.playback.playAlbum(selectedAlbum) },
+        onShuffleAlbum = { selectedAlbum -> routeActions.playback.playAlbum(selectedAlbum, shuffle = true) },
+        onSongSelected = { selectedSong, songs ->
+            routeActions.playback.playSongQueue(
+                song = selectedSong,
+                queue = songs,
+                sourceLabel = album?.title ?: selectedSong.album,
+            )
+        },
+        onArtistSelected = routeActions::openArtist,
+        playlists = appState.playlists,
+        onAddSongsToPlaylist = routeActions.playlists::addSongsToPlaylist,
+        onCreatePlaylist = routeActions.playlists::createPlaylist,
+        playlistSongsById = routeState.libraryDerivedState.songsById,
+        onDeleteSongsFromDevice = routeActions.delete::deleteSongsFromDevice,
+        onToggleFavorite = routeActions.playlists::toggleFavorite,
+        onSetAlbumFavorite = routeActions.playlists::setSongsFavorite,
+    )
+}
+
+@Composable
+internal fun LibraryCollectionRouteHost(
+    kind: LibraryCollectionKind,
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+    artistImageRepository: ArtistImageReader,
+    localOnly: Boolean = false,
+    youTubeSongs: List<Song> = emptyList(),
+    youTubeAlbums: List<elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary> = emptyList(),
+    youTubeArtists: List<elovaire.music.droidbeauty.app.data.youtube.YouTubeArtistSummary> = emptyList(),
+    onOpenYouTubeAlbum: (elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary) -> Unit = {},
+    onOpenYouTubeArtist: (elovaire.music.droidbeauty.app.data.youtube.YouTubeArtistSummary) -> Unit = {},
+) {
+    val appState = routeState.appState
+    LibraryCollectionScreen(
+        kind = kind,
+        libraryState = routeState.appState.library,
+        playlists = appState.playlists,
+        songPlayCounts = appState.songPlayCounts,
+        favoriteSongIds = appState.favoriteSongIds,
+        albumCollectionLayoutMode = routeState.albumCollectionLayoutMode,
+        songCollectionLayoutMode = if (appState.songCollectionGridEnabled) AlbumLayoutMode.Grid else AlbumLayoutMode.Compact,
+        albumSortMode = appState.albumCollectionSortModeName.toAlbumSortMode(),
+        songSortMode = appState.songCollectionSortModeName.toSongSortMode(),
+        artistImageRepository = artistImageRepository,
+        currentSongId = routeState.appState.playback.currentSong?.id,
+        isCurrentSongPlaying = routeState.isPlaybackActuallyPlaying,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onAlbumSelected = { album, origin ->
+            routeActions.openAlbum(album, origin, AlbumOpenSource.LibraryAlbums)
+        },
+        onAddAlbumToQueue = routeActions::enqueueAlbum,
+        onSongSelected = { song, queue ->
+            if (kind == LibraryCollectionKind.Songs) {
+                routeActions.playback.playAllSongs(song, queue)
+            } else {
+                routeActions.playback.playSongQueue(song, queue)
+            }
+        },
+        onToggleFavorite = routeActions.playlists::toggleFavorite,
+        onAddAlbumToPlaylist = routeActions.playlists::addAlbumToPlaylist,
+        onCreatePlaylist = routeActions.playlists::createPlaylist,
+        playlistSongsById = routeState.libraryDerivedState.songsById,
+        onSetAlbumFavorite = routeActions.playlists::setSongsFavorite,
+        onDeleteAlbumFromDevice = routeActions.delete::deleteAlbumFromDevice,
+        onAlbumCollectionLayoutModeChanged = routeActions::setAlbumCollectionLayoutMode,
+        onSongCollectionLayoutModeChanged = routeActions::setSongCollectionLayoutMode,
+        onAlbumSortModeChanged = routeActions::setAlbumSortMode,
+        onSongSortModeChanged = routeActions::setSongSortMode,
+        onGenreSelected = routeActions::openGenre,
+        onArtistSelected = routeActions::openArtist,
+        localOnly = localOnly,
+        youTubeSongs = youTubeSongs,
+        youTubeAlbums = youTubeAlbums,
+        youTubeArtists = youTubeArtists,
+        onOpenYouTubeAlbum = onOpenYouTubeAlbum,
+        onOpenYouTubeArtist = onOpenYouTubeArtist,
+    )
+}
+
+@Composable
+internal fun RecentlyAddedRouteHost(
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    RecentlyAddedAlbumsScreen(
+        albums = recentlyAddedAlbumsFor(routeState.appState.library),
+        playlists = routeState.appState.playlists,
+        playlistSongsById = routeState.libraryDerivedState.songsById,
+        favoriteSongIds = routeState.appState.favoriteSongIds,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onAlbumSelected = { album, origin -> routeActions.openAlbum(album, origin, AlbumOpenSource.LibraryAlbums) },
+        onAddAlbumToQueue = routeActions::enqueueAlbum,
+        onAddAlbumToPlaylist = routeActions.playlists::addAlbumToPlaylist,
+        onCreatePlaylist = routeActions.playlists::createPlaylist,
+        onSetAlbumFavorite = routeActions.playlists::setSongsFavorite,
+        onDeleteAlbumFromDevice = routeActions.delete::deleteAlbumFromDevice,
+    )
+}
+
+@Composable
+internal fun GenreRouteHost(
+    genre: String,
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    val appState = routeState.appState
+    GenreAlbumsScreen(
+        genre = genre,
+        libraryState = routeState.appState.library,
+        playlists = appState.playlists,
+        layoutMode = routeState.albumCollectionLayoutMode,
+        sortMode = appState.albumCollectionSortModeName.toAlbumSortMode(),
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onLayoutModeChanged = routeActions::setAlbumCollectionLayoutMode,
+        onSortModeChanged = routeActions::setAlbumSortMode,
+        onAlbumSelected = { album, origin ->
+            routeActions.openAlbum(album, origin, AlbumOpenSource.GenreDetail)
+        },
+        onAddAlbumToQueue = routeActions::enqueueAlbum,
+        onAddAlbumToPlaylist = routeActions.playlists::addAlbumToPlaylist,
+        onCreatePlaylist = routeActions.playlists::createPlaylist,
+        playlistSongsById = routeState.libraryDerivedState.songsById,
+        favoriteSongIds = appState.favoriteSongIds,
+        onSetAlbumFavorite = routeActions.playlists::setSongsFavorite,
+        onDeleteAlbumFromDevice = routeActions.delete::deleteAlbumFromDevice,
+    )
+}
+
+@Composable
+internal fun ArtistRouteHost(
+    artistName: String,
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+    artistImageRepository: ArtistImageReader,
+    overlayState: RootOverlayStateHolder,
+) {
+    val appState = routeState.appState
+    val normalizedArtist = artistName.ifBlank { "Unknown Artist" }
+    val artistSongs = remember(normalizedArtist, routeState.appState.library.songs) {
+        routeState.appState.library.songs.filter { song ->
+            song.mediaKind == AudioMediaKind.Music &&
+            song.libraryArtistName().equals(normalizedArtist, ignoreCase = true)
+        }
+    }
+    val artistAlbums = remember(normalizedArtist, routeState.appState.library.albums) {
+        routeState.appState.library.albums
+            .filter { album -> album.artist.equals(normalizedArtist, ignoreCase = true) }
+            .sortedBy { it.title.lowercase() }
+    }
+    val artistBackdropState by remember(normalizedArtist, artistSongs, artistAlbums, artistImageRepository) {
+        artistImageRepository.backdropState(normalizedArtist, artistSongs, artistAlbums)
+    }.collectAsStateWithLifecycle(
+        initialValue = ArtistBackdropState.Fallback(
+            localArtworkUri = artistAlbums.firstOrNull { it.artUri != null }?.artUri
+                ?: artistSongs.firstOrNull { it.artUri != null }?.artUri,
+            artistKey = normalizedArtist,
+        ),
+    )
+    ArtistDetailScreen(
+        artistName = artistName,
+        artistSongs = artistSongs,
+        artistAlbums = artistAlbums,
+        artistBackdropState = artistBackdropState,
+        onOpenArtistInfo = overlayState::openArtistInfo,
+        songPlayCounts = appState.songPlayCounts,
+        favoriteSongIds = appState.favoriteSongIds,
+        currentSongId = routeState.appState.playback.currentSong?.id,
+        isCurrentSongPlaying = routeState.isPlaybackActuallyPlaying,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onSongSelected = { song, queue ->
+            routeActions.playback.playSongQueue(song, queue, sourceLabel = artistName)
+        },
+        onPlayArtist = { songs ->
+            songs.firstOrNull()?.let { song ->
+                routeActions.playback.playSongQueue(song, songs, sourceLabel = artistName)
+            }
+        },
+        onShuffleArtist = { songs ->
+            val shuffledSongs = songs.shuffled()
+            shuffledSongs.firstOrNull()?.let { song ->
+                routeActions.playback.playSongQueue(song, shuffledSongs, sourceLabel = artistName)
+            }
+        },
+        onAlbumSelected = { album, origin ->
+            routeActions.openAlbum(album, origin, AlbumOpenSource.ArtistDetail)
+        },
+        onToggleFavorite = routeActions.playlists::toggleFavorite,
+    )
+}
+
+@Composable
+internal fun EqualizerRouteHost(
+    viewModelFactory: ElovaireViewModelFactory,
+    routeActions: RootRouteActions,
+) {
+    val equalizerViewModel: EqualizerViewModel = viewModel(factory = viewModelFactory)
+    val equalizerUiState by equalizerViewModel.uiState.collectAsStateWithLifecycle()
+    val customPresets by equalizerViewModel.customPresets.collectAsStateWithLifecycle()
+    EqualizerScreen(
+        settings = equalizerUiState.toEqSettings(),
+        selectedPresetName = equalizerUiState.presetName,
+        customPresets = customPresets,
+        equalizerEnabled = equalizerUiState.enabled,
+        onBack = routeActions::navigateUp,
+        onBandChanged = equalizerViewModel::updateBand,
+        onPreampChanged = equalizerViewModel::updatePreamp,
+        onBassChanged = equalizerViewModel::updateBass,
+        onMidrangeChanged = equalizerViewModel::updateMidrange,
+        onTrebleChanged = equalizerViewModel::updateTreble,
+        onSpaciousnessChanged = equalizerViewModel::updateSpaciousness,
+        onSpaciousnessModeChanged = equalizerViewModel::updateSpaciousnessMode,
+        onReverbDurationChanged = equalizerViewModel::updateReverbDuration,
+        onReverbProfileChanged = equalizerViewModel::updateReverbProfile,
+        onResetReverb = equalizerViewModel::resetReverb,
+        onApplyPreset = equalizerViewModel::applyPreset,
+        onSaveCustomPreset = equalizerViewModel::saveCustomPreset,
+        onDeleteCustomPreset = equalizerViewModel::deleteCustomPreset,
+        onReset = equalizerViewModel::resetEffects,
+    )
+}
+
+@Composable
+internal fun SettingsRouteHost(
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+    youTubeAccountState: elovaire.music.droidbeauty.app.data.youtube.YouTubeAccountUiState = elovaire.music.droidbeauty.app.data.youtube.YouTubeAccountUiState(),
+    onOpenYouTubeLogin: () -> Unit = {},
+    onSyncYouTubeAccount: () -> Unit = {},
+    onSignOutYouTube: () -> Unit = {},
+    youTubeQualityState: elovaire.music.droidbeauty.app.data.youtube.YouTubeQualitySettings = elovaire.music.droidbeauty.app.data.youtube.YouTubeQualitySettings(),
+    onWifiStreamingQualitySelected: (com.vimi.k7.innertube.stream.AudioPreference) -> Unit = {},
+    onCellularStreamingQualitySelected: (com.vimi.k7.innertube.stream.AudioPreference) -> Unit = {},
+    onDownloadQualitySelected: (com.vimi.k7.innertube.stream.AudioPreference) -> Unit = {},
+    onWifiOnlyDownloadsChanged: (Boolean) -> Unit = {},
+    onPreferredLyricsProviderSelected: (elovaire.music.droidbeauty.app.data.youtube.LyricsProviderPreference) -> Unit = {},
+    musicCacheSizeBytes: Long = 0L,
+    downloadsSizeBytes: Long = 0L,
+    onClearMusicCache: () -> Unit = {},
+    onClearDownloads: () -> Unit = {},
+    lastFmState: elovaire.music.droidbeauty.app.data.youtube.LastFmAccountState = elovaire.music.droidbeauty.app.data.youtube.LastFmAccountState(),
+    onSignInLastFm: (String, String) -> Unit = { _, _ -> },
+    onToggleLastFmScrobble: (Boolean) -> Unit = {},
+    onSignOutLastFm: () -> Unit = {},
+    onClearLastFmError: () -> Unit = {},
+    onSyncYouTubeHistoryChanged: (Boolean) -> Unit = {},
+    scrollToAccounts: Boolean = false,
+) {
+    val settings = routeActions.settings.appearanceSettings
+    val themeMode by settings.themeMode.collectAsStateWithLifecycle()
+    val textSizePreset by settings.textSizePreset.collectAsStateWithLifecycle()
+    val appLanguage by settings.appLanguage.collectAsStateWithLifecycle()
+    val eqSettings by settings.eqSettings.collectAsStateWithLifecycle()
+    val volumeNormalizationEnabled by settings.volumeNormalizationEnabled.collectAsStateWithLifecycle()
+    val onlineLyricsEnabled by settings.onlineLyricsEnabled.collectAsStateWithLifecycle()
+    val upscalerSettings by settings.upscalerSettings.collectAsStateWithLifecycle()
+    val crossfadeDurationMs by settings.crossfadeDurationMs.collectAsStateWithLifecycle()
+    val crossfadeSilenceThresholdDb by settings.crossfadeSilenceThresholdDb.collectAsStateWithLifecycle()
+    SettingsScreen(
+        themeMode = themeMode,
+        textSizePreset = textSizePreset,
+        appLanguage = appLanguage,
+        eqSettings = eqSettings,
+        libraryScanIsLoading = routeState.appState.library.isLoading,
+        libraryScanProgress = routeState.appState.library.scanProgress,
+        libraryScanError = routeState.appState.library.errorMessage,
+        libraryScanPermissionGranted = routeState.appState.library.permissionGranted,
+        libraryContentRevision = routeState.appState.library.contentRevision,
+        volumeNormalizationEnabled = volumeNormalizationEnabled,
+        onlineLyricsEnabled = onlineLyricsEnabled,
+        crossfadeDurationMs = crossfadeDurationMs,
+        crossfadeSilenceThresholdDb = crossfadeSilenceThresholdDb,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onThemeModeSelected = routeActions.settings::setThemeMode,
+        onTextSizePresetSelected = routeActions.settings::setTextSizePreset,
+        onAppLanguageSelected = routeActions.settings::setAppLanguage,
+        onVolumeNormalizationChanged = routeActions.settings::setVolumeNormalizationEnabled,
+        onOnlineLyricsChanged = routeActions.settings::setOnlineLyricsEnabled,
+        onOpenEqualizer = routeActions::openEqualizer,
+        onOpenCrossfade = routeActions::openCrossfade,
+        onOpenUpscaler = routeActions::openUpscaler,
+        upscalerSettings = upscalerSettings,
+        onOpenAudiobookSettings = routeActions::openAudiobookSettings,
+        onOpenLibraryFolders = routeActions::openLibraryFolders,
+        onOpenManagePlaylists = routeActions::openManagePlaylists,
+        onOpenSmartPlaylistSettings = routeActions::openSmartPlaylistSettings,
+        onOpenNowPlayingBarStyle = routeActions::openNowPlayingBarStyle,
+        onOpenHomeLayout = routeActions::openHomeLayout,
+        onOpenPrivacyPolicy = routeActions::openPrivacyPolicy,
+        onOpenChangelog = routeActions::openChangelog,
+        onScanLibrary = routeActions::refreshLibrary,
+        updateController = routeActions.updateController,
+        youTubeAccountState = youTubeAccountState,
+        onOpenYouTubeLogin = onOpenYouTubeLogin,
+        onSyncYouTubeAccount = onSyncYouTubeAccount,
+        onSignOutYouTube = onSignOutYouTube,
+        youTubeQualityState = youTubeQualityState,
+        onWifiStreamingQualitySelected = onWifiStreamingQualitySelected,
+        onCellularStreamingQualitySelected = onCellularStreamingQualitySelected,
+        onDownloadQualitySelected = onDownloadQualitySelected,
+        onWifiOnlyDownloadsChanged = onWifiOnlyDownloadsChanged,
+        onPreferredLyricsProviderSelected = onPreferredLyricsProviderSelected,
+        musicCacheSizeBytes = musicCacheSizeBytes,
+        downloadsSizeBytes = downloadsSizeBytes,
+        onClearMusicCache = onClearMusicCache,
+        onClearDownloads = onClearDownloads,
+        lastFmState = lastFmState,
+        onSignInLastFm = onSignInLastFm,
+        onToggleLastFmScrobble = onToggleLastFmScrobble,
+        onSignOutLastFm = onSignOutLastFm,
+        onClearLastFmError = onClearLastFmError,
+        onSyncYouTubeHistoryChanged = onSyncYouTubeHistoryChanged,
+        scrollToAccounts = scrollToAccounts,
+    )
+}
+
+@Composable
+internal fun NowPlayingBarStyleRouteHost(
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    val settings = routeActions.settings.appearanceSettings
+    val nowPlayingBarStyle by settings.nowPlayingBarStyle.collectAsStateWithLifecycle()
+    NowPlayingBarStyleScreen(
+        selectedStyle = nowPlayingBarStyle,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onStyleSelected = routeActions.settings::setNowPlayingBarStyle,
+    )
+}
+
+@Composable
+internal fun CrossfadeRouteHost(
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    val settings = routeActions.settings.appearanceSettings
+    val durationMs by settings.crossfadeDurationMs.collectAsStateWithLifecycle()
+    val silenceThresholdDb by settings.crossfadeSilenceThresholdDb.collectAsStateWithLifecycle()
+    CrossfadeScreen(
+        durationMs = durationMs,
+        silenceThresholdDb = silenceThresholdDb,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onDurationChanged = routeActions.settings::setCrossfadeDurationMs,
+        onSilenceThresholdChanged = routeActions.settings::setCrossfadeSilenceThresholdDb,
+    )
+}
+
+@Composable
+internal fun UpscalerRouteHost(routeActions: RootRouteActions, padding: RootRoutePadding) {
+    val settings by routeActions.settings.appearanceSettings.upscalerSettings.collectAsStateWithLifecycle()
+    UpscalerScreen(settings, padding.detailBottom, routeActions::navigateUp, routeActions.settings::setUpscalerSettings)
+}
+
+@Composable
+internal fun AudiobookSettingsRouteHost(
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    val settings = routeActions.settings.appearanceSettings
+    val audiobookSettings by settings.audiobookSettings.collectAsStateWithLifecycle()
+    val playbackSpeed by settings.audiobookPlaybackSpeed.collectAsStateWithLifecycle()
+    AudiobookSettingsScreen(
+        settings = audiobookSettings,
+        playbackSpeed = playbackSpeed,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onRewindChanged = routeActions.settings::setAudiobookRewindSeconds,
+        onForwardChanged = routeActions.settings::setAudiobookForwardSeconds,
+        onResumePlaybackChanged = routeActions.settings::setAudiobookResumePlayback,
+        onPlaybackSpeedChanged = routeActions.settings::setAudiobookPlaybackSpeed,
+        onRewindOnResumeChanged = routeActions.settings::setAudiobookRewindOnResume,
+    )
+}
+
+@Composable
+internal fun SmartPlaylistSettingsRouteHost(
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    val settings = routeActions.settings.appearanceSettings
+    val enabledTypes by settings.smartPlaylistEnabledTypes.collectAsStateWithLifecycle()
+    val maxSongs by settings.smartPlaylistMaxSongs.collectAsStateWithLifecycle()
+    SmartPlaylistSettingsScreen(
+        enabledTypes = enabledTypes,
+        maxSongs = maxSongs,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onTypeEnabledChanged = routeActions.settings::setSmartPlaylistEnabled,
+        onMaxSongsChanged = routeActions.settings::setSmartPlaylistMaxSongs,
+    )
+}
+
+@Composable
+internal fun LibraryFoldersRouteHost(
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    val libraryFolders by routeActions.libraryFolders.collectAsStateWithLifecycle()
+    val networkSources by routeActions.networkSources.collectAsStateWithLifecycle()
+    val networkProbeResults by routeActions.networkProbeResults.collectAsStateWithLifecycle()
+    LibraryFoldersScreen(
+        appLanguage = routeState.appState.appLanguage,
+        folders = libraryFolders,
+        networkSources = networkSources,
+        networkProbeResults = networkProbeResults,
+        songs = routeState.appState.library.songs,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onAddFolder = routeActions::addLibraryFolder,
+        onAddNetworkSource = routeActions::addNetworkSource,
+        onRemoveFolder = routeActions::removeLibraryFolder,
+        onRemoveNetworkSource = routeActions::removeNetworkSource,
+        onRefresh = routeActions::refreshLibrary,
+    )
+}
+
+@Composable
+internal fun ManagePlaylistsRouteHost(
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    ManagePlaylistsScreen(
+        appLanguage = routeState.appState.appLanguage,
+        playlists = routeState.appState.playlists,
+        songsById = routeState.libraryDerivedState.songsById,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+        onImportPlaylists = routeActions::importPlaylists,
+    )
+}
+
+@Composable
+internal fun ChangelogRouteHost(
+    routeActions: RootRouteActions,
+) {
+    ChangelogScreen(
+        releases = rememberChangelogReleases(),
+        onBack = routeActions::navigateUp,
+    )
+}
+
+@Composable
+internal fun AboutRouteHost(
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    AboutScreen(
+        onBack = routeActions::navigateUp,
+        bottomPadding = padding.detailBottom,
+    )
+}
+
+@Composable
+internal fun PrivacyPolicyRouteHost(
+    routeState: RootRouteState,
+    routeActions: RootRouteActions,
+    padding: RootRoutePadding,
+) {
+    PrivacyPolicyScreen(
+        appLanguage = routeState.appState.appLanguage,
+        bottomPadding = padding.detailBottom,
+        onBack = routeActions::navigateUp,
+    )
+}

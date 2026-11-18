@@ -1,0 +1,1186 @@
+package elovaire.music.droidbeauty.app.ui.screens
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireCombinedClickable
+import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
+import elovaire.music.droidbeauty.app.ui.screens.common.EditorTextField
+
+import androidx.activity.compose.BackHandler
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.window.Dialog
+import dev.chrisbanes.haze.ExperimentalHazeApi
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
+import elovaire.music.droidbeauty.app.R
+import elovaire.music.droidbeauty.app.data.library.LibraryFolderSelection
+import elovaire.music.droidbeauty.app.data.library.LibraryFolderSelectionResolver
+import elovaire.music.droidbeauty.app.data.library.network.NetworkCredentials
+import elovaire.music.droidbeauty.app.data.library.network.NetworkLibraryProtocol
+import elovaire.music.droidbeauty.app.data.library.network.NetworkLibrarySource
+import elovaire.music.droidbeauty.app.data.library.network.NetworkAvailability
+import elovaire.music.droidbeauty.app.data.library.network.NetworkProbeResult
+import elovaire.music.droidbeauty.app.domain.model.AppLanguage
+import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
+import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.ui.i18n.commonUiCopy
+import elovaire.music.droidbeauty.app.ui.i18n.libraryFoldersCopy
+import elovaire.music.droidbeauty.app.ui.i18n.localizedCountLabel
+import elovaire.music.droidbeauty.app.ui.i18n.NetworkSourcesCopy
+import elovaire.music.droidbeauty.app.ui.i18n.networkSourcesCopy
+import elovaire.music.droidbeauty.app.ui.i18n.uiPhrase
+import elovaire.music.droidbeauty.app.ui.i18n.UiPhrase
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireActionBump
+import elovaire.music.droidbeauty.app.ui.interaction.rememberElovaireInteractionSource
+import elovaire.music.droidbeauty.app.ui.motion.InlineActionMotionHost
+import elovaire.music.droidbeauty.app.ui.motion.PopupCardMotionHost
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
+import elovaire.music.droidbeauty.app.ui.theme.DestructiveRed
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
+import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
+import elovaire.music.droidbeauty.app.platform.takePersistableTreePermission
+import elovaire.music.droidbeauty.app.platform.releasePersistableTreePermission
+import java.util.UUID
+
+@OptIn(ExperimentalHazeApi::class)
+@Suppress("LongMethod")
+@Composable
+internal fun LibraryFoldersScreen(
+    appLanguage: AppLanguage,
+    folders: List<LibraryFolderSelection>,
+    networkSources: List<NetworkLibrarySource>,
+    networkProbeResults: Map<String, NetworkProbeResult>,
+    songs: List<Song>,
+    bottomPadding: Dp,
+    onBack: () -> Unit,
+    onAddFolder: (Uri) -> Unit,
+    onAddNetworkSource: (NetworkLibrarySource, NetworkCredentials) -> Unit,
+    onRemoveFolder: (LibraryFolderSelection) -> Unit,
+    onRemoveNetworkSource: (NetworkLibrarySource) -> Unit,
+    onRefresh: () -> Unit,
+) {
+    val context = LocalContext.current
+    val copy = remember(appLanguage) { libraryFoldersCopy(appLanguage) }
+    val networkCopy = remember(appLanguage) { networkSourcesCopy(appLanguage) }
+    val motionSpecs = rememberMotionSpecs()
+    val listState = remember { androidx.compose.foundation.lazy.LazyListState() }
+    val sourceChooserHazeState = rememberHazeState()
+    val songsByFolder = remember(folders, songs) {
+        folders.associateWith { folder -> songs.songsInFolder(folder) }
+    }
+    var editMode by rememberSaveable { mutableStateOf(false) }
+    var showSourceChooser by rememberSaveable { mutableStateOf(false) }
+    var showNetworkEditor by rememberSaveable { mutableStateOf(false) }
+    var editingNetworkSource by remember { mutableStateOf<NetworkLibrarySource?>(null) }
+    var pendingNetworkRemoval by remember { mutableStateOf<NetworkLibrarySource?>(null) }
+    BackHandler(enabled = showSourceChooser) {
+        showSourceChooser = false
+    }
+    BackHandler(enabled = editMode) {
+        editMode = false
+    }
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        if (takePersistableTreePermission(context, uri)) {
+            onAddFolder(uri)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        if (!showNetworkEditor) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .hazeSource(sourceChooserHazeState, zIndex = -1f)
+                    .background(MaterialTheme.colorScheme.background),
+            ) {
+            LazyColumn(
+                state = listState,
+                overscrollEffect = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .ensureSingleItemRubberBand(listState),
+                contentPadding = PaddingValues(
+                    start = 18.dp,
+                    top = topBarOccupiedHeight() + 60.dp,
+                    end = 18.dp,
+                    bottom = bottomPadding + buttonNavigationScrollBoost() + 104.dp,
+                ),
+            ) {
+            if (networkSources.isNotEmpty()) {
+                item {
+                    Text(
+                        text = networkCopy.sectionTitle,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
+                items(
+                    items = networkSources,
+                    key = NetworkLibrarySource::id,
+                    contentType = { "network-library-source-row" },
+                ) { source ->
+                    val status = when (networkProbeResults[source.id]?.availability) {
+                        NetworkAvailability.Available -> networkCopy.available
+                        NetworkAvailability.Checking -> networkCopy.checking
+                        NetworkAvailability.AuthenticationRequired -> networkCopy.signIn
+                        NetworkAvailability.LocalNetworkPermissionRequired -> networkCopy.allowLocalNetwork
+                        NetworkAvailability.Offline -> copy.unavailable
+                        NetworkAvailability.Misconfigured,
+                        NetworkAvailability.Unavailable,
+                        -> copy.unavailable
+                        null -> null
+                    }
+                    LibraryFolderListRow(
+                        title = source.name,
+                        subtitle = "${source.protocol.displayName()} • ${source.server}/${source.shareOrPath}".trimEnd('/'),
+                        songCountLabel = localizedCountLabel(
+                            songs.count { song -> song.uri.host == source.id },
+                            "song",
+                            appLanguage,
+                        ),
+                        trailingLabel = status,
+                        showRemove = editMode,
+                        removeLabel = networkCopy.remove,
+                        iconResId = R.drawable.ic_lucide_library,
+                        onClick = {
+                            editingNetworkSource = source
+                            showNetworkEditor = true
+                        },
+                        onLongClick = { editMode = true },
+                        onRemove = { pendingNetworkRemoval = source },
+                    )
+                }
+            }
+            if (folders.isEmpty() && networkSources.isEmpty()) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 42.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = copy.noFoldersTitle,
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            text = copy.noFoldersMessage,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            } else {
+                items(
+                    items = folders,
+                    key = { folder -> folder.uri?.toString() ?: folder.path },
+                    contentType = { "library-folder-row" },
+                ) { folder ->
+                    val unavailable = remember(folder, context) { !folder.isAvailable(context) }
+                    val folderSongs = songsByFolder[folder].orEmpty()
+                    val isAudiobookFolder = folder.displayName.contains("audiobook", ignoreCase = true) ||
+                        folder.path.contains("audiobook", ignoreCase = true) ||
+                        folderSongs.any { it.mediaKind == AudioMediaKind.Audiobook }
+                    LibraryFolderListRow(
+                        title = folder.displayName,
+                        subtitle = if (unavailable) {
+                            copy.unavailableSubtitle
+                        } else {
+                            folder.path.takeUnless(LibraryFolderSelectionResolver::isUriBackedPath) ?: folder.displayName
+                        },
+                        songCountLabel = localizedCountLabel(
+                            folderSongs.size,
+                            if (isAudiobookFolder) "audiobook" else "song",
+                            appLanguage,
+                        ),
+                        trailingLabel = if (unavailable) copy.unavailable else null,
+                        showRemove = editMode,
+                        removeLabel = uiPhrase(appLanguage, UiPhrase.Delete),
+                        iconResId = R.drawable.ic_lucide_library,
+                        onClick = {},
+                        onLongClick = { editMode = true },
+                        onRemove = {
+                            onRemoveFolder(folder)
+                            if (LibraryFolderSelectionResolver.isLastUriSelection(folder, folders)) {
+                                folder.uri?.let { uri -> releasePersistableTreePermission(context, uri) }
+                            }
+                        },
+                    )
+                }
+            }
+            }
+            AnimatedVisibility(
+                visible = !editMode && !showSourceChooser,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = bottomPadding + navigationBarInsetDp() + 20.dp),
+                enter = fadeIn(animationSpec = motionSpecs.fadeIn()),
+                exit = fadeOut(animationSpec = motionSpecs.fadeOut()),
+            ) {
+                SettingsActionPill(
+                    text = networkCopy.addSource,
+                    onClick = { showSourceChooser = true },
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(
+                        start = 18.dp,
+                        top = topBarOccupiedHeight() + 20.dp,
+                        end = 18.dp,
+                    )
+                    .height(60.dp),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Text(
+                    text = copy.removalSafety.trimEnd('.'),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            PinnedBackTopBar(
+                title = commonUiCopy(appLanguage).library,
+                onBack = onBack,
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(top = 12.dp, end = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = { editMode = !editMode }) {
+                    Text(if (editMode) copy.done else copy.edit)
+                }
+                HeaderIconButton(
+                    iconResId = R.drawable.ic_lucide_refresh_ccw,
+                    contentDescription = copy.refresh,
+                    showBackground = false,
+                    onClick = onRefresh,
+                )
+            }
+            }
+            LibrarySourceChooserSheet(
+                visible = showSourceChooser,
+                hazeState = sourceChooserHazeState,
+                addFolderLabel = copy.addFolder,
+                copy = networkCopy,
+                onDismiss = { showSourceChooser = false },
+                onAddFolder = {
+                    showSourceChooser = false
+                    folderPicker.launch(defaultLibraryPickerUri())
+                },
+                onAddNetwork = {
+                    showSourceChooser = false
+                    editingNetworkSource = null
+                    showNetworkEditor = true
+                },
+            )
+            NetworkSourceRemovalDialog(
+                source = pendingNetworkRemoval,
+                copy = networkCopy,
+                cancelLabel = uiPhrase(appLanguage, UiPhrase.Cancel),
+                onDismiss = { pendingNetworkRemoval = null },
+                onConfirm = { source ->
+                    pendingNetworkRemoval = null
+                    onRemoveNetworkSource(source)
+                },
+            )
+        } else {
+            NetworkSourceEditorScreen(
+                source = editingNetworkSource,
+                probeResults = networkProbeResults,
+                bottomPadding = bottomPadding,
+                copy = networkCopy,
+                onDismiss = {
+                    showNetworkEditor = false
+                    editingNetworkSource = null
+                },
+                onSave = { source, credentials ->
+                    onAddNetworkSource(source, credentials)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+internal fun SettingsActionPill(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    @DrawableRes iconResId: Int = R.drawable.ic_lucide_plus,
+) {
+    val interactionSource = rememberElovaireInteractionSource()
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(ElovaireRadii.pill))
+            .background(MaterialTheme.colorScheme.primary)
+            .elovaireActionBump(
+                interactionSource = interactionSource,
+                label = "addFolderPillScale",
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(id = iconResId),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onPrimary,
+        )
+    }
+
+}
+
+@Composable
+private fun NetworkSourceRemovalDialog(
+    source: NetworkLibrarySource?,
+    copy: NetworkSourcesCopy,
+    cancelLabel: String,
+    onDismiss: () -> Unit,
+    onConfirm: (NetworkLibrarySource) -> Unit,
+) {
+    var mounted by remember { mutableStateOf(false) }
+    var displayedSource by remember { mutableStateOf<NetworkLibrarySource?>(null) }
+    LaunchedEffect(source) {
+        if (source != null) {
+            displayedSource = source
+            mounted = true
+        }
+    }
+    if (!mounted) return
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            PopupCardMotionHost(
+                surfaceId = "folders.remove_confirmation",
+                visible = source != null,
+                onExitFinished = { if (source == null) mounted = false },
+                modifier = Modifier.padding(horizontal = 20.dp),
+            ) {
+                DynamicBackdropSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(ElovaireRadii.card),
+                    overlayAlpha = 0.6f,
+                    borderColor = blurSurfaceBorderColor(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Text(
+                            text = copy.removeTitle,
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                        )
+                        Text(
+                            text = copy.removeMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = readableSecondaryTextColor(),
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            TextButton(onClick = onDismiss) {
+                                Text(cancelLabel)
+                            }
+                            TextButton(
+                                onClick = { displayedSource?.let(onConfirm) },
+                            ) {
+                                Text(copy.remove, color = DestructiveRed)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@Suppress("LongMethod")
+private fun LibrarySourceChooserSheet(
+    visible: Boolean,
+    hazeState: HazeState,
+    addFolderLabel: String,
+    copy: NetworkSourcesCopy,
+    onDismiss: () -> Unit,
+    onAddFolder: () -> Unit,
+    onAddNetwork: () -> Unit,
+) {
+    val motionSpecs = rememberMotionSpecs()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(10f),
+    ) {
+        AnimatedVisibility(
+            visible = visible,
+            modifier = Modifier.matchParentSize(),
+            enter = fadeIn(animationSpec = motionSpecs.fadeIn()),
+            exit = fadeOut(animationSpec = motionSpecs.fadeOut()),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.4f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+            )
+        }
+        PopupCardMotionHost(
+            surfaceId = "folders.source_chooser",
+            visible = visible,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+        ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                ),
+        ) {
+            DynamicBackdropSurface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {},
+                    ),
+                shape = RoundedCornerShape(
+                    topStart = ElovaireRadii.dialog,
+                    topEnd = ElovaireRadii.dialog,
+                ),
+                overlayAlpha = 0.6f,
+                borderColor = null,
+                hazeState = hazeState,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_lucide_library),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                text = copy.addSource,
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                                .elovaireClickable(onClick = onDismiss),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_lucide_x),
+                                contentDescription = copy.closeSourcePicker,
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                    LibrarySourceChoice(
+                        iconResId = R.drawable.ic_lucide_library,
+                        title = addFolderLabel,
+                        subtitle = copy.chooseFolderSubtitle,
+                        onClick = onAddFolder,
+                    )
+                    LibrarySourceChoice(
+                        iconResId = R.drawable.ic_about_globe,
+                        title = copy.nasTitle,
+                        subtitle = copy.nasSubtitle,
+                        onClick = onAddNetwork,
+                    )
+                }
+            }
+        }
+        }
+    }
+}
+
+@Composable
+private fun LibrarySourceChoice(
+    @DrawableRes iconResId: Int,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    val interactionSource = rememberElovaireInteractionSource()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(ElovaireRadii.tile))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
+            .elovaireActionBump(
+                interactionSource = interactionSource,
+                label = "library_source_choice_bump",
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(id = iconResId),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
+            modifier = Modifier.size(20.dp),
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+            )
+        }
+        Icon(
+            painter = painterResource(id = R.drawable.ic_lucide_chevron_left),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+            modifier = Modifier
+                .size(18.dp)
+                .rotate(180f),
+        )
+    }
+}
+
+@Composable
+private fun NetworkSourceEditorScreen(
+    source: NetworkLibrarySource?,
+    probeResults: Map<String, NetworkProbeResult>,
+    bottomPadding: Dp,
+    copy: NetworkSourcesCopy,
+    onDismiss: () -> Unit,
+    onSave: (NetworkLibrarySource, NetworkCredentials) -> Unit,
+) {
+    var protocolName by rememberSaveable(source?.id) { mutableStateOf(source?.protocol?.name ?: NetworkLibraryProtocol.Smb.name) }
+    var name by rememberSaveable(source?.id) { mutableStateOf(source?.name.orEmpty()) }
+    var server by rememberSaveable(source?.id) { mutableStateOf(source?.server.orEmpty()) }
+    var path by rememberSaveable(source?.id) { mutableStateOf(source?.shareOrPath.orEmpty()) }
+    var username by rememberSaveable(source?.id) { mutableStateOf(source?.username.orEmpty()) }
+    var domain by rememberSaveable(source?.id) { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var saveRequested by rememberSaveable(source?.id) { mutableStateOf(false) }
+    var subtitleHeight by remember { mutableStateOf(20.dp) }
+    val density = LocalDensity.current
+    val sourceId = rememberSaveable(source?.id) { mutableStateOf(source?.id ?: UUID.randomUUID().toString()) }.value
+    val credentialKey = source?.credentialKey ?: "network-credential-$sourceId"
+    val protocol = NetworkLibraryProtocol.entries.first { it.name == protocolName }
+    val probeResult = probeResults[sourceId]
+    val canSave = server.isNotBlank() && (protocol == NetworkLibraryProtocol.WebDav || path.isNotBlank())
+    val isChecking = probeResult?.availability == NetworkAvailability.Checking
+    val listState = rememberElovaireLazyListState("network_source_editor", sourceId)
+    BackHandler(onBack = onDismiss)
+    LaunchedEffect(probeResult?.availability) {
+        if (saveRequested && probeResult?.availability == NetworkAvailability.Available) onDismiss()
+    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            overscrollEffect = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .ensureSingleItemRubberBand(listState),
+            contentPadding = PaddingValues(
+                start = 18.dp,
+                top = topBarOccupiedHeight() + 20.dp + subtitleHeight + 20.dp,
+                end = 18.dp,
+                bottom = bottomPadding + 24.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            networkSourceEditorItems(
+                protocol = protocol,
+                copy = copy,
+                name = name,
+                onNameChange = { name = it },
+                server = server,
+                onServerChange = { server = it },
+                path = path,
+                onPathChange = { path = it },
+                username = username,
+                onUsernameChange = { username = it },
+                domain = domain,
+                onDomainChange = { domain = it },
+                password = password,
+                onPasswordChange = { password = it },
+                probeResult = probeResult,
+                onProtocolSelected = { protocolName = it.name },
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(start = 18.dp, top = topBarOccupiedHeight() + 20.dp, end = 18.dp),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Text(
+                text = copy.nasSubtitle.trimEnd('.'),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onSizeChanged { size ->
+                        val measuredHeight = with(density) { size.height.toDp() }
+                        if (subtitleHeight != measuredHeight) subtitleHeight = measuredHeight
+                    },
+            )
+        }
+        PinnedBackTopBar(
+            title = copy.editorTitle,
+            onBack = onDismiss,
+            modifier = Modifier.align(Alignment.TopCenter),
+            actions = listOf(
+                TopBarActionSpec(
+                    iconResId = R.drawable.ic_lucide_check,
+                    contentDescription = copy.saveEditor,
+                    enabled = canSave && !isChecking,
+                    onClick = {
+                        if (canSave && !isChecking) {
+                            saveRequested = true
+                            onSave(
+                                NetworkLibrarySource(
+                                    id = sourceId,
+                                    name = name.trim().ifBlank { server.trim() },
+                                    protocol = protocol,
+                                    server = server.trim(),
+                                    shareOrPath = path.trim(),
+                                    username = username.trim(),
+                                    credentialKey = credentialKey,
+                                ),
+                                NetworkCredentials(username.trim(), password, domain.trim().ifBlank { null }),
+                            )
+                        }
+                    },
+                ),
+            ),
+        )
+        FastScrollbar(
+            state = listState,
+            topInset = topBarOccupiedHeight() + 20.dp + subtitleHeight + 20.dp,
+            bottomInset = bottomPadding,
+        )
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.networkSourceEditorItems(
+    protocol: NetworkLibraryProtocol,
+    copy: NetworkSourcesCopy,
+    name: String,
+    onNameChange: (String) -> Unit,
+    server: String,
+    onServerChange: (String) -> Unit,
+    path: String,
+    onPathChange: (String) -> Unit,
+    username: String,
+    onUsernameChange: (String) -> Unit,
+    domain: String,
+    onDomainChange: (String) -> Unit,
+    password: String,
+    onPasswordChange: (String) -> Unit,
+    probeResult: NetworkProbeResult?,
+    onProtocolSelected: (NetworkLibraryProtocol) -> Unit,
+) {
+    item(key = "protocol") {
+        NetworkProtocolSelector(
+            selected = protocol,
+            onSelected = onProtocolSelected,
+        )
+    }
+    item {
+        EditorTextField(
+            value = name,
+            onValueChange = onNameChange,
+            label = copy.name,
+            leadingIconResId = R.drawable.ic_lucide_server,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        )
+    }
+    item {
+        EditorTextField(
+            value = server,
+            onValueChange = onServerChange,
+            label = if (protocol == NetworkLibraryProtocol.Smb) copy.server else copy.httpsServer,
+            leadingIconResId = R.drawable.ic_about_globe,
+            placeholder = if (protocol == NetworkLibraryProtocol.Smb) "192.168.1.20" else "https://nas.example.com/music",
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+        )
+    }
+    item {
+        EditorTextField(
+            value = path,
+            onValueChange = onPathChange,
+            label = if (protocol == NetworkLibraryProtocol.Smb) copy.sharePath else copy.path,
+            leadingIconResId = R.drawable.ic_lucide_folder,
+            placeholder = if (protocol == NetworkLibraryProtocol.Smb) "Music" else null,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+    }
+    item(key = "sign_in") {
+        Column(
+            modifier = Modifier.padding(top = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+            Text(
+                text = copy.signIn,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+    item {
+        EditorTextField(
+            value = username,
+            onValueChange = onUsernameChange,
+            label = copy.username,
+            leadingIconResId = R.drawable.ic_lucide_user_round,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+    }
+    if (protocol == NetworkLibraryProtocol.Smb) {
+        item {
+            EditorTextField(
+                value = domain,
+                onValueChange = onDomainChange,
+                label = copy.domainOptional,
+                leadingIconResId = R.drawable.ic_lucide_network,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+        }
+    }
+    item {
+        EditorTextField(
+            value = password,
+            onValueChange = onPasswordChange,
+            label = copy.password,
+            leadingIconResId = R.drawable.ic_lucide_key_round,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+        )
+    }
+    probeResult?.let { result ->
+        item {
+            val statusColor = when (result.availability) {
+                NetworkAvailability.Available -> MaterialTheme.colorScheme.primary
+                NetworkAvailability.Checking -> MaterialTheme.colorScheme.onSurfaceVariant
+                else -> MaterialTheme.colorScheme.error
+            }
+            Text(
+                text = networkProbeMessage(result.availability, copy),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(ElovaireRadii.input))
+                    .background(statusColor.copy(alpha = 0.1f))
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                color = statusColor,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+            )
+        }
+    }
+}
+
+private fun networkProbeMessage(
+    availability: NetworkAvailability,
+    copy: NetworkSourcesCopy,
+): String = when (availability) {
+    NetworkAvailability.Available -> copy.connectionAvailable
+    NetworkAvailability.LocalNetworkPermissionRequired -> copy.allowLocalNetworkSettings
+    NetworkAvailability.AuthenticationRequired -> copy.authenticationRequired
+    NetworkAvailability.Offline -> copy.hostUnreachable
+    NetworkAvailability.Misconfigured -> copy.checkServerPath
+    NetworkAvailability.Unavailable -> copy.sourceUnavailable
+    NetworkAvailability.Checking -> copy.testingConnection
+}
+
+@Composable
+private fun NetworkProtocolSelector(
+    selected: NetworkLibraryProtocol,
+    onSelected: (NetworkLibraryProtocol) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(ElovaireRadii.pill))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
+            .padding(4.dp)
+            .selectableGroup(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        NetworkProtocolChoice(
+            modifier = Modifier.weight(1f),
+            protocol = NetworkLibraryProtocol.Smb,
+            label = "SMB2/3",
+            selected = selected == NetworkLibraryProtocol.Smb,
+            onClick = { onSelected(NetworkLibraryProtocol.Smb) },
+        )
+        NetworkProtocolChoice(
+            modifier = Modifier.weight(1f),
+            protocol = NetworkLibraryProtocol.WebDav,
+            label = "WebDAV HTTPS",
+            selected = selected == NetworkLibraryProtocol.WebDav,
+            onClick = { onSelected(NetworkLibraryProtocol.WebDav) },
+        )
+    }
+}
+
+@Composable
+private fun NetworkProtocolChoice(
+    protocol: NetworkLibraryProtocol,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = rememberElovaireInteractionSource()
+    Box(
+        modifier = modifier
+            .elovaireActionBump(
+                interactionSource = interactionSource,
+                label = "network_protocol_${protocol.name}_bump",
+            )
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .defaultMinSize(minHeight = 48.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .clip(RoundedCornerShape(ElovaireRadii.pill))
+                .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.padding(horizontal = 8.dp),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+private fun NetworkLibraryProtocol.displayName(): String = when (this) {
+    NetworkLibraryProtocol.Smb -> "SMB"
+    NetworkLibraryProtocol.WebDav -> "WebDAV"
+}
+
+@Composable
+private fun LibraryFolderListRow(
+    title: String,
+    subtitle: String,
+    songCountLabel: String?,
+    @DrawableRes iconResId: Int,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    trailingLabel: String? = null,
+    showRemove: Boolean = false,
+    removeLabel: String,
+    onRemove: () -> Unit = {},
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(ElovaireRadii.card))
+            .elovaireCombinedClickable(
+                interactionSource = interactionSource,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
+            .padding(vertical = 15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(
+            painter = painterResource(id = iconResId),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+            modifier = Modifier.size(20.dp),
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = elovaireScaledSp(16f),
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            songCountLabel?.let { label ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        trailingLabel?.let { label ->
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        InlineActionMotionHost(
+            visible = showRemove,
+            surfaceId = "folders.remove_control",
+        ) {
+            HeaderIconButton(
+                iconResId = R.drawable.ic_lucide_x,
+                contentDescription = removeLabel,
+                showBackground = true,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(DestructiveRed.copy(alpha = 0.5f)),
+                onClick = onRemove,
+            )
+        }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+    )
+}
+
+internal fun List<Song>.songsInFolder(folder: LibraryFolderSelection): List<Song> {
+    val folderPaths = buildSet<String> {
+        folder.uri?.let { add(LibraryFolderSelectionResolver.safSyntheticRoot(it)) }
+        folder.path
+            .takeUnless(LibraryFolderSelectionResolver::isUriBackedPath)
+            ?.takeIf(String::isNotBlank)
+            ?.let { add(LibraryFolderSelectionResolver.normalizedPathKey(it)) }
+    }
+    if (folderPaths.isEmpty()) return emptyList()
+    return filter { song ->
+        val songPath = song.libraryPath?.let(LibraryFolderSelectionResolver::normalizedPathKey) ?: return@filter false
+        folderPaths.any { folderPath ->
+            songPath == folderPath || songPath.startsWith("$folderPath/")
+        }
+    }
+}
+
+internal fun List<Song>.countInFolder(folder: LibraryFolderSelection): Int = songsInFolder(folder).size
+
+@Composable
+internal fun SettingNavigationRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    testTag: String? = null,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Row(
+        modifier = modifier
+            .defaultMinSize(minHeight = 48.dp)
+            .elovaireClickable(
+                interactionSource = interactionSource,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .then(
+                testTag?.let {
+                    Modifier
+                        .semantics { testTagsAsResourceId = true }
+                        .testTag(it)
+                } ?: Modifier,
+            ),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+        }
+        Icon(
+            painter = painterResource(id = R.drawable.ic_lucide_chevron_left),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+            modifier = Modifier
+                .size(18.dp)
+                .rotate(180f),
+        )
+    }
+}

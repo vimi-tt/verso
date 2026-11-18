@@ -1,0 +1,149 @@
+package elovaire.music.droidbeauty.app.data.library
+
+import android.net.Uri
+import android.provider.DocumentsContract
+import elovaire.music.droidbeauty.app.domain.model.Song
+
+/** Resolves duplicate scan results while preserving MediaStore as the preferred source. */
+internal object LibrarySongDuplicateResolver {
+    internal enum class DuplicateConfidence {
+        SameSource,
+        ProvenSameContent,
+        ProbableDuplicate,
+        Unrelated,
+    }
+
+    internal data class DuplicateEvidence(
+        val confidence: DuplicateConfidence,
+        val logicalTrackId: LogicalTrackId?,
+    )
+
+    fun mergeMediaStoreAndSafSongs(
+        mediaStoreSongs: List<Song>,
+        safSongs: List<Song>,
+    ): List<Song> {
+        val acceptedMediaStoreSongs = dedupeByStrongIdentity(mediaStoreSongs)
+        if (safSongs.isEmpty()) return acceptedMediaStoreSongs
+
+        val acceptedSafSongs = dedupeByStrongIdentity(safSongs)
+        if (acceptedMediaStoreSongs.isEmpty()) return acceptedSafSongs
+
+        val accepted = ArrayList<Song>(acceptedMediaStoreSongs.size + acceptedSafSongs.size)
+        accepted += acceptedMediaStoreSongs
+
+        val mediaStoreStrongKeys = HashSet<String>(acceptedMediaStoreSongs.size * 3)
+        acceptedMediaStoreSongs.forEach { song -> addStrongKeys(song, mediaStoreStrongKeys) }
+
+        acceptedSafSongs.forEach { safSong ->
+            val stableKey = MediaIdentityResolver.stableKey(safSong)
+            val pathKey = normalizedRealPath(safSong.libraryPath)?.let { "path:$it" }
+            val uriKey = safSong.uri.canonicalOpaqueIdentity()
+                .takeIf(String::isNotBlank)
+                ?.let { "uri:$it" }
+            val duplicate = stableKey in mediaStoreStrongKeys ||
+                pathKey in mediaStoreStrongKeys ||
+                uriKey in mediaStoreStrongKeys
+            if (!duplicate) {
+                accepted += safSong
+                mediaStoreStrongKeys += stableKey
+                pathKey?.let(mediaStoreStrongKeys::add)
+                uriKey?.let(mediaStoreStrongKeys::add)
+            }
+        }
+        return accepted
+    }
+
+    internal fun duplicateEvidence(left: Song, right: Song): DuplicateEvidence {
+        val leftSource = MediaIdentityResolver.resolve(left)
+        val rightSource = MediaIdentityResolver.resolve(right)
+        val sameSource = leftSource?.stableKey != null && leftSource.stableKey == rightSource?.stableKey
+        val sameUri = left.uri.canonicalOpaqueIdentity().let { leftUri ->
+            leftUri.isNotBlank() && leftUri == right.uri.canonicalOpaqueIdentity()
+        }
+        if (sameSource || sameUri) {
+            return DuplicateEvidence(DuplicateConfidence.SameSource, MediaIdentityResolver.logicalTrackId(left))
+        }
+        val leftPath = normalizedRealPath(left.libraryPath)
+        val rightPath = normalizedRealPath(right.libraryPath)
+        if (leftPath != null && leftPath == rightPath) {
+            return DuplicateEvidence(DuplicateConfidence.ProvenSameContent, MediaIdentityResolver.logicalTrackId(left))
+        }
+        val probable = left.durationMs > 0L &&
+            left.durationMs == right.durationMs &&
+            left.audioFormat.equals(right.audioFormat, ignoreCase = true) &&
+            left.fileName.equals(right.fileName, ignoreCase = true)
+        return DuplicateEvidence(
+            confidence = if (probable) DuplicateConfidence.ProbableDuplicate else DuplicateConfidence.Unrelated,
+            logicalTrackId = null,
+        )
+    }
+
+    fun dedupeLoadedSnapshotSongs(songs: List<Song>): List<Song> {
+        fun isMediaStoreSong(song: Song): Boolean {
+            val source = MediaIdentityResolver.resolve(song)
+            return source is MediaSourceIdentity.MediaStoreItem ||
+                (source == null && song.id > 0L)
+        }
+        val (mediaStoreSongs, safSongs) = songs.partition(::isMediaStoreSong)
+        return mergeMediaStoreAndSafSongs(mediaStoreSongs, safSongs)
+    }
+
+    internal fun strongKeys(song: Song): Set<String> = buildSet {
+        addStrongKeys(song, this)
+    }
+
+    private fun addStrongKeys(song: Song, keys: MutableSet<String>) {
+        keys += MediaIdentityResolver.stableKey(song)
+        normalizedRealPath(song.libraryPath)?.let { keys += "path:$it" }
+        song.uri.canonicalOpaqueIdentity()
+            .takeIf(String::isNotBlank)
+            ?.let { keys += "uri:$it" }
+    }
+
+    internal fun normalizedRealPath(path: String?): String? {
+        val value = path
+            ?.trim()
+            ?.replace('\\', '/')
+            ?.trimEnd('/')
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        if (value.startsWith("saf/", ignoreCase = true) ||
+            value.startsWith("content://", ignoreCase = true)
+        ) {
+            return null
+        }
+        return value
+    }
+
+    internal fun safDocumentIdentity(uri: Uri): String? {
+        if (uri.scheme != "content") return null
+        val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+        return MediaIdentityResolver.safDocument(uri.authority, documentId)?.stableKey
+    }
+
+    internal fun documentIdentity(
+        authority: String?,
+        documentId: String?,
+    ): String? {
+        return MediaIdentityResolver.safDocument(authority, documentId)?.stableKey
+    }
+
+    private fun dedupeByStrongIdentity(songs: List<Song>): List<Song> {
+        val accepted = ArrayList<Song>(songs.size)
+        val keys = HashSet<String>(songs.size)
+        songs.forEach { song ->
+            val stableKey = MediaIdentityResolver.stableKey(song)
+            val pathKey = normalizedRealPath(song.libraryPath)?.let { "path:$it" }
+            val uriKey = song.uri.canonicalOpaqueIdentity()
+                .takeIf(String::isNotBlank)
+                ?.let { "uri:$it" }
+            if (stableKey !in keys && pathKey !in keys && uriKey !in keys) {
+                accepted += song
+                keys += stableKey
+                pathKey?.let(keys::add)
+                uriKey?.let(keys::add)
+            }
+        }
+        return accepted
+    }
+}

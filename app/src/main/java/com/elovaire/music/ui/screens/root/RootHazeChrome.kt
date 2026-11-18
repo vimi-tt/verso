@@ -1,0 +1,336 @@
+package elovaire.music.droidbeauty.app.ui.screens
+
+import android.os.Build
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.ExperimentalHazeApi
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazePerformanceMode
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.hazeBlur
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
+import elovaire.music.droidbeauty.app.ui.theme.InkText
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.sample
+
+private const val SCROLL_POSITION_CACHE_SAMPLE_INTERVAL_MS = 100L
+
+internal val LocalChromeHazeState = compositionLocalOf<HazeState?> { null }
+internal val LocalPlayerHazeState = compositionLocalOf<HazeState?> { null }
+internal val LocalUseSharedTopBarBackdrop = compositionLocalOf { false }
+
+internal fun shouldApplyDynamicBackdropHaze(
+    sdkInt: Int,
+    flatOverlay: Boolean,
+    hazeStateAvailable: Boolean,
+): Boolean = sdkInt >= Build.VERSION_CODES.S && !flatOverlay && hazeStateAvailable
+
+@Composable
+internal fun statusBarInsetDp(): Dp {
+    val density = LocalDensity.current
+    return with(density) { WindowInsets.statusBars.getTop(this).toDp() }
+}
+
+@Composable
+internal fun navigationBarInsetDp(): Dp {
+    val density = LocalDensity.current
+    return with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
+}
+
+@Composable
+internal fun buttonNavigationScrollBoost(): Dp {
+    val navigationInset = navigationBarInsetDp()
+    return if (navigationInset >= 28.dp) {
+        (navigationInset - 16.dp).coerceAtLeast(0.dp)
+    } else {
+        0.dp
+    }
+}
+
+@Composable
+internal fun screenContainerSizePx(): IntSize = LocalWindowInfo.current.containerSize
+
+@Composable
+internal fun topBarOccupiedHeight(): Dp = statusBarInsetDp() + ElovaireSpacing.topBarContentHeight
+
+@Composable
+internal fun detailTopBarOccupiedHeight(): Dp = statusBarInsetDp() + ElovaireSpacing.detailTopBarContentHeight
+
+@Composable
+internal fun sharedTopBarOccupiedHeight(): Dp =
+    statusBarInsetDp() + maxOf(ElovaireSpacing.topBarContentHeight, ElovaireSpacing.detailTopBarContentHeight)
+
+@Composable
+internal fun bottomNavigationOccupiedHeight(): Dp =
+    navigationBarInsetDp() + ElovaireSpacing.bottomNavigationBodyHeight
+
+@Composable
+private fun blurSurfaceOverlayColor(): Color = androidx.compose.material3.MaterialTheme.colorScheme.surface
+
+@Composable
+internal fun blurSurfaceBorderColor(): Color {
+    return if (androidx.compose.material3.MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+        Color.White.copy(alpha = 0.12f)
+    } else {
+        InkText.copy(alpha = 0.08f)
+    }
+}
+
+@Composable
+internal fun Modifier.horizontalGestureSafe(): Modifier = this.systemGestureExclusion()
+
+@OptIn(FlowPreview::class)
+@Composable
+internal fun rememberElovaireLazyListState(vararg inputs: Any?): LazyListState {
+    val cacheKey = remember(*inputs) {
+        inputs.joinToString(separator = "|") { it?.toString().orEmpty() }
+    }
+    val cachedPosition = remember(cacheKey) {
+        lazyListPositionCache[cacheKey] ?: (0 to 0)
+    }
+    val state = rememberSaveable(cacheKey, saver = LazyListState.Saver) {
+        LazyListState(
+            firstVisibleItemIndex = cachedPosition.first,
+            firstVisibleItemScrollOffset = cachedPosition.second,
+        )
+    }
+    LaunchedEffect(state, cacheKey) {
+        snapshotFlow { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
+            .distinctUntilChanged()
+            .sample(SCROLL_POSITION_CACHE_SAMPLE_INTERVAL_MS)
+            .collect { position ->
+                lazyListPositionCache[cacheKey] = position
+            }
+    }
+    androidx.compose.runtime.DisposableEffect(state, cacheKey) {
+        onDispose {
+            lazyListPositionCache[cacheKey] = state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset
+        }
+    }
+    return state
+}
+
+@OptIn(FlowPreview::class)
+@Composable
+internal fun rememberElovaireLazyGridState(vararg inputs: Any?): LazyGridState {
+    val cacheKey = remember(*inputs) {
+        inputs.joinToString(separator = "|") { it?.toString().orEmpty() }
+    }
+    val cachedPosition = remember(cacheKey) {
+        lazyGridPositionCache[cacheKey] ?: (0 to 0)
+    }
+    val state = rememberSaveable(cacheKey, saver = LazyGridState.Saver) {
+        LazyGridState(
+            firstVisibleItemIndex = cachedPosition.first,
+            firstVisibleItemScrollOffset = cachedPosition.second,
+        )
+    }
+    LaunchedEffect(state, cacheKey) {
+        snapshotFlow { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
+            .distinctUntilChanged()
+            .sample(SCROLL_POSITION_CACHE_SAMPLE_INTERVAL_MS)
+            .collect { position ->
+                lazyGridPositionCache[cacheKey] = position
+            }
+    }
+    androidx.compose.runtime.DisposableEffect(state, cacheKey) {
+        onDispose {
+            lazyGridPositionCache[cacheKey] = state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset
+        }
+    }
+    return state
+}
+
+@OptIn(FlowPreview::class)
+@Composable
+internal fun rememberElovaireScrollState(vararg inputs: Any?): androidx.compose.foundation.ScrollState {
+    val cacheKey = remember(*inputs) {
+        inputs.joinToString(separator = "|") { it?.toString().orEmpty() }
+    }
+    val cachedPosition = remember(cacheKey) { scrollPositionCache[cacheKey] ?: 0 }
+    val state = rememberScrollState(cachedPosition)
+    LaunchedEffect(state, cacheKey) {
+        snapshotFlow { state.value }
+            .distinctUntilChanged()
+            .sample(SCROLL_POSITION_CACHE_SAMPLE_INTERVAL_MS)
+            .collect { value ->
+                scrollPositionCache[cacheKey] = value
+            }
+    }
+    androidx.compose.runtime.DisposableEffect(state, cacheKey) {
+        onDispose {
+            scrollPositionCache[cacheKey] = state.value
+        }
+    }
+    return state
+}
+
+@OptIn(ExperimentalHazeApi::class)
+@Composable
+internal fun DynamicBackdropSurface(
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(0.dp),
+    overlayAlpha: Float = 0.7f,
+    flatOverlay: Boolean = false,
+    borderColor: Color? = null,
+    showTopEdgeLine: Boolean = false,
+    showBottomEdgeLine: Boolean = false,
+    hazeState: HazeState? = null,
+    content: @Composable BoxScope.() -> Unit = {},
+) {
+    val effectiveHazeState = hazeState ?: LocalPlayerHazeState.current ?: LocalChromeHazeState.current
+    val overlayColor = blurSurfaceOverlayColor()
+
+    Box(
+        modifier = modifier.clip(shape),
+    ) {
+        if (effectiveHazeState != null && shouldApplyDynamicBackdropHaze(
+                sdkInt = Build.VERSION.SDK_INT,
+                flatOverlay = flatOverlay,
+                hazeStateAvailable = true,
+            )
+        ) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .hazeBlur(
+                        input = HazeInput.Sources(effectiveHazeState),
+                        style = HazeBlurStyle {
+                            blurRadius(30.dp)
+                            backgroundColor(overlayColor.copy(alpha = overlayAlpha))
+                            colorEffects(listOf(HazeColorEffect.tint(overlayColor.copy(alpha = overlayAlpha))))
+                            noiseFactor(0.015f)
+                        },
+                        performanceMode = HazePerformanceMode.Quality,
+                    ),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(overlayColor.copy(alpha = overlayAlpha)),
+        )
+        if (borderColor != null) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .border(1.dp, borderColor, shape),
+            )
+        }
+        if (showTopEdgeLine) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(blurSurfaceBorderColor()),
+            )
+        }
+        if (showBottomEdgeLine) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(blurSurfaceBorderColor()),
+            )
+        }
+        content()
+    }
+}
+
+@Composable
+internal fun ProgressiveChromeBackdrop(
+    darkTheme: Boolean,
+    edge: ProgressiveChromeEdge,
+    modifier: Modifier = Modifier,
+    overlayAlpha: Float? = null,
+    flatOverlay: Boolean = false,
+    showEdgeLine: Boolean = true,
+    hazeState: HazeState? = null,
+) {
+    DynamicBackdropSurface(
+        modifier = modifier,
+        flatOverlay = flatOverlay,
+        overlayAlpha = overlayAlpha ?: 0.7f,
+        showTopEdgeLine = edge == ProgressiveChromeEdge.Bottom && showEdgeLine,
+        showBottomEdgeLine = edge == ProgressiveChromeEdge.Top && showEdgeLine,
+        hazeState = hazeState,
+    )
+}
+
+@OptIn(ExperimentalHazeApi::class)
+@Composable
+internal fun ChromeHazeLayer(
+    darkTheme: Boolean,
+    edge: ProgressiveChromeEdge,
+    modifier: Modifier = Modifier,
+    overlayAlpha: Float? = null,
+    flatOverlay: Boolean = false,
+    showEdgeLine: Boolean = true,
+    hazeState: HazeState? = null,
+) {
+    ProgressiveChromeBackdrop(
+        darkTheme = darkTheme,
+        edge = edge,
+        overlayAlpha = overlayAlpha,
+        flatOverlay = flatOverlay,
+        showEdgeLine = showEdgeLine,
+        modifier = modifier,
+        hazeState = hazeState,
+    )
+}
+
+@OptIn(ExperimentalHazeApi::class)
+@Composable
+internal fun FrostedTopBarBackground(
+    darkTheme: Boolean,
+    modifier: Modifier = Modifier,
+    edge: ProgressiveChromeEdge = ProgressiveChromeEdge.Top,
+    overlayAlpha: Float? = null,
+    flatOverlay: Boolean = false,
+    showEdgeLine: Boolean = true,
+    hazeState: HazeState? = null,
+) {
+    ChromeHazeLayer(
+        darkTheme = darkTheme,
+        edge = edge,
+        overlayAlpha = overlayAlpha,
+        flatOverlay = flatOverlay,
+        showEdgeLine = showEdgeLine,
+        modifier = modifier,
+        hazeState = hazeState,
+    )
+}

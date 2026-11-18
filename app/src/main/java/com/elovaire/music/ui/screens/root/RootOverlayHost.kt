@@ -1,0 +1,116 @@
+package elovaire.music.droidbeauty.app.ui.screens
+
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
+import elovaire.music.droidbeauty.app.data.artist.ArtistDiscographyReader
+import elovaire.music.droidbeauty.app.data.changelog.ChangelogRelease
+import elovaire.music.droidbeauty.app.data.update.AppUpdateUiState
+import elovaire.music.droidbeauty.app.data.update.AppReleaseInfo
+import elovaire.music.droidbeauty.app.data.update.UpdateController
+import elovaire.music.droidbeauty.app.ui.screens.UpdateAvailableDialog
+import elovaire.music.droidbeauty.app.ui.motion.ElovaireAnimatedVisibility
+import elovaire.music.droidbeauty.app.ui.motion.MotionVisibilityHost
+import elovaire.music.droidbeauty.app.ui.motion.MotionTransitions
+
+@Composable
+internal fun BoxScope.RootOverlayHost(
+    showTopBarMenu: Boolean,
+    onDismissTopBarMenu: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenEqualizer: () -> Unit,
+    onOpenChangelog: () -> Unit,
+    onOpenAbout: () -> Unit,
+    showChangelogSheet: Boolean,
+    changelogReleases: List<ChangelogRelease>,
+    onDismissChangelogSheet: () -> Unit,
+    showPlaylistCreateDialog: Boolean,
+    onDismissPlaylistCreateDialog: () -> Unit,
+    onCreatePlaylist: PlaylistCreateAction,
+    permissionState: RootPermissionState,
+    onRequestAudioPermission: () -> Unit,
+    updateController: UpdateController,
+    updateState: AppUpdateUiState,
+    artistInfoArtist: String?,
+    artistInfoReader: ArtistDiscographyReader,
+    onDismissArtistInfo: () -> Unit,
+    motionTransitions: MotionTransitions,
+) {
+    var displayedUpdateRelease by remember { mutableStateOf<AppReleaseInfo?>(null) }
+    LaunchedEffect(updateState.availableRelease) {
+        updateState.availableRelease?.let { displayedUpdateRelease = it }
+    }
+    TopBarContextMenuOverlay(
+        expanded = showTopBarMenu,
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(RootLayerZ.TopBarMenu),
+        onDismiss = onDismissTopBarMenu,
+        onOpenSettings = onOpenSettings,
+        onOpenEqualizer = onOpenEqualizer,
+        onOpenChangelog = onOpenChangelog,
+        onOpenAbout = onOpenAbout,
+    )
+    ElovaireAnimatedVisibility(
+        visible = showChangelogSheet,
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(RootLayerZ.ChangelogSheet),
+        enter = motionTransitions.overlayFadeEnter(initialAlpha = 0.86f),
+        exit = motionTransitions.overlayFadeExit(targetAlpha = 0.94f),
+        label = "ChangelogSheetOverlay",
+    ) {
+        ChangelogBottomSheetOverlay(
+            releases = changelogReleases,
+            visible = showChangelogSheet,
+            onDismiss = onDismissChangelogSheet,
+        )
+    }
+    PlaylistCreateFullScreenLayer(
+        visible = showPlaylistCreateDialog,
+        surfaceId = "playlists.create_screen",
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(RootLayerZ.PlaylistCreate),
+        onDismiss = onDismissPlaylistCreateDialog,
+        onCreatePlaylist = onCreatePlaylist,
+        onCreated = { onDismissPlaylistCreateDialog() },
+    )
+    if (updateController.isSupported) {
+        MotionVisibilityHost(
+            visible = updateState.availableRelease != null,
+            surfaceId = "root.update_dialog",
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(RootLayerZ.UpdateDialog),
+            enter = motionTransitions.overlayFadeEnter(initialAlpha = 0.86f),
+            exit = motionTransitions.overlayFadeExit(targetAlpha = 0.94f),
+            onExitFinished = { displayedUpdateRelease = null },
+        ) {
+            displayedUpdateRelease?.let { release ->
+                UpdateAvailableDialog(
+                    controller = updateController,
+                    state = updateState,
+                    release = release,
+                    visible = updateState.availableRelease != null,
+                )
+            }
+        }
+    }
+    ArtistDiscographyPopup(
+        artistName = artistInfoArtist.orEmpty(),
+        reader = artistInfoReader,
+        visible = artistInfoArtist != null,
+        onDismiss = onDismissArtistInfo,
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(RootLayerZ.ArtistInfo),
+    )
+}

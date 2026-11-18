@@ -1,0 +1,117 @@
+package elovaire.music.droidbeauty.app.core
+
+import android.content.Context
+import elovaire.music.droidbeauty.app.data.library.DeviceDeleteCoordinator
+import elovaire.music.droidbeauty.app.data.library.LibraryFolderSelection
+import elovaire.music.droidbeauty.app.data.library.LibraryActionController
+import elovaire.music.droidbeauty.app.data.library.LibraryRefreshIntent
+import elovaire.music.droidbeauty.app.data.library.network.NetworkCredentials
+import elovaire.music.droidbeauty.app.data.library.network.NetworkLibrarySource
+import elovaire.music.droidbeauty.app.data.tags.AlbumTagArtworkInvalidator
+import elovaire.music.droidbeauty.app.data.tags.AlbumTagMutationCoordinator
+import elovaire.music.droidbeauty.app.data.tags.AudiobookTagMutationCoordinator
+
+internal class AppDependencies(
+    applicationContext: Context,
+    services: AppServices,
+    appDispatchers: AppDispatchers,
+    artworkInvalidator: AlbumTagArtworkInvalidator,
+) {
+    private val albumTagMutationCoordinator = AlbumTagMutationCoordinator(
+        editor = services.albumTagEditorService,
+        artworkInvalidator = artworkInvalidator,
+    )
+    private val audiobookTagMutationCoordinator = AudiobookTagMutationCoordinator(
+        editor = services.audiobookTagEditorService,
+        artworkInvalidator = artworkInvalidator,
+    )
+
+    val rootDeleteDependencies: RootDeleteDependencies by lazy(LazyThreadSafetyMode.NONE) {
+        object : RootDeleteDependencies {
+            override val deleteHandler = DeviceDeleteCoordinator(
+                context = applicationContext,
+                libraryDelete = services.libraryRepository,
+                queueMutations = services.playbackManager,
+                userDataStore = services.userDataStore,
+                invalidateArtwork = artworkInvalidator::invalidate,
+                ioDispatcher = appDispatchers.io,
+            )
+        }
+    }
+
+    val libraryActionDependencies: LibraryActionDependencies = object : LibraryActionDependencies {
+        override val libraryController: LibraryActionController = object : LibraryActionController {
+            override fun onPermissionChanged(granted: Boolean) {
+                services.libraryRepository.onPermissionChanged(granted)
+            }
+
+            override fun setLibraryFolders(selections: List<LibraryFolderSelection>) {
+                services.libraryRepository.setLibraryFolders(selections)
+            }
+
+            override fun refresh(intent: LibraryRefreshIntent) {
+                services.libraryRepository.refresh(
+                    forceMediaIndex = intent.forceMediaIndex,
+                    enrichMetadata = intent.enrichMetadata,
+                    showLoadingIndicator = intent.showLoadingIndicator,
+                )
+            }
+
+        }
+        override val networkSources get() = services.networkSources
+        override val networkProbeResults get() = services.networkProbeResults
+        override fun saveNetworkSource(source: NetworkLibrarySource, credentials: NetworkCredentials) {
+            services.saveNetworkSource(source, credentials)
+        }
+        override fun removeNetworkSource(source: NetworkLibrarySource) {
+            services.removeNetworkSource(source)
+        }
+    }
+    val settingsActionDependencies: SettingsActionDependencies = object : SettingsActionDependencies {
+        override val appearanceSettings get() = services.preferenceStore
+        override val appearanceSettingsReader get() = services.preferenceStore
+        override val librarySettings get() = services.preferenceStore
+        override val playbackSettings get() = services.preferenceStore
+    }
+    val viewModelDependencies: ElovaireViewModelDependencies = object : ElovaireViewModelDependencies {
+        override val dispatchers = appDispatchers
+        override val root: RootViewModelDependencies = object : RootViewModelDependencies {
+            override val libraryReader get() = services.libraryRepository
+            override val appearanceSettings get() = services.preferenceStore
+            override val userData get() = services.userDataStore
+            override val playbackState get() = services.playbackManager.state
+        }
+        override val youtubeHome: YouTubeHomeViewModelDependencies = object : YouTubeHomeViewModelDependencies {
+            override val youTubeCatalog get() = services.youTubeCatalogRepository
+        }
+        override val search: SearchViewModelDependencies = object : SearchViewModelDependencies {
+            override val libraryReader get() = services.libraryRepository
+            override val playbackHistory get() = services.userDataStore
+            override val searchHistory get() = services.userDataStore
+            override val playbackReader get() = services.playbackManager
+            override val youTubeCatalog get() = services.youTubeCatalogRepository
+        }
+        override val nowPlaying: NowPlayingViewModelDependencies = object : NowPlayingViewModelDependencies {
+            override val playback get() = services.playbackManager
+            override val settings get() = services.preferenceStore
+            override val lyricsReader get() = services.lyricsService
+            override val lyricsWriter get() = services.lyricsService
+        }
+        override val equalizer: EqualizerViewModelDependencies = object : EqualizerViewModelDependencies {
+            override val settings get() = services.preferenceStore
+        }
+        override val albumTagEditor: AlbumTagEditorViewModelDependencies =
+            object : AlbumTagEditorViewModelDependencies {
+                override val libraryReader get() = services.libraryRepository
+                override val libraryTagUpdates get() = services.libraryRepository
+                override val editor get() = albumTagMutationCoordinator
+            }
+        override val audiobookTagEditor: AudiobookTagEditorViewModelDependencies =
+            object : AudiobookTagEditorViewModelDependencies {
+                override val libraryReader get() = services.libraryRepository
+                override val libraryTagUpdates get() = services.libraryRepository
+                override val editor get() = audiobookTagMutationCoordinator
+                override val remapProgressKey: suspend (String, String) -> Unit = services.playbackManager::remapAudiobookProgressKey
+            }
+    }
+}

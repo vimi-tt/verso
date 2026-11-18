@@ -1,0 +1,399 @@
+package elovaire.music.droidbeauty.app.data.network
+
+import android.net.TrafficStats
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceKind
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceRegistry
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceTracker
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asExecutor
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+
+/** Small, bounded transport for app-owned HTTPS GETs. Callers retain response semantics. */
+internal class BoundedHttpTransport(
+    private val connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
+    private val readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
+    private val maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val resourceTracker: BackendResourceTracker = BackendResourceRegistry,
+    private val openConnection: (URL) -> HttpURLConnection = { url ->
+        (url.openConnection() as? HttpURLConnection) ?: error("Unsupported HTTP connection")
+    },
+) {
+    init {
+        require(connectTimeoutMs > 0) { "connectTimeoutMs must be positive" }
+        require(readTimeoutMs > 0) { "readTimeoutMs must be positive" }
+        require(maxRedirects in 0..MAX_REDIRECTS) { "maxRedirects is out of bounds" }
+    }
+
+    suspend fun get(
+        rawUrl: String,
+        headers: Map<String, String> = emptyMap(),
+        maxBytes: Int,
+        urlPolicy: (URL) -> Boolean = ::isHttpsUrl,
+    ): BoundedHttpResponse = executeCancellable { context, connection ->
+        getBlocking(rawUrl, headers, maxBytes, urlPolicy, context, connection)
+    }
+
+    private suspend fun <T> executeCancellable(
+        request: (kotlin.coroutines.CoroutineContext, AtomicReference<HttpURLConnection?>) -> T,
+    ): T = suspendCancellableCoroutine { continuation ->
+        val activeConnection = AtomicReference<HttpURLConnection?>()
+        continuation.invokeOnCancellation {
+            activeConnection.getAndSet(null)?.let { connection ->
+                // disconnect can wait on platform socket locks; keep it off the cancelling UI thread.
+                ioDispatcher.dispatch(EmptyCoroutineContext) { connection.disconnect() }
+            }
+        }
+        ioDispatcher.asExecutor().execute {
+            continuation.resumeWith(runCatching {
+                continuation.context.ensureActive()
+                resourceTracker.acquire(BackendResourceKind.ActiveHttpRequest).use {
+                    request(continuation.context, activeConnection)
+                }
+            })
+        }
+    }
+
+    fun getBlocking(
+        rawUrl: String,
+        headers: Map<String, String> = emptyMap(),
+        maxBytes: Int,
+        urlPolicy: (URL) -> Boolean = ::isHttpsUrl,
+    ): BoundedHttpResponse {
+        val httpResource = resourceTracker.acquire(BackendResourceKind.ActiveHttpRequest)
+        return try {
+            getBlocking(rawUrl, headers, maxBytes, urlPolicy, cancellationContext = null)
+        } finally {
+            httpResource.close()
+        }
+    }
+
+    fun getBlockingToFile(
+        rawUrl: String,
+        target: File,
+        headers: Map<String, String> = emptyMap(),
+        maxBytes: Int,
+        urlPolicy: (URL) -> Boolean = ::isHttpsUrl,
+    ): BoundedHttpFileResponse {
+        val httpResource = resourceTracker.acquire(BackendResourceKind.ActiveHttpRequest)
+        return withTrafficStatsTag {
+            try {
+                getBlockingToFileTagged(rawUrl, target, headers, maxBytes, urlPolicy)
+            } catch (failure: IOException) {
+                target.delete()
+                throw failure
+            } catch (failure: SecurityException) {
+                target.delete()
+                throw failure
+            } catch (failure: IllegalArgumentException) {
+                target.delete()
+                throw failure
+            } catch (failure: IllegalStateException) {
+                target.delete()
+                throw failure
+            } finally {
+                httpResource.close()
+            }
+        }
+    }
+
+    private fun getBlocking(
+        rawUrl: String,
+        headers: Map<String, String>,
+        maxBytes: Int,
+        urlPolicy: (URL) -> Boolean,
+        cancellationContext: kotlin.coroutines.CoroutineContext?,
+        activeConnection: AtomicReference<HttpURLConnection?>? = null,
+    ): BoundedHttpResponse {
+        return withTrafficStatsTag {
+            getBlockingTagged(rawUrl, headers, maxBytes, urlPolicy, cancellationContext, activeConnection)
+        }
+    }
+
+    private fun getBlockingTagged(
+        rawUrl: String,
+        headers: Map<String, String>,
+        maxBytes: Int,
+        urlPolicy: (URL) -> Boolean,
+        cancellationContext: kotlin.coroutines.CoroutineContext?,
+        activeConnection: AtomicReference<HttpURLConnection?>?,
+    ): BoundedHttpResponse {
+        val response = executeGet(
+            rawUrl = rawUrl,
+            headers = headers,
+            maxBytes = maxBytes,
+            urlPolicy = urlPolicy,
+            cancellationContext = cancellationContext,
+            activeConnection = activeConnection,
+            readBody = { input -> input.readBounded(maxBytes, cancellationContext) },
+            emptyBody = { ByteArray(0) },
+        )
+        return BoundedHttpResponse(
+            statusCode = response.statusCode,
+            body = response.body,
+            retryAfterMs = response.retryAfterMs,
+            finalUrl = response.finalUrl,
+        )
+    }
+
+    private fun getBlockingToFileTagged(
+        rawUrl: String,
+        target: File,
+        headers: Map<String, String>,
+        maxBytes: Int,
+        urlPolicy: (URL) -> Boolean,
+    ): BoundedHttpFileResponse {
+        val response = executeGet(
+            rawUrl = rawUrl,
+            headers = headers,
+            maxBytes = maxBytes,
+            urlPolicy = urlPolicy,
+            cancellationContext = null,
+            readBody = { input ->
+                FileOutputStream(target).use { output ->
+                    input.copyBoundedTo(output, maxBytes)
+                    output.flush()
+                }
+                Unit
+            },
+            emptyBody = {},
+        )
+        return BoundedHttpFileResponse(
+            statusCode = response.statusCode,
+            bytesWritten = if (response.statusCode in 200..299) target.length() else 0L,
+            retryAfterMs = response.retryAfterMs,
+            finalUrl = response.finalUrl,
+        )
+    }
+
+    private fun <T> executeGet(
+        rawUrl: String,
+        headers: Map<String, String>,
+        maxBytes: Int,
+        urlPolicy: (URL) -> Boolean,
+        cancellationContext: kotlin.coroutines.CoroutineContext?,
+        activeConnection: AtomicReference<HttpURLConnection?>? = null,
+        readBody: (java.io.InputStream) -> T,
+        emptyBody: () -> T,
+    ): GetResponse<T> {
+        require(maxBytes > 0) { "maxBytes must be positive" }
+        var currentUrl = URL(rawUrl)
+        var requestHeaders = headers
+        repeat(maxRedirects + 1) { redirectAttempt ->
+            require(urlPolicy(currentUrl)) { "HTTP request URL is not allowed" }
+            val connection = openConnection(currentUrl)
+            activeConnection?.set(connection)
+            try {
+                cancellationContext?.ensureActive()
+                connection.requestMethod = "GET"
+                connection.connectTimeout = connectTimeoutMs
+                connection.readTimeout = readTimeoutMs
+                connection.instanceFollowRedirects = false
+                requestHeaders.forEach { (name, value) -> connection.setRequestProperty(name, value) }
+                connection.connect()
+                val status = connection.responseCode
+                if (status in 300..399) {
+                    if (redirectAttempt == maxRedirects) error("Too many HTTPS redirects")
+                    val location = connection.getHeaderField("Location") ?: error("Redirect has no location")
+                    val nextUrl = URL(currentUrl, location)
+                    requestHeaders = headersForHttpRedirect(requestHeaders, currentUrl, nextUrl)
+                    currentUrl = nextUrl
+                    return@repeat
+                }
+                if (connection.contentLengthLong > maxBytes) error("HTTP response is too large")
+                val body = if (status in 200..299) {
+                    connection.inputStream.use(readBody)
+                } else {
+                    emptyBody()
+                }
+                return GetResponse(
+                    statusCode = status,
+                    body = body,
+                    retryAfterMs = connection.getHeaderField("Retry-After")?.toRetryAfterMs(),
+                    finalUrl = currentUrl,
+                )
+            } finally {
+                activeConnection?.compareAndSet(connection, null)
+                connection.disconnect()
+            }
+        }
+        error("Unable to resolve HTTPS request")
+    }
+
+    suspend fun post(
+        rawUrl: String,
+        body: ByteArray,
+        headers: Map<String, String> = emptyMap(),
+        maxBytes: Int,
+        urlPolicy: (URL) -> Boolean = ::isHttpsUrl,
+    ): BoundedHttpResponse = executeCancellable { cancellationContext, activeConnection ->
+        withTrafficStatsTag {
+            require(maxBytes > 0) { "maxBytes must be positive" }
+            val url = URL(rawUrl)
+            require(urlPolicy(url)) { "HTTP request URL is not allowed" }
+            val connection = openConnection(url)
+            activeConnection.set(connection)
+            try {
+                cancellationContext.ensureActive()
+                connection.requestMethod = "POST"
+                connection.connectTimeout = connectTimeoutMs
+                connection.readTimeout = readTimeoutMs
+                connection.instanceFollowRedirects = false
+                connection.doOutput = true
+                headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
+                connection.connect()
+                connection.outputStream.use { output -> output.write(body) }
+                val status = connection.responseCode
+                if (connection.contentLengthLong > maxBytes) error("HTTP response is too large")
+                val responseBody = if (status in 200..299) {
+                    connection.inputStream.use { it.readBounded(maxBytes, cancellationContext) }
+                } else {
+                    ByteArray(0)
+                }
+                BoundedHttpResponse(
+                    statusCode = status,
+                    body = responseBody,
+                    retryAfterMs = connection.getHeaderField("Retry-After")?.toRetryAfterMs(),
+                    finalUrl = url,
+                )
+            } finally {
+                activeConnection.compareAndSet(connection, null)
+                connection.disconnect()
+            }
+        }
+    }
+
+    private inline fun <T> withTrafficStatsTag(block: () -> T): T {
+        val previousTag = TrafficStats.getThreadStatsTag()
+        TrafficStats.setThreadStatsTag(TRAFFIC_STATS_TAG)
+        return try {
+            block()
+        } finally {
+            TrafficStats.setThreadStatsTag(previousTag)
+        }
+    }
+
+    private fun java.io.InputStream.readBounded(
+        maxBytes: Int,
+        cancellationContext: kotlin.coroutines.CoroutineContext?,
+    ): ByteArray {
+        val output = ByteArrayOutputStream(minOf(maxBytes, 32 * 1024))
+        val buffer = ByteArray(8 * 1024)
+        while (true) {
+            cancellationContext?.ensureActive()
+            val count = read(buffer)
+            if (count < 0) return output.toByteArray()
+            if (count == 0) {
+                val singleByte = read()
+                if (singleByte < 0) return output.toByteArray()
+                if (output.size() >= maxBytes) error("HTTP response is too large")
+                output.write(singleByte)
+                continue
+            }
+            if (output.size() > maxBytes - count) error("HTTP response is too large")
+            output.write(buffer, 0, count)
+        }
+    }
+
+    private fun java.io.InputStream.copyBoundedTo(
+        output: FileOutputStream,
+        maxBytes: Int,
+    ) {
+        val buffer = ByteArray(8 * 1024)
+        var total = 0
+        while (true) {
+            val count = read(buffer)
+            if (count < 0) return
+            if (count == 0) {
+                val singleByte = read()
+                if (singleByte < 0) return
+                if (total >= maxBytes) error("HTTP response is too large")
+                output.write(singleByte)
+                total += 1
+                continue
+            }
+            if (total > maxBytes - count) error("HTTP response is too large")
+            output.write(buffer, 0, count)
+            total += count
+        }
+    }
+
+    private fun String.toRetryAfterMs(): Long? {
+        val seconds = trim().toLongOrNull() ?: return null
+        return seconds.coerceIn(0L, MAX_RETRY_AFTER_SECONDS) * 1_000L
+    }
+
+    private companion object {
+        const val DEFAULT_CONNECT_TIMEOUT_MS = 8_000
+        const val DEFAULT_READ_TIMEOUT_MS = 10_000
+        const val DEFAULT_MAX_REDIRECTS = 3
+        const val MAX_REDIRECTS = 8
+        const val MAX_RETRY_AFTER_SECONDS = 24L * 60L * 60L
+        const val TRAFFIC_STATS_TAG = 0x454C4F56
+    }
+}
+
+private data class GetResponse<T>(
+    val statusCode: Int,
+    val body: T,
+    val retryAfterMs: Long?,
+    val finalUrl: URL,
+)
+
+internal fun isHttpsUrl(url: URL): Boolean =
+    url.protocol.equals("https", ignoreCase = true) &&
+        url.host.isNotBlank() &&
+        url.userInfo == null &&
+        (url.port == -1 || url.port in 1..65535)
+
+internal fun headersForHttpRedirect(
+    headers: Map<String, String>,
+    currentUrl: URL,
+    nextUrl: URL,
+): Map<String, String> {
+    if (currentUrl.sameHttpOrigin(nextUrl)) return headers
+    return headers.filterKeys { name -> name.lowercase(java.util.Locale.ROOT) !in SENSITIVE_REDIRECT_HEADERS }
+}
+
+private fun URL.sameHttpOrigin(other: URL): Boolean =
+    protocol.equals(other.protocol, ignoreCase = true) &&
+        host.equals(other.host, ignoreCase = true) &&
+        effectiveHttpPort() == other.effectiveHttpPort()
+
+private fun URL.effectiveHttpPort(): Int = port.takeIf { it >= 0 } ?: when (protocol.lowercase(java.util.Locale.ROOT)) {
+    "https" -> 443
+    "http" -> 80
+    else -> -1
+}
+
+private val SENSITIVE_REDIRECT_HEADERS = setOf(
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "cookie2",
+    "host",
+)
+
+internal data class BoundedHttpResponse(
+    val statusCode: Int,
+    val body: ByteArray,
+    val retryAfterMs: Long?,
+    val finalUrl: URL,
+)
+
+internal data class BoundedHttpFileResponse(
+    val statusCode: Int,
+    val bytesWritten: Long,
+    val retryAfterMs: Long?,
+    val finalUrl: URL,
+)

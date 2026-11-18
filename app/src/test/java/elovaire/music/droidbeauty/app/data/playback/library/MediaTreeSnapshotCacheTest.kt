@@ -1,0 +1,307 @@
+package elovaire.music.droidbeauty.app.data.playback.library
+
+import android.net.TestUri
+import elovaire.music.droidbeauty.app.data.playback.PlaybackCollectionKind
+import elovaire.music.droidbeauty.app.domain.model.Album
+import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
+import elovaire.music.droidbeauty.app.domain.model.Playlist
+import elovaire.music.droidbeauty.app.domain.model.Song
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class MediaTreeSnapshotCacheTest {
+    @Test
+    fun contextGroupsKeepAlbumOrderAndReuseOnlyRequestedRows() {
+        val songs = listOf(
+            testSong(1L).copy(albumArtist = "Artist", album = "Z", genre = "Rock", trackNumber = 1),
+            testSong(2L).copy(albumArtist = "ARTIST", album = "A", genre = "rock", trackNumber = 2),
+            testSong(3L).copy(albumArtist = "Artist", album = "A", genre = "Rock", trackNumber = 1),
+            testSong(4L).copy(albumArtist = "Other", album = "A", genre = "Jazz"),
+        )
+        val snapshot = MediaTreeSnapshotCache().snapshot(
+            true, songs, emptyList(), emptyList(), emptyList(), emptyList(), null, null,
+        )
+        val artist = snapshot.songsForArtistInContext("artist")
+        val genre = snapshot.songsForGenreInContext("rock")
+
+        assertEquals(listOf(3L, 2L, 1L), artist.map(Song::id))
+        assertEquals(artist, genre)
+        assertSame(artist, snapshot.songsForArtistInContext("ARTIST"))
+        assertSame(genre, snapshot.songsForGenreInContext("Rock"))
+        assertEquals(emptyList<Song>(), snapshot.songsForArtistInContext("missing"))
+        assertEquals(listOf(4L), snapshot.songsForGenreInContext("Jazz").map(Song::id))
+    }
+    @Test
+    fun playbackContextChangesReuseLibraryIndexesAndRefreshDynamicRows() {
+        val song = testSong(id = 1L)
+        val songs = listOf(song)
+        val albums = emptyList<Album>()
+        val playlists = emptyList<Playlist>()
+        val favorites = emptyList<Long>()
+        val recent = emptyList<Long>()
+        val cache = MediaTreeSnapshotCache()
+        val first = cache.snapshot(
+            permissionGranted = true,
+            songs = songs,
+            albums = albums,
+            playlists = playlists,
+            favoriteSongIds = favorites,
+            recentSongIds = recent,
+            lastPlayedCollectionKind = null,
+            lastPlayedCollectionId = null,
+        )
+        val sortedSongs = first.songsByTitle()
+        val searchableSongs = first.searchableSongs()
+        val changed = cache.snapshot(
+            true,
+            songs = songs,
+            albums = albums,
+            playlists = playlists,
+            favoriteSongIds = listOf(1L),
+            recentSongIds = listOf(1L),
+            lastPlayedCollectionKind = PlaybackCollectionKind.Album,
+            lastPlayedCollectionId = 1L,
+        )
+
+        assertSame(first, changed)
+        assertSame(sortedSongs, changed.songsByTitle())
+        assertSame(searchableSongs, changed.searchableSongs())
+        assertEquals(setOf(1L), changed.favoriteSongIds)
+        assertEquals(listOf(song), changed.favoriteSongs())
+        assertEquals(listOf(1L), changed.recentSongIds)
+        assertEquals(PlaybackCollectionKind.Album, changed.lastPlayedCollectionKind)
+        assertEquals(1L, changed.lastPlayedCollectionId)
+    }
+
+    @Test
+    fun unchangedLibraryAndPlaybackValuesReuseDerivedSnapshot() {
+        val songs = emptyList<Song>()
+        val albums = emptyList<Album>()
+        val playlists = emptyList<Playlist>()
+        val favorites = emptyList<Long>()
+        val recent = emptyList<Long>()
+        val cache = MediaTreeSnapshotCache()
+        val first = cache.snapshot(true, songs, albums, playlists, favorites, recent, null, null)
+        val second = cache.snapshot(true, songs, albums, playlists, favorites, recent, null, null)
+
+        assertSame(first, second)
+    }
+
+    @Test
+    fun semanticLibraryRevisionReusesSnapshotAcrossEquivalentListInstances() {
+        val songs = listOf(testSong(id = 1L))
+        val albums = emptyList<Album>()
+        val playlists = emptyList<Playlist>()
+        val favorites = emptyList<Long>()
+        val recent = emptyList<Long>()
+        val cache = MediaTreeSnapshotCache()
+        val first = cache.snapshot(
+            true, songs, albums, playlists, favorites, recent, null, null, "library-1",
+        )
+        val second = cache.snapshot(
+            true, songs.toList(), albums.toList(), playlists, favorites, recent, null, null, "library-1",
+        )
+
+        assertSame(first, second)
+    }
+
+    @Test
+    fun libraryRevisionReusesMusicProjectionAcrossEquivalentSourceLists() {
+        val music = testSong(id = 1L)
+        val audiobook = testSong(id = 2L).copy(mediaKind = AudioMediaKind.Audiobook)
+        val cache = MediaTreeSnapshotCache()
+        val first = cache.snapshot(
+            true,
+            listOf(music, audiobook),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            null,
+            null,
+            "library-2",
+        )
+        val second = cache.snapshot(
+            true,
+            listOf(music, audiobook),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            null,
+            null,
+            "library-2",
+        )
+
+        assertEquals(listOf(music), first.songs)
+        assertSame(first, second)
+    }
+
+    @Test
+    fun clearDropsDerivedSnapshot() {
+        val cache = MediaTreeSnapshotCache()
+        val first = cache.snapshot(true, emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), null, null)
+
+        cache.clear()
+
+        val second = cache.snapshot(true, emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), null, null)
+        assertNotSame(first, second)
+    }
+
+    @Test
+    fun blankGenreUsesSameUnknownGenreIdentityForGroupingAndLookup() {
+        val song = testSong(id = 1L, genre = "")
+        val snapshot = MediaTreeSnapshotCache().snapshot(
+            true, listOf(song), emptyList(), emptyList(), emptyList(), emptyList(), null, null,
+        )
+
+        assertEquals(listOf("Unknown Genre"), snapshot.genreNames())
+        assertEquals(listOf(song), snapshot.songsForGenre("Unknown Genre"))
+    }
+
+    @Test
+    fun artistAndGenreNamesKeepDisplayCaseAndStableCaseInsensitiveOrder() {
+        val songs = listOf(
+            testSong(id = 1L).copy(albumArtist = "b", genre = "jazz"),
+            testSong(id = 2L).copy(albumArtist = "A", genre = "Ambient"),
+            testSong(id = 3L).copy(albumArtist = "a", genre = "ambient"),
+        )
+        val snapshot = MediaTreeSnapshotCache().snapshot(
+            true, songs, emptyList(), emptyList(), emptyList(), emptyList(), null, null,
+        )
+
+        assertEquals(listOf("A", "a", "b"), snapshot.artistNames())
+        assertEquals(listOf("Ambient", "ambient", "jazz"), snapshot.genreNames())
+    }
+
+    @Test
+    fun equalTitlesUseStableSongIdTieBreakers() {
+        val snapshot = MediaTreeSnapshotCache().snapshot(
+            true,
+            listOf(testSong(id = 2L), testSong(id = 1L)),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            null,
+            null,
+        )
+
+        assertEquals(listOf(1L, 2L), snapshot.songsByTitle().map(Song::id))
+    }
+
+    @Test
+    fun caseInsensitiveTitleSortRetainsOriginalCaseOrdering() {
+        val snapshot = MediaTreeSnapshotCache().snapshot(
+            true,
+            listOf(
+                testSong(id = 1L).copy(title = "track"),
+                testSong(id = 2L).copy(title = "Track"),
+                testSong(id = 3L).copy(title = "TRACK"),
+            ),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            null,
+            null,
+        )
+
+        assertEquals(listOf(3L, 2L, 1L), snapshot.songsByTitle().map(Song::id))
+    }
+
+    @Test
+    fun titlePrefixMatchesAreOrderedAndCappedWithoutChangingResults() {
+        val songs = listOf(
+            testSong(id = 3L).copy(title = "Other"),
+            testSong(id = 2L).copy(title = "Track 2"),
+            testSong(id = 1L).copy(title = "Track 1"),
+        )
+        val snapshot = MediaTreeSnapshotCache().snapshot(
+            true,
+            songs,
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            null,
+            null,
+            "title-index",
+        )
+
+        assertEquals(
+            listOf(1L, 2L),
+            snapshot.searchableSongTitleMatches("track", limit = 2).map(Song::id),
+        )
+    }
+
+    @Test
+    fun contextSongsAreSortedOnceAndReusedForArtistAndGenreBrowses() {
+        val songs = listOf(
+            testSong(id = 3L).copy(album = "B", trackNumber = 1),
+            testSong(id = 1L).copy(album = "A", trackNumber = 2),
+            testSong(id = 2L).copy(album = "A", trackNumber = 1),
+        )
+        val snapshot = MediaTreeSnapshotCache().snapshot(
+            true,
+            songs,
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            null,
+            null,
+        )
+
+        val artistSongs = snapshot.songsForArtistInContext("Artist")
+        val genreSongs = snapshot.songsForGenreInContext("Genre")
+
+        assertEquals(listOf(2L, 1L, 3L), artistSongs.map(Song::id))
+        assertEquals(listOf(2L, 1L, 3L), genreSongs.map(Song::id))
+        assertSame(artistSongs, snapshot.songsForArtistInContext("Artist"))
+        assertSame(genreSongs, snapshot.songsForGenreInContext("Genre"))
+    }
+
+    @Test
+    fun mediaBrowserBucketsAreSortedAndReusedForPagedChildren() {
+        val songs = listOf(
+            testSong(id = 1L).copy(title = "Beta"),
+            testSong(id = 2L).copy(title = "alpha"),
+            testSong(id = 3L).copy(title = "1 instrumental"),
+            testSong(id = 4L).copy(title = "zeta"),
+        )
+        val snapshot = MediaTreeSnapshotCache().snapshot(
+            true, songs, emptyList(), emptyList(), emptyList(), emptyList(), null, null,
+        )
+
+        assertEquals(listOf("A", "B", "Z", "#"), snapshot.songBucketKeys())
+        assertEquals(listOf(2L), snapshot.songsForBucket("A").map(Song::id))
+        assertEquals(listOf(3L), snapshot.songsForBucket("#").map(Song::id))
+        assertSame(snapshot.songsForBucket("A"), snapshot.songsForBucket("A"))
+    }
+
+    private fun testSong(
+        id: Long,
+        genre: String = "Genre",
+    ) = Song(
+        id = id,
+        title = "Song",
+        isExplicit = false,
+        artist = "Artist",
+        album = "Album",
+        releaseYear = null,
+        genre = genre,
+        audioFormat = "MP3",
+        audioQuality = null,
+        fileName = "song.mp3",
+        albumId = 2L,
+        durationMs = 1L,
+        trackNumber = 1,
+        discNumber = 1,
+        dateAddedSeconds = 1L,
+        uri = TestUri("content://song/$id"),
+        artUri = null,
+    )
+}

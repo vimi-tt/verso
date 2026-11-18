@@ -1,0 +1,173 @@
+package elovaire.music.droidbeauty.app.data.playback
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AudioOutputCapabilityTest {
+    @Test
+    fun processingRequirementsDisableOffload() {
+        val capabilities = AudioOutputCapabilitySnapshot(
+            devices = emptyList(),
+            platformSdk = 35,
+        )
+
+        val decision = AudioOutputPolicy.decide(
+            capabilities = capabilities,
+            requirements = AudioProcessingRequirements(
+                signalAlteringEffectsActive = false,
+                normalizationActive = true,
+                crossfadeActive = false,
+            ),
+            directPathActive = false,
+        )
+
+        assertTrue(decision.signalProcessingRequired)
+        assertFalse(decision.offloadAllowed)
+    }
+
+    @Test
+    fun usbRouteIsRepresentedWithoutInferringBitPerfectSupport() {
+        val capabilities = AudioOutputCapabilitySnapshot(
+            devices = listOf(
+                AudioOutputDeviceCapability(
+                    id = 3,
+                    type = 11,
+                    route = AudioOutputRouteKind.Usb,
+                    sampleRates = emptyList(),
+                    channelCounts = emptyList(),
+                    channelMasks = emptyList(),
+                    encodings = emptyList(),
+                ),
+            ),
+            platformSdk = 35,
+        )
+
+        val decision = AudioOutputPolicy.decide(
+            capabilities = capabilities,
+            requirements = AudioProcessingRequirements(false, false, false),
+            directPathActive = true,
+        )
+
+        assertTrue(capabilities.hasActiveUsbOutput)
+        assertFalse(decision.offloadAllowed)
+        assertFalse(decision.signalProcessingRequired)
+    }
+
+    @Test
+    fun availableUsbDeviceIsNotTreatedAsTheActiveRoute() {
+        val capabilities = AudioOutputCapabilitySnapshot(
+            devices = listOf(usbDevice(3)),
+            platformSdk = 32,
+            source = AudioOutputCapabilitySource.AvailableDevices,
+        )
+
+        val decision = AudioOutputPolicy.decide(
+            capabilities = capabilities,
+            requirements = AudioProcessingRequirements(false, false, false),
+            directPathActive = false,
+        )
+
+        assertFalse(capabilities.hasActiveUsbOutput)
+        assertTrue(capabilities.devices.any { it.route == AudioOutputRouteKind.Usb })
+        assertTrue(decision.offloadAllowed)
+    }
+
+    @Test
+    fun unknownRouteDoesNotClaimOffloadIsSafe() {
+        val decision = AudioOutputPolicy.decide(
+            capabilities = AudioOutputCapabilitySnapshot(
+                devices = emptyList(),
+                platformSdk = 35,
+                source = AudioOutputCapabilitySource.Unknown,
+            ),
+            requirements = AudioProcessingRequirements(false, false, false),
+            directPathActive = false,
+        )
+
+        assertFalse(decision.offloadAllowed)
+    }
+
+    @Test
+    fun emptyActiveRouteDoesNotClaimOffloadIsSafe() {
+        val decision = AudioOutputPolicy.decide(
+            capabilities = AudioOutputCapabilitySnapshot(
+                devices = emptyList(),
+                platformSdk = 35,
+                source = AudioOutputCapabilitySource.ActiveRoute,
+            ),
+            requirements = AudioProcessingRequirements(false, false, false),
+            directPathActive = false,
+        )
+
+        assertFalse(decision.offloadAllowed)
+    }
+
+    @Test
+    fun normalizationDisablesOffloadLikeOtherSignalProcessing() {
+        val decision = AudioOutputPolicy.decide(
+            capabilities = AudioOutputCapabilitySnapshot(emptyList(), platformSdk = 35),
+            requirements = AudioProcessingRequirements(
+                signalAlteringEffectsActive = false,
+                normalizationActive = true,
+                crossfadeActive = false,
+            ),
+            directPathActive = false,
+        )
+
+        assertFalse(decision.offloadAllowed)
+    }
+
+    @Test
+    fun routeSignatureIgnoresCallbackOrdering() {
+        val first = AudioOutputCapabilitySnapshot(
+            devices = listOf(usbDevice(3), usbDevice(1)),
+            platformSdk = 35,
+        )
+        val second = AudioOutputCapabilitySnapshot(
+            devices = listOf(usbDevice(1), usbDevice(3)),
+            platformSdk = 35,
+        )
+
+        assertEquals(first.routeSignature, second.routeSignature)
+    }
+
+    @Test
+    fun routeSignatureIgnoresCapabilityOrdering() {
+        val first = AudioOutputCapabilitySnapshot(
+            devices = listOf(
+                usbDevice(3).copy(
+                    sampleRates = listOf(96_000, 48_000, 48_000),
+                    channelCounts = listOf(2, 1),
+                    channelMasks = listOf(12, 3, 12),
+                    encodings = listOf(24, 16, 24),
+                ),
+            ),
+            platformSdk = 35,
+        )
+        val second = AudioOutputCapabilitySnapshot(
+            devices = listOf(
+                usbDevice(3).copy(
+                    sampleRates = listOf(48_000, 96_000, 48_000),
+                    channelCounts = listOf(1, 2),
+                    channelMasks = listOf(3, 12, 12),
+                    encodings = listOf(16, 24, 24),
+                ),
+            ),
+            platformSdk = 35,
+        )
+
+        assertEquals(first.routeSignature, second.routeSignature)
+    }
+
+    private fun usbDevice(id: Int) = AudioOutputDeviceCapability(
+        id = id,
+        type = 11,
+        route = AudioOutputRouteKind.Usb,
+        sampleRates = listOf(96_000, 48_000),
+        channelCounts = listOf(2),
+        channelMasks = emptyList(),
+        encodings = emptyList(),
+    )
+}

@@ -1,0 +1,246 @@
+package elovaire.music.droidbeauty.app.data.library
+
+import android.content.ContentResolver
+import android.database.Cursor
+import android.net.Uri
+import android.provider.MediaStore
+
+internal object MediaStoreAudioQuery {
+    val projection: Array<String> = arrayOf(
+        MediaStore.Audio.Media._ID,
+        MediaStore.Audio.Media.ALBUM_ID,
+        MediaStore.Audio.Media.TITLE,
+        MediaStore.Audio.Media.ARTIST,
+        MediaStore.Audio.Media.ALBUM,
+        MediaStore.Audio.Media.DISPLAY_NAME,
+        MediaStore.Audio.Media.DURATION,
+        MediaStore.Audio.Media.TRACK,
+        MediaStore.Audio.Media.SIZE,
+        MediaStore.Audio.Media.MIME_TYPE,
+        MediaStore.Audio.Media.IS_MUSIC,
+        MediaStore.Audio.AudioColumns.IS_AUDIOBOOK,
+        MediaStore.Audio.AudioColumns.BOOKMARK,
+        MediaStore.Audio.Media.YEAR,
+        MediaStore.Audio.Media.DATE_ADDED,
+        MediaStore.MediaColumns.DATE_MODIFIED,
+        MediaStore.MediaColumns.RELATIVE_PATH,
+        MediaStore.MediaColumns.VOLUME_NAME,
+    )
+
+    /** Only identity and display name are required to discover a MediaStore audio row. */
+    val compatibilityProjection: Array<String> = arrayOf(
+        MediaStore.Audio.Media._ID,
+        MediaStore.Audio.Media.DISPLAY_NAME,
+        MediaStore.MediaColumns.VOLUME_NAME,
+    )
+
+    val collectionUri: Uri by lazy { MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL) }
+
+    /**
+     * Only published media is part of the discoverable catalog.  These columns are platform
+     * columns on every API supported by the app, and applying the predicate in the provider
+     * query also keeps pending/trashed rows out of delta reconciliation.
+     */
+    val selection: String =
+        "${MediaStore.MediaColumns.IS_PENDING} = 0 AND " +
+            "${MediaStore.MediaColumns.IS_TRASHED} = 0"
+
+    val orderBy: String? = null
+
+    private const val DELTA_SELECTION =
+        "${MediaStore.MediaColumns.GENERATION_ADDED} > ? OR " +
+            "${MediaStore.MediaColumns.GENERATION_MODIFIED} > ?"
+
+    internal enum class ProjectionKind { Full, Compatibility }
+
+    internal data class QueryResult(
+        val cursor: Cursor,
+        val projectionKind: ProjectionKind,
+    )
+
+    internal fun interface QueryExecutor {
+        suspend fun query(
+            projection: Array<String>,
+            selection: String?,
+            selectionArgs: Array<String>?,
+            sortOrder: String?,
+        ): Cursor?
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    suspend fun query(
+        resolver: ContentResolver,
+        relativeRoots: Set<String>? = null,
+    ): QueryResult {
+        val scopedSelection = scopedSelection(relativeRoots)
+        return query(QueryExecutor { projection, selection, selectionArgs, sortOrder ->
+            resolver.queryCancellable(
+                collectionUri,
+                projection,
+                selection,
+                selectionArgs,
+                sortOrder,
+            )
+        }, scopedSelection)
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    internal suspend fun query(
+        executor: QueryExecutor,
+        relativeRoots: Set<String>? = null,
+    ): QueryResult {
+        return query(executor, scopedSelection(relativeRoots))
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun query(
+        executor: QueryExecutor,
+        scopedSelection: ScopedSelection,
+    ): QueryResult {
+        var firstFailure: Throwable? = null
+        try {
+            executor.query(projection, scopedSelection.selection, scopedSelection.arguments, orderBy)?.let {
+                return QueryResult(it, ProjectionKind.Full)
+            }
+        } catch (failure: SecurityException) {
+            throw failure
+        } catch (failure: kotlinx.coroutines.CancellationException) {
+            throw failure
+        } catch (failure: RuntimeException) {
+            firstFailure = failure
+        }
+
+        try {
+            executor.query(compatibilityProjection, scopedSelection.selection, scopedSelection.arguments, orderBy)?.let {
+                return QueryResult(it, ProjectionKind.Compatibility)
+            }
+        } catch (failure: SecurityException) {
+            throw failure
+        } catch (failure: kotlinx.coroutines.CancellationException) {
+            throw failure
+        } catch (failure: RuntimeException) {
+            throw MediaStoreQueryUnavailableException(failure)
+        }
+
+        throw MediaStoreQueryUnavailableException(firstFailure)
+    }
+
+    /** Returns null when the provider does not support generation-based selection. */
+    @Suppress("TooGenericExceptionCaught")
+    suspend fun queryDelta(
+        resolver: ContentResolver,
+        generation: Long,
+        relativeRoots: Set<String>? = null,
+    ): QueryResult? {
+        if (generation < 0L) return null
+        val scopedSelection = scopedSelection(relativeRoots)
+        return try {
+            resolver.queryCancellable(
+                collectionUri,
+                deltaProjection,
+                "${scopedSelection.selection} AND ($DELTA_SELECTION)",
+                scopedSelection.arguments.withAdditional(generation.toString(), generation.toString()),
+                orderBy,
+            )?.let { QueryResult(it, ProjectionKind.Full) }
+        } catch (failure: SecurityException) {
+            throw failure
+        } catch (failure: kotlinx.coroutines.CancellationException) {
+            throw failure
+        } catch (_: RuntimeException) {
+            null
+        }
+    }
+
+    /** Queries changed rows using the generation floor belonging to each MediaStore volume. */
+    @Suppress("TooGenericExceptionCaught")
+    suspend fun queryDelta(
+        resolver: ContentResolver,
+        generationFloors: Map<String, Long>,
+        relativeRoots: Set<String>? = null,
+    ): QueryResult? {
+        if (!hasValidMediaStoreGenerationFloors(generationFloors)) return null
+        val clauses = generationFloors.keys.joinToString(" OR ") {
+            "(${MediaStore.MediaColumns.VOLUME_NAME} = ? AND (" +
+                "${MediaStore.MediaColumns.GENERATION_ADDED} > ? OR " +
+                "${MediaStore.MediaColumns.GENERATION_MODIFIED} > ?))"
+        }
+        val args = generationFloors.flatMap { (volume, generation) ->
+            listOf(volume, generation.toString(), generation.toString())
+        }.toTypedArray()
+        val scopedSelection = scopedSelection(relativeRoots)
+        return try {
+            resolver.queryCancellable(
+                collectionUri,
+                deltaProjection,
+                "${scopedSelection.selection} AND ($clauses)",
+                scopedSelection.arguments.withAdditional(*args),
+                orderBy,
+            )?.let { QueryResult(it, ProjectionKind.Full) }
+        } catch (failure: SecurityException) {
+            throw failure
+        } catch (failure: kotlinx.coroutines.CancellationException) {
+            throw failure
+        } catch (_: RuntimeException) {
+            null
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    suspend fun queryIdentity(
+        resolver: ContentResolver,
+        relativeRoots: Set<String>? = null,
+    ): Cursor? {
+        val scopedSelection = scopedSelection(relativeRoots)
+        return try {
+            resolver.queryCancellable(
+                collectionUri,
+                identityProjection,
+                scopedSelection.selection,
+                scopedSelection.arguments,
+                null,
+            )
+        } catch (failure: SecurityException) {
+            throw failure
+        } catch (failure: kotlinx.coroutines.CancellationException) {
+            throw failure
+        } catch (_: RuntimeException) {
+            null
+        }
+    }
+
+    private val identityProjection: Array<String> = arrayOf(
+        MediaStore.Audio.Media._ID,
+        MediaStore.MediaColumns.VOLUME_NAME,
+    )
+
+    private val deltaProjection: Array<String> = projection + arrayOf(
+        MediaStore.MediaColumns.GENERATION_ADDED,
+        MediaStore.MediaColumns.GENERATION_MODIFIED,
+    )
+
+    internal data class ScopedSelection(
+        val selection: String,
+        val arguments: Array<String>?,
+    )
+
+    internal fun scopedSelection(relativeRoots: Set<String>?): ScopedSelection {
+        if (relativeRoots == null) return ScopedSelection(selection, null)
+        val roots = relativeRoots.mapNotNull(::normalizeLibraryRelativePath).distinct()
+        if (roots.isEmpty()) return ScopedSelection("$selection AND 0", null)
+        val rootSelection = roots.joinToString(" OR ") {
+            "(${MediaStore.MediaColumns.RELATIVE_PATH} = ? OR " +
+                "substr(${MediaStore.MediaColumns.RELATIVE_PATH}, 1, length(?)) = ?)"
+        }
+        val rootArguments = roots.flatMap { root ->
+            val prefix = "$root/"
+            listOf(root, prefix, prefix)
+        }.toTypedArray()
+        return ScopedSelection("$selection AND ($rootSelection)", rootArguments)
+    }
+
+    private fun Array<String>?.withAdditional(vararg additional: String): Array<String>? =
+        (orEmpty().toList() + additional).takeIf(List<String>::isNotEmpty)?.toTypedArray()
+}
+
+internal fun hasValidMediaStoreGenerationFloors(floors: Map<String, Long>): Boolean =
+    floors.isNotEmpty() && floors.all { (volume, generation) -> volume.isNotBlank() && generation >= 0L }

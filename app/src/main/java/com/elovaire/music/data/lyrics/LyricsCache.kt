@@ -1,0 +1,370 @@
+package elovaire.music.droidbeauty.app.data.lyrics
+
+import android.content.Context
+import android.util.AtomicFile
+import elovaire.music.droidbeauty.app.core.allowStrictModeDiskReads
+import elovaire.music.droidbeauty.app.core.AndroidAppClock
+import elovaire.music.droidbeauty.app.core.AppClock
+import elovaire.music.droidbeauty.app.core.performance.ElovaireTrace
+import org.json.JSONArray
+import org.json.JSONObject
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+internal class LyricsCache(
+    appContext: Context,
+    private val clock: AppClock = AndroidAppClock,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
+    private val cacheFile = allowStrictModeDiskReads {
+        // The lazy cache only needs its app-private file handle during service construction.
+        appContext.filesDir.resolve(CACHE_FILE_NAME)
+    }
+    private val atomicFile = AtomicFile(cacheFile)
+    private val cacheLock = Any()
+    private val persistLock = Any()
+    private val cacheEntries = LinkedHashMap<String, LyricsCacheEntry>(16, 0.75f, true)
+    private var cacheLoaded = false
+    private var expiredEntriesPending = false
+    private var cacheGeneration = 0L
+
+    suspend fun get(
+        identity: LyricsIdentity,
+        includeNotFound: Boolean,
+        includeOnline: Boolean = true,
+    ): LyricsResult? = withContext(ioDispatcher) {
+        getBlocking(identity, includeNotFound, includeOnline)
+    }
+
+    private fun getBlocking(
+        identity: LyricsIdentity,
+        includeNotFound: Boolean,
+        includeOnline: Boolean,
+    ): LyricsResult? = ElovaireTrace.section("lyrics_cache_read") {
+        synchronized(cacheLock) {
+            ensureLoadedLocked()
+            val now = clock.wallTimeMs()
+            var entry: LyricsCacheEntry? = null
+            var removedExpired = false
+            identity.cacheKeys.forEach { key ->
+                val cached = cacheEntries[key] ?: return@forEach
+                if (cached.isExpired(now)) {
+                    cacheEntries.remove(key)
+                    removedExpired = true
+                } else if (entry == null) {
+                    entry = cached
+                }
+            }
+            if (removedExpired) {
+                // Expired entries are already invisible to callers. Defer the full-file
+                // rewrite until the next durable cache mutation or explicit prune.
+                expiredEntriesPending = true
+                cacheGeneration++
+            }
+            when {
+                entry == null -> null
+                entry.online && !includeOnline -> null
+                !includeNotFound && entry.result !is LyricsResult.Found -> null
+                else -> entry.result
+            }
+        }
+    }
+
+    fun put(
+        identity: LyricsIdentity,
+        entry: LyricsCacheEntry,
+    ) {
+        val shouldPersist = synchronized(cacheLock) {
+            ensureLoadedLocked()
+            var changed = false
+            identity.cacheKeys.forEach { key ->
+                if (cacheEntries[key] != entry) {
+                    cacheEntries[key] = entry
+                    changed = true
+                }
+            }
+            if (trimLocked()) changed = true
+            if (changed) cacheGeneration++
+            changed || expiredEntriesPending
+        }
+        if (shouldPersist) persistSnapshot()
+    }
+
+    fun clearExpired() {
+        val shouldPersist = synchronized(cacheLock) {
+            ensureLoadedLocked()
+            val now = clock.wallTimeMs()
+            val removed = cacheEntries.entries.removeIf { (_, entry) -> entry.isExpired(now) }
+            if (removed) cacheGeneration++
+            removed || expiredEntriesPending
+        }
+        if (shouldPersist) persistSnapshot()
+    }
+
+    fun remove(identity: LyricsIdentity) {
+        val shouldPersist = synchronized(cacheLock) {
+            ensureLoadedLocked()
+            var removed = false
+            identity.cacheKeys.forEach { key ->
+                removed = cacheEntries.remove(key) != null || removed
+            }
+            if (removed) cacheGeneration++
+            removed || expiredEntriesPending
+        }
+        if (shouldPersist) persistSnapshot()
+    }
+
+    private fun ensureLoadedLocked() {
+        if (cacheLoaded) return
+        cacheLoaded = true
+        val loaded = runCatching {
+            val serialized = atomicFile.openRead().use { input ->
+                if (input.channel.size() !in 1..MAX_CACHE_FILE_BYTES.toLong()) {
+                    return@runCatching false
+                }
+                input.readBytes().toString(Charsets.UTF_8)
+            }
+            val root = JSONObject(serialized)
+            if (root.optInt("version") != CACHE_VERSION) return@runCatching false
+            val entries = root.optJSONArray("entries") ?: JSONArray()
+            repeat(entries.length()) { index ->
+                val entryJson = entries.optJSONObject(index) ?: return@repeat
+                val key = entryJson.optString("key")
+                if (key.isBlank()) return@repeat
+                val result = when (entryJson.optString("result")) {
+                    RESULT_FOUND -> {
+                        val payloadJson = entryJson.optJSONObject("payload") ?: return@repeat
+                        val payload = payloadJson.toLyricsPayload()?.validatedForPlayback() ?: return@repeat
+                        LyricsResult.Found(payload)
+                    }
+                    RESULT_NOT_FOUND -> LyricsResult.NotFound
+                    RESULT_TIMEOUT -> LyricsResult.Timeout
+                    else -> return@repeat
+                }
+                cacheEntries[key] = LyricsCacheEntry(
+                    result = result,
+                    expiresAtMillis = entryJson.optLong("expiresAtMillis", 0L),
+                    online = entryJson.optBoolean("online", false),
+                )
+            }
+            true
+        }.getOrDefault(false)
+        if (!loaded) {
+            cacheEntries.clear()
+            runCatching { atomicFile.delete() }
+        }
+    }
+
+    private fun persistSnapshot() {
+        synchronized(persistLock) {
+            val snapshot = synchronized(cacheLock) { cacheGeneration to cacheEntries.toMap() }
+            val generation = snapshot.first
+            val entries = snapshot.second
+            val persisted = ElovaireTrace.section("lyrics_cache_write") {
+                runCatching {
+                    val emptyRoot = cacheRoot(JSONArray())
+                    val emptySnapshotBytes = emptyRoot.toString().toByteArray(Charsets.UTF_8).size
+                    val retainedEntries = retainRecentLyricsCacheEntriesWithinLimit(
+                        entriesNewestFirst = entries.entries.toList().asReversed(),
+                        emptySnapshotBytes = emptySnapshotBytes,
+                        maxBytes = MAX_CACHE_FILE_BYTES,
+                    ) { (key, entry) ->
+                        cacheEntryJson(key, entry)
+                            ?.toString()
+                            ?.toByteArray(Charsets.UTF_8)
+                            ?.size
+                    }.asReversed()
+                    val serializedEntries = JSONArray().apply {
+                        retainedEntries.forEach { (key, entry) ->
+                            cacheEntryJson(key, entry)?.let(::put)
+                        }
+                    }
+                    val bytes = cacheRoot(serializedEntries).toString().toByteArray(Charsets.UTF_8)
+                    check(isLyricsCacheSnapshotWithinLimit(bytes.size, MAX_CACHE_FILE_BYTES)) {
+                        "Lyrics cache snapshot exceeded its storage bound"
+                    }
+                    val output = atomicFile.startWrite()
+                    var committed = false
+                    try {
+                        output.write(bytes)
+                        output.flush()
+                        atomicFile.finishWrite(output)
+                        committed = true
+                    } finally {
+                        if (!committed) atomicFile.failWrite(output)
+                    }
+                }.isSuccess
+            }
+            if (persisted) {
+                synchronized(cacheLock) {
+                    if (cacheGeneration == generation) expiredEntriesPending = false
+                }
+            }
+        }
+    }
+
+    private fun cacheRoot(entries: JSONArray): JSONObject = JSONObject()
+        .put("version", CACHE_VERSION)
+        .put("entries", entries)
+
+    private fun cacheEntryJson(key: String, entry: LyricsCacheEntry): JSONObject? {
+        val resultJson = when (val result = entry.result) {
+            is LyricsResult.Found -> JSONObject().apply {
+                put("result", RESULT_FOUND)
+                put("payload", result.payload.toJson())
+            }
+            LyricsResult.NotFound -> JSONObject().put("result", RESULT_NOT_FOUND)
+            LyricsResult.Timeout -> JSONObject().put("result", RESULT_TIMEOUT)
+            LyricsResult.Unavailable,
+            LyricsResult.MalformedResponse,
+            is LyricsResult.RateLimited,
+            is LyricsResult.Rejected -> null
+        } ?: return null
+        return resultJson.apply {
+            put("key", key)
+            put("expiresAtMillis", entry.expiresAtMillis)
+            put("online", entry.online)
+        }
+    }
+
+    private fun trimLocked(): Boolean {
+        return trimLyricsCacheEntries(cacheEntries, MAX_ENTRIES)
+    }
+
+    private fun LyricsPayload.toJson(): JSONObject {
+        return JSONObject().apply {
+            put("isSynced", isSynced)
+            put("displayTimingOffsetMs", displayTimingOffsetMs)
+            put("timingScale", timingScale.toDouble())
+            put("timingProfile", timingProfile.name)
+            sourceTextForEmbedding?.let { put("sourceTextForEmbedding", it) }
+            put(
+                "lines",
+                JSONArray().apply {
+                    lines.forEach { line ->
+                        put(
+                            JSONObject().apply {
+                                put("text", line.text)
+                                put("startTimeMs", line.startTimeMs ?: JSONObject.NULL)
+                                put("endTimeMs", line.endTimeMs ?: JSONObject.NULL)
+                                put("index", line.index)
+                                if (line.words.isNotEmpty()) {
+                                    put(
+                                        "words",
+                                        JSONArray().apply {
+                                            line.words.forEach { word ->
+                                                put(
+                                                    JSONObject()
+                                                        .put("t", word.text)
+                                                        .put("s", word.startTimeMs)
+                                                        .put("e", word.endTimeMs),
+                                                )
+                                            }
+                                        },
+                                    )
+                                }
+                            },
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    private fun JSONObject.toLyricsPayload(): LyricsPayload? {
+        val linesArray = optJSONArray("lines") ?: JSONArray()
+        val lines = buildList {
+            repeat(linesArray.length()) { index ->
+                val lineJson = linesArray.optJSONObject(index) ?: return@repeat
+                val wordsArray = lineJson.optJSONArray("words")
+                val words = if (wordsArray != null) {
+                    buildList(wordsArray.length()) {
+                        repeat(wordsArray.length()) { wordIdx ->
+                            val w = wordsArray.optJSONObject(wordIdx) ?: return@repeat
+                            val text = w.optString("t")
+                            val start = w.optLong("s", -1L)
+                            val end = w.optLong("e", -1L)
+                            if (text.isNotEmpty() && start >= 0L && end >= start) {
+                                add(LyricsWordSpan(text = text, startTimeMs = start, endTimeMs = end))
+                            }
+                        }
+                    }
+                } else {
+                    emptyList()
+                }
+                add(
+                    LyricsLine(
+                        text = lineJson.opt("text")
+                            ?.takeUnless { it == JSONObject.NULL }
+                            ?.toString()
+                            .orEmpty(),
+                        startTimeMs = lineJson.opt("startTimeMs")?.takeUnless { it == JSONObject.NULL }?.toString()?.toLongOrNull(),
+                        endTimeMs = lineJson.opt("endTimeMs")?.takeUnless { it == JSONObject.NULL }?.toString()?.toLongOrNull(),
+                        index = lineJson.optInt("index", index),
+                        words = words,
+                    ),
+                )
+            }
+        }
+        return LyricsPayload(
+            lines = lines,
+            isSynced = optBoolean("isSynced"),
+            displayTimingOffsetMs = optLong("displayTimingOffsetMs", 0L),
+            timingScale = optDouble("timingScale", 1.0).toFloat().takeIf { it.isFinite() && it > 0f } ?: 1f,
+            timingProfile = runCatching {
+                SyncedLyricsTimingProfile.valueOf(optString("timingProfile", SyncedLyricsTimingProfile.ExactIntervals.name))
+            }.getOrDefault(SyncedLyricsTimingProfile.ExactIntervals),
+            sourceTextForEmbedding = optString("sourceTextForEmbedding").takeIf { it.isNotBlank() },
+        )
+    }
+
+    private companion object {
+        const val CACHE_FILE_NAME = "lyrics_cache_v6.json"
+        const val CACHE_VERSION = 6
+        const val MAX_ENTRIES = 320
+        const val MAX_CACHE_FILE_BYTES = 2 * 1024 * 1024
+        const val RESULT_FOUND = "found"
+        const val RESULT_NOT_FOUND = "not_found"
+        const val RESULT_TIMEOUT = "timeout"
+    }
+}
+
+internal fun trimLyricsCacheEntries(
+    entries: LinkedHashMap<String, LyricsCacheEntry>,
+    maxEntries: Int,
+): Boolean {
+    require(maxEntries > 0)
+    var changed = false
+    while (entries.size > maxEntries) {
+        val firstKey = entries.keys.firstOrNull() ?: break
+        entries.remove(firstKey)
+        changed = true
+    }
+    return changed
+}
+
+internal fun isLyricsCacheSnapshotWithinLimit(sizeBytes: Int, maxBytes: Int): Boolean =
+    sizeBytes in 1..maxBytes
+
+internal fun <T> retainRecentLyricsCacheEntriesWithinLimit(
+    entriesNewestFirst: Iterable<T>,
+    emptySnapshotBytes: Int,
+    maxBytes: Int,
+    serializedEntrySizeBytes: (T) -> Int?,
+): List<T> {
+    require(emptySnapshotBytes in 1..maxBytes)
+    val retained = ArrayList<T>()
+    var retainedBytes = emptySnapshotBytes.toLong()
+    entriesNewestFirst.forEach { entry ->
+        val entryBytes = serializedEntrySizeBytes(entry) ?: return@forEach
+        require(entryBytes >= 0)
+        val separatorBytes = if (retained.isEmpty()) 0 else 1
+        val nextBytes = retainedBytes + entryBytes + separatorBytes
+        if (nextBytes <= maxBytes) {
+            retained += entry
+            retainedBytes = nextBytes
+        }
+    }
+    return retained
+}

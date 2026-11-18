@@ -1,0 +1,189 @@
+package elovaire.music.droidbeauty.app.data.playback
+
+import elovaire.music.droidbeauty.app.domain.model.Audiobook
+import elovaire.music.droidbeauty.app.domain.model.AudiobookPart
+import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.data.library.isValidMediaId
+
+data class AudiobookPlaybackContext(
+    val bookKey: String,
+    val orderedSongIds: List<Long>,
+    val bookDurationMs: Long,
+    val orderedSongDurationsMs: List<Long> = emptyList(),
+) {
+    val normalizedSongIds: List<Long>
+    val normalizedSongDurationsMs: List<Long>
+
+    init {
+        val uniqueSongIds = ArrayList<Long>(orderedSongIds.size)
+        val seenSongIds = HashSet<Long>(orderedSongIds.size)
+        val uniqueSongDurations = if (orderedSongDurationsMs.size == orderedSongIds.size) {
+            ArrayList<Long>(orderedSongIds.size)
+        } else {
+            null
+        }
+        orderedSongIds.forEachIndexed { index, songId ->
+            if (isValidMediaId(songId) && seenSongIds.add(songId)) {
+                uniqueSongIds += songId
+                uniqueSongDurations?.add(orderedSongDurationsMs[index].orZero())
+            }
+        }
+        normalizedSongIds = uniqueSongIds
+        normalizedSongDurationsMs = uniqueSongDurations ?: emptyList()
+    }
+    private val normalizedPrefixDurationsMs: LongArray by lazy(LazyThreadSafetyMode.NONE) {
+        LongArray(normalizedSongDurationsMs.size).also { prefixDurations ->
+            var elapsedMs = 0L
+            normalizedSongDurationsMs.forEachIndexed { index, durationMs ->
+                prefixDurations[index] = elapsedMs
+                elapsedMs = elapsedMs.saturatedDurationPlus(durationMs)
+            }
+        }
+    }
+
+    fun elapsedBefore(index: Int): Long? {
+        return normalizedPrefixDurationsMs.getOrNull(index)
+            ?.takeIf { normalizedSongDurationsMs.size == normalizedSongIds.size }
+    }
+
+    fun durationAt(index: Int): Long? {
+        return normalizedSongDurationsMs.getOrNull(index)
+            ?.takeIf { normalizedSongDurationsMs.size == normalizedSongIds.size }
+    }
+}
+
+internal data class ResolvedAudiobookProgress(
+    val songId: Long?,
+    val positionMs: Long,
+    val partIndex: Int?,
+    val bookElapsedMs: Long,
+    val bookDurationMs: Long,
+    val completed: Boolean,
+    val updatedAtMs: Long?,
+) {
+    val progressFraction: Float
+        get() = if (bookDurationMs > 0L) {
+            (bookElapsedMs.toFloat() / bookDurationMs.toFloat()).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+}
+
+internal fun isAudiobookComplete(durationMs: Long, elapsedMs: Long): Boolean {
+    val duration = durationMs.coerceAtLeast(0L)
+    if (duration == 0L) return false
+    val completionWindowMs = minOf(COMPLETION_THRESHOLD_MS, duration / 10L)
+    return elapsedMs.coerceIn(0L, duration) >= duration - completionWindowMs
+}
+
+internal fun audiobookPartPrefixDurations(parts: List<AudiobookPart>): LongArray {
+    val prefixDurations = LongArray(parts.size)
+    var elapsedMs = 0L
+    parts.forEachIndexed { index, part ->
+        prefixDurations[index] = elapsedMs
+        elapsedMs = elapsedMs.saturatedDurationPlus(part.durationMs.coerceAtLeast(0L))
+    }
+    return prefixDurations
+}
+
+internal fun resolveAudiobookProgress(
+    book: Audiobook,
+    savedProgress: AudiobookProgress?,
+    currentSongId: Long?,
+    currentPositionMs: Long,
+    partPrefixDurations: LongArray? = null,
+): ResolvedAudiobookProgress {
+    val currentPartIndex = currentSongId?.let { id ->
+        book.parts.indexOfActivePart(id, currentPositionMs)
+    }
+    val savedPartIndex = if (currentPartIndex == null) {
+        savedProgress?.songId?.let { id -> book.parts.indexOfActivePart(id, savedProgress.positionMs) }
+    } else {
+        null
+    }
+    val activeSongId = when {
+        currentPartIndex != null -> currentSongId
+        savedPartIndex != null -> savedProgress?.songId
+        else -> null
+    }
+    val positionMs = if (activeSongId != null && activeSongId == currentSongId) {
+        currentPositionMs
+    } else {
+        savedProgress?.positionMs ?: 0L
+    }
+    val partIndex = currentPartIndex ?: savedPartIndex
+    val part = partIndex?.let(book.parts::get)
+    val normalizedPositionMs = part?.let { partPositionMs(it, positionMs) } ?: positionMs.coerceAtLeast(0L)
+    val offsetMs = part?.let { partOffsetMs(it, normalizedPositionMs) } ?: 0L
+    val elapsedMs = partIndex?.let { index ->
+        (partPrefixDurations?.getOrNull(index)
+            ?: audiobookPartPrefixDurations(book.parts).getOrNull(index)
+            ?: 0L).saturatedDurationPlus(offsetMs)
+    } ?: activeSongId?.let { savedProgress?.bookElapsedMs?.coerceAtLeast(0L) } ?: 0L
+    val durationMs = book.durationMs.coerceAtLeast(0L)
+    return ResolvedAudiobookProgress(
+        songId = activeSongId,
+        positionMs = normalizedPositionMs,
+        partIndex = partIndex,
+        bookElapsedMs = elapsedMs.coerceIn(0L, durationMs.takeIf { it > 0L } ?: Long.MAX_VALUE),
+        bookDurationMs = durationMs,
+        completed = isAudiobookComplete(durationMs, elapsedMs),
+        updatedAtMs = savedProgress?.updatedAtMs,
+    )
+}
+
+internal fun resolveAudiobookBookElapsed(
+    context: AudiobookPlaybackContext,
+    queue: List<Song>,
+    songId: Long,
+    positionMs: Long,
+): Long {
+    val currentIndex = context.normalizedSongIds.indexOf(songId)
+    if (currentIndex < 0) return 0L
+    val songsById = if (context.durationAt(currentIndex) == null) queue.associateBy(Song::id) else emptyMap()
+    val previousDurationMs = context.elapsedBefore(currentIndex)
+        ?: context.normalizedSongIds.take(currentIndex)
+            .fold(0L) { total, id ->
+                total.saturatedDurationPlus(songsById[id]?.durationMs?.coerceAtLeast(0L) ?: 0L)
+            }
+    val currentDurationMs = context.durationAt(currentIndex)
+        ?: songsById[songId]?.durationMs?.coerceAtLeast(0L)
+        ?: 0L
+    return previousDurationMs.saturatedDurationPlus(
+        positionMs.coerceAtLeast(0L).coerceAtMost(currentDurationMs),
+    )
+        .coerceAtMost(context.bookDurationMs.coerceAtLeast(0L).takeIf { it > 0L } ?: Long.MAX_VALUE)
+}
+
+private fun Long?.orZero(): Long = this?.coerceAtLeast(0L) ?: 0L
+
+private fun Long.saturatedDurationPlus(durationMs: Long): Long =
+    if (durationMs > 0L && this > Long.MAX_VALUE - durationMs) Long.MAX_VALUE else this + durationMs
+
+private fun List<AudiobookPart>.indexOfActivePart(songId: Long?, positionMs: Long): Int? {
+    if (songId == null) return null
+    return indexOfFirst { part ->
+        if (part.song.id != songId) return@indexOfFirst false
+        val startMs = part.startMs
+        val endMs = part.endMs
+        if (startMs != null && endMs != null) {
+            positionMs.coerceAtLeast(0L) in startMs..<(endMs.coerceAtLeast(startMs))
+        } else {
+            true
+        }
+    }.takeIf { it >= 0 }
+        ?: indexOfLast { it.song.id == songId && (it.startMs ?: 0L) <= positionMs.coerceAtLeast(0L) }
+            .takeIf { it >= 0 }
+        ?: indexOfFirst { it.song.id == songId }.takeIf { it >= 0 }
+}
+
+private fun partOffsetMs(part: AudiobookPart, positionMs: Long): Long {
+    val startMs = part.startMs ?: 0L
+    return (positionMs - startMs).coerceAtLeast(0L).coerceAtMost(part.durationMs.coerceAtLeast(0L))
+}
+
+private fun partPositionMs(part: AudiobookPart, positionMs: Long): Long {
+    return positionMs.coerceAtLeast(0L).coerceAtMost(part.song.durationMs.coerceAtLeast(0L))
+}
+
+private const val COMPLETION_THRESHOLD_MS = 10_000L

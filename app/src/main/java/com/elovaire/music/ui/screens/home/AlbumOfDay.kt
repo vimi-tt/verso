@@ -1,0 +1,359 @@
+package elovaire.music.droidbeauty.app.ui.screens
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.util.Log
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import elovaire.music.droidbeauty.app.ui.components.rememberArtworkBitmap
+import elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeItem
+import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.domain.model.AppLanguage
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.luminance
+import elovaire.music.droidbeauty.app.ui.components.rememberArtworkPaletteAccent
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import elovaire.music.droidbeauty.app.R
+import elovaire.music.droidbeauty.app.data.settings.albumOfDayId
+import elovaire.music.droidbeauty.app.data.settings.elovaireSettingsDataStore
+import elovaire.music.droidbeauty.app.domain.model.Album
+import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
+import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.localizedArtistName
+import elovaire.music.droidbeauty.app.ui.i18n.localizedAlbumTitle
+import elovaire.music.droidbeauty.app.ui.i18n.albumOfDayTitle
+import elovaire.music.droidbeauty.app.ui.i18n.rootUiCopy
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
+import elovaire.music.droidbeauty.app.ui.motion.elovaireContentChangeMotion
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireActionBump
+import elovaire.music.droidbeauty.app.ui.interaction.rememberElovaireInteractionSource
+import elovaire.music.droidbeauty.app.ui.screens.common.ModuleCard
+import elovaire.music.droidbeauty.app.ui.screens.common.MutedSectionHeader
+import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
+import java.io.IOException
+import java.time.LocalDate
+import kotlin.random.Random
+
+@Composable
+internal fun rememberAlbumOfDay(albums: List<Album>, isLibraryAuthoritative: Boolean): Album? {
+    val context = LocalContext.current.applicationContext
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var date by remember { mutableStateOf(LocalDate.now()) }
+    var selectedId by remember { mutableStateOf<Long?>(null) }
+    DisposableEffect(context, lifecycleOwner) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                date = LocalDate.now()
+            }
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) date = LocalDate.now()
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_DATE_CHANGED)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+        }
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            context.unregisterReceiver(receiver)
+        }
+    }
+    val albumIds = remember(albums) { albums.map(Album::id) }
+    LaunchedEffect(albumIds, date, isLibraryAuthoritative) {
+        // Don't replace the saved choice with an incomplete library during a scan.
+        if (isLibraryAuthoritative) {
+            selectedId = try {
+                context.elovaireSettingsDataStore().albumOfDayId(albumIds, date)
+            } catch (failure: IOException) {
+                Log.w("AlbumOfDay", "Unable to persist the daily album", failure)
+                albumIds.takeIf { it.isNotEmpty() }?.random(Random(date.toEpochDay()))
+            }
+        }
+    }
+    return remember(albums, selectedId) { albums.firstOrNull { it.id == selectedId } }
+}
+
+@Composable
+internal fun AlbumOfDayModule(
+    album: Album,
+    onOpen: (ExpandOrigin) -> Unit,
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val language = LocalAppLanguage.current
+    val screenSize = screenContainerSizePx()
+    var bounds by remember { mutableStateOf<Rect?>(null) }
+    val open = { onOpen(bounds.toExpandOrigin(screenSize.width.toFloat(), screenSize.height.toFloat())) }
+    val artwork = rememberArtworkBitmap(album.artUri, size = 512).value
+    val accent = rememberArtworkPaletteAccent(album.artUri).value ?: MaterialTheme.colorScheme.primary
+    val controlTint = if (accent.luminance() > 0.45f) Color.Black else Color.White
+    val metadata = remember(album.songs) {
+        listOfNotNull(
+            album.songs.firstNotNullOfOrNull { it.releaseYear }?.toString(),
+            album.songs.firstOrNull { it.genre.isNotBlank() && it.genre != "Unknown Genre" }?.genre,
+        ).joinToString("  •  ")
+    }
+    ModuleCard(
+        modifier = modifier
+            .elovaireContentChangeMotion(album.id)
+            .onGloballyPositioned { bounds = it.boundsInWindow() },
+        contentPadding = PaddingValues(0.dp),
+    ) {
+        Box(modifier = Modifier.elovaireClickable(onClick = open)) {
+        if (artwork != null) {
+            Image(
+                bitmap = artwork,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize()
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(Brush.verticalGradient(0f to Color.White.copy(alpha = 0.4f), 0.5f to Color.White.copy(alpha = 0.1f), 0.65f to Color.Transparent), blendMode = BlendMode.DstIn)
+                    }.blur(40.dp),
+            )
+        }
+        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            MutedSectionHeader(
+                title = albumOfDayTitle(language),
+                iconResId = R.drawable.ic_lucide_disc_3,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ArtworkImage(
+                    uri = album.artUri,
+                    title = localizedAlbumTitle(album.title, LocalAppLanguage.current),
+                    modifier = Modifier.size(100.dp),
+                    cornerRadius = ElovaireRadii.artwork,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+                ) {
+                    Text(
+                        text = localizedAlbumTitle(album.title, LocalAppLanguage.current),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = localizedArtistName(album.artist, LocalAppLanguage.current),
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                        color = readableSecondaryTextColor(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (metadata.isNotEmpty()) Text(
+                        text = metadata,
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                        color = readableSecondaryTextColor(),
+                    )
+                }
+                Surface(modifier = Modifier.width(46.dp).height(92.dp), shape = RoundedCornerShape(ElovaireRadii.pill), color = accent, contentColor = controlTint) {
+                    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        val shuffleInteraction = rememberElovaireInteractionSource()
+                        val playInteraction = rememberElovaireInteractionSource()
+                        Box(Modifier.size(46.dp).elovaireActionBump(interactionSource = shuffleInteraction, label = "daily_album_shuffle").clickable(interactionSource = shuffleInteraction, indication = null, onClick = onShuffle), contentAlignment = Alignment.Center) {
+                            Icon(painterResource(R.drawable.ic_lucide_shuffle), contentDescription = rootUiCopy(language).shuffleAlbum, modifier = Modifier.size(20.dp))
+                        }
+                        Box(Modifier.size(46.dp).elovaireActionBump(interactionSource = playInteraction, label = "daily_album_play").clickable(interactionSource = playInteraction, indication = null, onClick = onPlay), contentAlignment = Alignment.Center) {
+                            Icon(painterResource(R.drawable.ic_lucide_play), contentDescription = rootUiCopy(language).playAlbum, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+            }
+        }
+        }
+    }
+}
+
+internal fun activityMixTitle(language: AppLanguage): String = when (language) {
+    AppLanguage.Portuguese -> "Mix de atividades"
+    AppLanguage.Spanish -> "Mix de actividad"
+    AppLanguage.French -> "Mix d'activité"
+    AppLanguage.German -> "Aktivitäten-Mix"
+    AppLanguage.Italian -> "Mix delle attività"
+    AppLanguage.Japanese -> "アクティビティミックス"
+    AppLanguage.Korean -> "활동 믹스"
+    AppLanguage.ChineseSimplified -> "活动混音"
+    AppLanguage.Russian -> "Микс по активности"
+    else -> "Activity mix"
+}
+
+@Composable
+internal fun YouTubeActivityMixModule(
+    collection: YouTubeHomeItem.Collection?,
+    tracks: List<Song>,
+    onOpenCollection: () -> Unit,
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val language = LocalAppLanguage.current
+    val sectionTitle = activityMixTitle(language)
+    val artUri = collection?.summary?.thumbnailUri ?: tracks.firstOrNull()?.artUri
+    val mixTitle = collection?.summary?.title?.takeIf(String::isNotBlank) ?: sectionTitle
+    val mixSubtitle = collection?.summary?.subtitle?.takeIf(String::isNotBlank)
+        ?: tracks.take(3).joinToString(" • ") { it.artist }.takeIf(String::isNotBlank).orEmpty()
+    val artwork = rememberArtworkBitmap(artUri, size = 512).value
+    val accent = rememberArtworkPaletteAccent(artUri).value ?: MaterialTheme.colorScheme.primary
+    val controlTint = if (accent.luminance() > 0.45f) Color.Black else Color.White
+
+    ModuleCard(
+        modifier = modifier,
+        contentPadding = PaddingValues(0.dp),
+    ) {
+        Box(modifier = Modifier.elovaireClickable(onClick = onOpenCollection)) {
+            if (artwork != null) {
+                Image(
+                    bitmap = artwork,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize()
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(
+                                Brush.verticalGradient(
+                                    0f to Color.White.copy(alpha = 0.4f),
+                                    0.5f to Color.White.copy(alpha = 0.1f),
+                                    0.65f to Color.Transparent,
+                                ),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        }
+                        .blur(40.dp),
+                )
+            }
+            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                MutedSectionHeader(
+                    title = sectionTitle,
+                    iconResId = R.drawable.ic_lucide_audio_waveform,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ArtworkImage(
+                        uri = artUri,
+                        title = mixTitle,
+                        modifier = Modifier.size(100.dp),
+                        cornerRadius = ElovaireRadii.artwork,
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+                    ) {
+                        Text(
+                            text = mixTitle,
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (mixSubtitle.isNotBlank()) {
+                            Text(
+                                text = mixSubtitle,
+                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                                color = readableSecondaryTextColor(),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier.width(46.dp).height(92.dp),
+                        shape = RoundedCornerShape(ElovaireRadii.pill),
+                        color = accent,
+                        contentColor = controlTint,
+                    ) {
+                        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            val shuffleInteraction = rememberElovaireInteractionSource()
+                            val playInteraction = rememberElovaireInteractionSource()
+                            Box(
+                                Modifier
+                                    .size(46.dp)
+                                    .elovaireActionBump(interactionSource = shuffleInteraction, label = "activity_mix_shuffle")
+                                    .clickable(interactionSource = shuffleInteraction, indication = null, onClick = onShuffle),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    painterResource(R.drawable.ic_lucide_shuffle),
+                                    contentDescription = rootUiCopy(language).shuffleAlbum,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                            Box(
+                                Modifier
+                                    .size(46.dp)
+                                    .elovaireActionBump(interactionSource = playInteraction, label = "activity_mix_play")
+                                    .clickable(interactionSource = playInteraction, indication = null, onClick = onPlay),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    painterResource(R.drawable.ic_lucide_play),
+                                    contentDescription = rootUiCopy(language).playAlbum,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

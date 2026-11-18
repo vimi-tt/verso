@@ -1,0 +1,365 @@
+package elovaire.music.droidbeauty.app.data.library.network
+
+import android.content.Context
+import android.net.Uri
+import elovaire.music.droidbeauty.app.data.library.db.NetworkInventoryDao
+import elovaire.music.droidbeauty.app.data.library.db.NetworkInventoryEntity
+import elovaire.music.droidbeauty.app.data.library.db.NetworkInventorySourceEntity
+import elovaire.music.droidbeauty.app.platform.readBytesBounded
+import elovaire.music.droidbeauty.app.data.library.AudioMediaKindClassifier
+import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
+import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.domain.model.VolumeNormalizationMetadata
+import java.io.File
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.json.JSONObject
+
+/** Durable, source-scoped listing state. A committed generation is authoritative only after listing succeeds. */
+internal class NetworkInventoryStore(
+    context: Context,
+    private val dao: NetworkInventoryDao,
+    private val sourceStore: NetworkLibrarySourceStore? = null,
+) {
+    private val appContext = context.applicationContext
+    private val legacyCacheFile by lazy(LazyThreadSafetyMode.NONE) {
+        appContext.filesDir.resolve("network_library_cache_v1.json")
+    }
+    private var legacyRootLoaded = false
+    private var legacyRoot: JSONObject? = null
+    private val legacyMigrationLock = Mutex()
+
+    suspend fun load(source: NetworkLibrarySource): List<NetworkInventoryEntry> {
+        migrateLegacyCache(source)
+        val state = dao.networkInventorySource(source.id) ?: return emptyList()
+        if (state.locationFingerprint != NetworkSourceIdentity.locationFingerprint(source)) return emptyList()
+        return dao.networkInventory(source.id).map { it.toInventoryEntry(source) }
+    }
+
+    suspend fun hasFreshListing(source: NetworkLibrarySource, nowMs: Long): Boolean {
+        val state = dao.networkInventorySource(source.id) ?: return false
+        if (state.locationFingerprint != NetworkSourceIdentity.locationFingerprint(source)) return false
+        return state.committedAtMs > 0L && nowMs >= state.committedAtMs &&
+            nowMs - state.committedAtMs <= FRESHNESS_WINDOW_MS
+    }
+
+    suspend fun replace(
+        source: NetworkLibrarySource,
+        entries: List<NetworkInventoryEntry>,
+        availability: NetworkAvailability,
+        nowMs: Long,
+    ) {
+        val previous = dao.networkInventorySource(source.id)
+        val generation = (previous?.generation ?: 0L).coerceAtMost(Long.MAX_VALUE - 1L) + 1L
+        dao.replaceNetworkInventory(
+            source = NetworkInventorySourceEntity(
+                sourceId = source.id,
+                generation = generation,
+                committedAtMs = nowMs,
+                availability = availability.name,
+                locationFingerprint = NetworkSourceIdentity.locationFingerprint(source),
+            ),
+            entries = entries.map { it.toEntity(source.id, generation) },
+        )
+    }
+
+    suspend fun refresh(source: NetworkLibrarySource, availability: NetworkAvailability, nowMs: Long) {
+        dao.refreshNetworkInventorySource(
+            sourceId = source.id,
+            committedAtMs = nowMs,
+            availability = availability.name,
+            locationFingerprint = NetworkSourceIdentity.locationFingerprint(source),
+        )
+    }
+
+    suspend fun applyVerifiedTags(source: NetworkLibrarySource, songs: List<Song>) {
+        val fingerprint = NetworkSourceIdentity.locationFingerprint(source)
+        for (song in songs) {
+            if (!NetworkResourceUri.isNetworkUri(song.uri) || NetworkResourceUri.sourceId(song.uri) != source.id) continue
+            val path = NetworkResourceUri.path(song.uri) ?: continue
+            dao.updateVerifiedNetworkTags(source.id, path, song.id, fingerprint, song.title, song.artist,
+                song.album, song.albumArtist, song.releaseYear, song.genre, song.trackNumber,
+                song.discNumber, song.description)
+        }
+    }
+
+    suspend fun remove(sourceId: String) {
+        dao.removeNetworkInventory(sourceId)
+    }
+
+    private suspend fun migrateLegacyCache(source: NetworkLibrarySource) {
+        if (!legacyCacheFile.isFile) return
+        legacyMigrationLock.withLock {
+            if (!legacyCacheFile.isFile) return@withLock
+            val sources = sourceStore?.sources?.value
+                ?.plus(source)
+                ?.distinctBy(NetworkLibrarySource::id)
+                ?: listOf(source)
+            for (candidate in sources) migrateLegacyCacheForSource(candidate)
+            if (sourceStore != null && legacyCacheFile.delete()) {
+                legacyRoot = null
+                legacyRootLoaded = true
+            }
+        }
+    }
+
+    private suspend fun migrateLegacyCacheForSource(source: NetworkLibrarySource) {
+        if (dao.networkInventorySource(source.id) != null) return
+        val entries = legacyEntries(source)
+        if (entries.isEmpty()) return
+        val committedAtMs = legacyRoot
+            ?.optJSONObject("lastSuccessfulScan")
+            ?.optLong(source.id, 0L)
+            ?.takeIf { it > 0L }
+            ?: 0L
+        dao.replaceNetworkInventory(
+            source = NetworkInventorySourceEntity(
+                sourceId = source.id,
+                generation = 1L,
+                committedAtMs = committedAtMs,
+                availability = NetworkAvailability.Available.name,
+                locationFingerprint = NetworkSourceIdentity.locationFingerprint(source),
+            ),
+            entries = entries.map { it.toEntity(source.id, 1L) },
+        )
+    }
+
+    private fun legacyEntries(source: NetworkLibrarySource): List<NetworkInventoryEntry> {
+        if (!legacyRootLoaded) {
+            legacyRootLoaded = true
+            legacyRoot = runCatching {
+                if (!legacyCacheFile.isFile || !isLegacyNetworkInventoryCacheWithinLimit(legacyCacheFile.length())) {
+                    return@runCatching null
+                }
+                JSONObject(
+                    legacyCacheFile.inputStream().use { input ->
+                        input.readBytesBounded(MAX_LEGACY_NETWORK_INVENTORY_CACHE_BYTES.toInt())
+                            .toString(Charsets.UTF_8)
+                    },
+                )
+            }.getOrNull()
+        }
+        val songs = legacyRoot?.optJSONObject("sources")?.optJSONArray(source.id) ?: return emptyList()
+        return buildList {
+            repeat(songs.length()) { index ->
+                val item = songs.optJSONObject(index) ?: return@repeat
+                val uri = runCatching { Uri.parse(item.optString("uri")) }.getOrNull() ?: return@repeat
+                val path = NetworkResourceUri.path(uri)
+                    ?: item.optString("libraryPath")
+                        .removePrefix("network/${source.id}/")
+                        .takeIf(String::isNotBlank)
+                    ?: return@repeat
+                if (!NetworkResourceUri.isNetworkUri(uri)) return@repeat
+                val normalizedPath = NetworkPathPolicy.normalizeRelativePath(path)
+                val song = Song(
+                    id = item.optLong("id"),
+                    title = item.optString("title"),
+                    isExplicit = false,
+                    artist = item.optString("artist"),
+                    album = item.optString("album"),
+                    releaseYear = null,
+                    genre = item.optString("genre", "Unknown Genre"),
+                    audioFormat = item.optString("audioFormat"),
+                    audioQuality = null,
+                    fileName = item.optString("fileName").ifBlank { normalizedPath.substringAfterLast('/') },
+                    albumId = item.optLong("albumId"),
+                    durationMs = item.optLong("durationMs"),
+                    trackNumber = item.optInt("trackNumber"),
+                    discNumber = item.optInt("discNumber", 1),
+                    dateAddedSeconds = item.optLong("dateAddedSeconds"),
+                    dateModifiedSeconds = item.optLong("dateModifiedSeconds").takeIf { it > 0L },
+                    libraryPath = "network/${source.id}/$normalizedPath",
+                    uri = NetworkResourceUri.create(source.id, normalizedPath),
+                    artUri = item.optString("artUri").takeIf(String::isNotBlank)?.let(Uri::parse),
+                    metadataResolved = item.optBoolean("metadataResolved", true),
+                    albumArtist = item.optString("albumArtist").takeIf(String::isNotBlank),
+                    volumeNormalization = null,
+                    mediaKind = AudioMediaKindClassifier.classify(
+                        isAudiobook = null,
+                        extension = normalizedPath.substringAfterLast('.', ""),
+                        relativePath = normalizedPath,
+                        absolutePath = null,
+                        sourcePath = normalizedPath,
+                    ),
+                )
+                if (song.id != 0L) {
+                    add(
+                        NetworkInventoryEntry(
+                            entry = NetworkFileEntry(path = normalizedPath, isDirectory = false),
+                            song = song,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private companion object {
+        const val FRESHNESS_WINDOW_MS = 15 * 60 * 1_000L
+    }
+}
+
+internal fun isLegacyNetworkInventoryCacheWithinLimit(sizeBytes: Long): Boolean =
+    sizeBytes in 1L..MAX_LEGACY_NETWORK_INVENTORY_CACHE_BYTES
+
+private const val MAX_LEGACY_NETWORK_INVENTORY_CACHE_BYTES = 16L * 1024L * 1024L
+
+internal data class NetworkInventoryEntry(
+    val entry: NetworkFileEntry,
+    val song: Song,
+) {
+    fun hasSameRevision(other: NetworkFileEntry): Boolean {
+        val hasStrongRevision = entry.modifiedAtMs != null || !entry.etag.isNullOrBlank()
+        return hasStrongRevision &&
+            entry.sizeBytes == other.sizeBytes &&
+            entry.modifiedAtMs == other.modifiedAtMs &&
+            entry.etag == other.etag
+    }
+
+    internal fun toEntity(sourceId: String, generation: Long): NetworkInventoryEntity {
+        return NetworkInventoryEntity(
+            sourceId = sourceId,
+            relativePath = entry.path,
+            sizeBytes = entry.sizeBytes,
+            modifiedAtMs = entry.modifiedAtMs,
+            etag = entry.etag,
+            contentType = entry.contentType,
+            sourceEntryId = entry.sourceEntryId,
+            songId = song.id,
+            albumId = song.albumId,
+            title = song.title,
+            artist = song.artist,
+            album = song.album,
+            albumArtist = song.albumArtist,
+            releaseYear = song.releaseYear,
+            genre = song.genre,
+            audioFormat = song.audioFormat,
+            audioQuality = song.audioQuality,
+            durationMs = song.durationMs,
+            trackNumber = song.trackNumber,
+            discNumber = song.discNumber,
+            dateAddedSeconds = song.dateAddedSeconds,
+            dateModifiedSeconds = song.dateModifiedSeconds,
+            metadataResolved = song.metadataResolved,
+            artUri = song.artUri?.toString(),
+            mediaKind = song.mediaKind.name,
+            lastSeenGeneration = generation,
+            description = song.description,
+            trackGainDb = song.volumeNormalization?.trackGainDb,
+            albumGainDb = song.volumeNormalization?.albumGainDb,
+            trackPeak = song.volumeNormalization?.trackPeak,
+            albumPeak = song.volumeNormalization?.albumPeak,
+        )
+    }
+}
+
+internal data class NetworkRevisionKey(
+    val sizeBytes: Long,
+    val etag: String,
+)
+
+internal data class NetworkInventoryIndexes(
+    val byPath: Map<String, NetworkInventoryEntry>,
+    val bySourceEntryId: Map<String, NetworkInventoryEntry>,
+    /** A null value represents an ambiguous revision and cannot safely relocate identity. */
+    val byRevision: Map<NetworkRevisionKey, NetworkInventoryEntry?>,
+)
+
+/** Builds the per-scan lookup maps in one pass over the committed inventory. */
+internal fun buildNetworkInventoryIndexes(
+    entries: List<NetworkInventoryEntry>,
+    includeRevisionIndex: Boolean = true,
+): NetworkInventoryIndexes {
+    val byPath = LinkedHashMap<String, NetworkInventoryEntry>(entries.size)
+    val bySourceEntryId = LinkedHashMap<String, NetworkInventoryEntry>(entries.size)
+    val ambiguousSourceEntryIds = HashSet<String>()
+    val byRevision: MutableMap<NetworkRevisionKey, NetworkInventoryEntry?> = if (includeRevisionIndex) {
+        LinkedHashMap<NetworkRevisionKey, NetworkInventoryEntry?>(entries.size)
+    } else {
+        mutableMapOf()
+    }
+    entries.forEach { entry ->
+        byPath[entry.entry.path] = entry
+
+        entry.entry.sourceEntryId?.takeIf(String::isNotBlank)?.let { sourceEntryId ->
+            if (sourceEntryId !in ambiguousSourceEntryIds &&
+                bySourceEntryId.putIfAbsent(sourceEntryId, entry) != null
+            ) {
+                bySourceEntryId.remove(sourceEntryId)
+                ambiguousSourceEntryIds += sourceEntryId
+            }
+        }
+
+        if (includeRevisionIndex) {
+            val key = entry.entry.networkRevisionKey() ?: return@forEach
+            if (byRevision.containsKey(key)) {
+                byRevision[key] = null
+            } else {
+                byRevision[key] = entry
+            }
+        }
+    }
+    return NetworkInventoryIndexes(byPath, bySourceEntryId, byRevision)
+}
+
+internal fun NetworkFileEntry.networkRevisionKey(): NetworkRevisionKey? {
+    val size = sizeBytes?.takeIf { it >= 0L } ?: return null
+    val etagValue = etag?.trim()?.takeIf(String::isNotBlank) ?: return null
+    return NetworkRevisionKey(size, etagValue)
+}
+
+private fun NetworkInventoryEntity.toInventoryEntry(source: NetworkLibrarySource): NetworkInventoryEntry {
+    val normalizedPath = NetworkPathPolicy.normalizeRelativePath(relativePath)
+    return NetworkInventoryEntry(
+        entry = NetworkFileEntry(
+            path = normalizedPath,
+            isDirectory = false,
+            sizeBytes = sizeBytes,
+            modifiedAtMs = modifiedAtMs,
+            contentType = contentType,
+            etag = etag,
+            sourceEntryId = sourceEntryId,
+        ),
+        song = Song(
+            id = songId,
+            title = title,
+            isExplicit = false,
+            artist = artist,
+            album = album,
+            releaseYear = releaseYear,
+            genre = genre,
+            audioFormat = audioFormat,
+            audioQuality = audioQuality,
+            fileName = normalizedPath.substringAfterLast('/').ifBlank { "Unknown" },
+            albumId = albumId,
+            durationMs = durationMs,
+            trackNumber = trackNumber,
+            discNumber = discNumber,
+            dateAddedSeconds = dateAddedSeconds,
+            dateModifiedSeconds = dateModifiedSeconds,
+            libraryPath = "network/${source.id}/$normalizedPath",
+            uri = NetworkResourceUri.create(source.id, normalizedPath),
+            artUri = artUri?.takeIf(String::isNotBlank)?.let(Uri::parse),
+            metadataResolved = metadataResolved,
+            albumArtist = albumArtist,
+            description = description,
+            volumeNormalization = VolumeNormalizationMetadata(trackGainDb, albumGainDb, trackPeak, albumPeak)
+                .takeIf { it.hasUsableGain || it.trackPeak != null || it.albumPeak != null },
+            mediaKind = runCatching { AudioMediaKind.valueOf(mediaKind) }
+                .getOrNull()
+                .let { persisted ->
+                    val inferred = AudioMediaKindClassifier.classify(
+                        isAudiobook = null,
+                        extension = normalizedPath.substringAfterLast('.', ""),
+                        relativePath = normalizedPath,
+                        absolutePath = null,
+                    )
+                    if (persisted == AudioMediaKind.Audiobook || inferred == AudioMediaKind.Audiobook) {
+                        AudioMediaKind.Audiobook
+                    } else {
+                        AudioMediaKind.Music
+                    }
+                },
+        ),
+    )
+}

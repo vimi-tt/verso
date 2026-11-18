@@ -1,0 +1,648 @@
+package elovaire.music.droidbeauty.app.data.library
+
+import android.content.Context
+import android.provider.MediaStore
+import android.os.Build
+import android.os.ext.SdkExtensions
+import androidx.annotation.RequiresApi
+import elovaire.music.droidbeauty.app.core.performance.ElovaireTrace
+import elovaire.music.droidbeauty.app.core.MemoryPressure
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceKind
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceRegistry
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceTracker
+import elovaire.music.droidbeauty.app.data.audio.AudioFormatDetector
+import elovaire.music.droidbeauty.app.data.audio.AudioFormatPolicy
+import elovaire.music.droidbeauty.app.data.audio.MediaMetadataRetrieverAdmission
+import elovaire.music.droidbeauty.app.domain.model.Song
+import java.io.File
+import java.util.Locale
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+
+@Suppress("TooManyFunctions", "TooGenericExceptionCaught", "ComplexCondition")
+internal class MediaStoreScanner(
+    private val context: Context,
+    indexRefresher: MediaStoreIndexRefresher? = null,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val failureRegistry: MediaFailureRegistry = MediaFailureRegistry(),
+    private val retrieverAdmission: MediaMetadataRetrieverAdmission = MediaMetadataRetrieverAdmission(),
+    private val resourceTracker: BackendResourceTracker = BackendResourceRegistry,
+) {
+    private val metadataCache = ScannerMetadataCache()
+    private val audioFormatDetector = AudioFormatDetector(context, failureRegistry)
+    private val localMetadataReader = LocalAudioMetadataReader(
+        context,
+        failureRegistry,
+        resourceTracker,
+        retrieverAdmission,
+    )
+    private val scanRoots = LibraryScanRoots()
+    private val mediaStoreIndexer = indexRefresher ?: MediaStoreIndexer(
+        context = context,
+        scanRoots = scanRoots::directFileRoots,
+    )
+    internal val targetExistenceProbe = MediaTargetExistenceProbe(context)
+    fun setLibraryFolders(selections: List<LibraryFolderSelection>): Boolean {
+        return scanRoots.setSelections(selections)
+    }
+
+    fun currentFilterFingerprint(): String {
+        val local = scanRoots.filterFingerprint(FILTER_FINGERPRINT_VERSION)
+        return local
+    }
+
+    internal fun currentSyncState(): LibraryMediaStoreSyncState? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+            SdkExtensions.getExtensionVersion(Build.VERSION_CODES.R) < 1
+        ) return null
+        return currentSyncStateApi30()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun currentSyncStateApi30(): LibraryMediaStoreSyncState? {
+        return runCatching {
+            val volumes = MediaStore.getExternalVolumeNames(context)
+                .sorted()
+                .mapNotNull { volumeName ->
+                    val version = MediaStore.getVersion(context, volumeName)
+                    LibraryMediaStoreVolumeSyncState(
+                        volumeName = volumeName,
+                        version = version,
+                        generation = MediaStore.getGeneration(context, volumeName),
+                    )
+                }
+            if (volumes.isEmpty()) return@runCatching null
+            LibraryMediaStoreSyncState(
+                filterFingerprint = currentFilterFingerprint(),
+                volumes = volumes,
+            )
+        }.getOrNull()
+    }
+
+    fun primeMetadataCache(
+        songs: List<Song>,
+    ) {
+        metadataCache.prime(songs)
+    }
+
+    fun clearMetadataCache() {
+        metadataCache.clear()
+    }
+
+    internal fun onMemoryPressure(pressure: MemoryPressure) {
+        metadataCache.onMemoryPressure(pressure)
+    }
+
+    fun scanRoots(): List<File> = scanRoots.directFileRoots()
+
+    fun requiresMediaIndexRepair(): Boolean = scanRoots.requiresMediaIndexRepair()
+
+    internal fun hasSafSelections(): Boolean = scanRoots.hasSafSelections()
+
+    internal fun libraryFolderSelections(): List<LibraryFolderSelection> = scanRoots.selections()
+
+    internal fun safTreeSelections(): List<LibraryFolderSelection> = scanRoots.safTreeSelections()
+
+    fun invalidateMetadataCacheForPaths(paths: Collection<String>) {
+        metadataCache.invalidatePaths(paths)
+    }
+
+    fun invalidateMetadataCacheForSongIds(songIds: Collection<Long>) {
+        metadataCache.invalidateSongIds(songIds)
+    }
+
+    @Suppress("CyclomaticComplexMethod", "LongMethod")
+    suspend fun scan(
+        refreshMediaIndex: Boolean = false,
+        refreshMediaPaths: List<String> = emptyList(),
+        enrichMetadata: Boolean = true,
+        mediaStoreGenerationFloor: Long? = null,
+        mediaStoreGenerationFloors: Map<String, Long> = emptyMap(),
+        baseMediaStoreSongs: List<Song> = emptyList(),
+        reuseMediaStoreState: Boolean = false,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+    ): List<Song> {
+        if (reuseMediaStoreState) {
+            return baseMediaStoreSongs
+        }
+        val decisionMap = ScannerDebugLogger.newDecisionMap()
+        val indexRefreshJob: Deferred<MediaStoreIndexRefreshResult?>? = when {
+            refreshMediaIndex -> {
+                val scanContext = currentCoroutineContext()
+                CoroutineScope(scanContext + ioDispatcher).async {
+                    try {
+                        ElovaireTrace.section("library_media_index_refresh") {
+                            refreshMediaIndex {
+                                scanContext.ensureActive()
+                            }
+                        }
+                    } catch (failure: CancellationException) {
+                        throw failure
+                    } catch (failure: Exception) {
+                        decisionMap.recordIndexRefreshFailure(failure)
+                        null
+                    }
+                }
+            }
+            refreshMediaPaths.isNotEmpty() -> {
+                val scanContext = currentCoroutineContext()
+                CoroutineScope(scanContext + ioDispatcher).async {
+                    try {
+                        ElovaireTrace.section("library_media_index_refresh_paths") {
+                            refreshMediaIndex(refreshMediaPaths) {
+                                scanContext.ensureActive()
+                            }
+                        }
+                    } catch (failure: CancellationException) {
+                        throw failure
+                    } catch (failure: Exception) {
+                        decisionMap.recordIndexRefreshFailure(failure)
+                        null
+                    }
+                }
+            }
+            else -> null
+        }
+
+        val progressEmitter = ScannerProgressEmitter(onProgress)
+
+        suspend fun queryPlanForCurrentProvider(useDelta: Boolean): MediaStoreQueryPlan {
+            return ElovaireTrace.section("library_mediastore_scan") {
+                val queryRelativeRoots = scanRoots.mediaStoreQueryRelativeRoots()
+                val deltaQuery = if (
+                    useDelta &&
+                    (mediaStoreGenerationFloor != null || mediaStoreGenerationFloors.isNotEmpty()) &&
+                    refreshMediaPaths.isEmpty() &&
+                    !refreshMediaIndex &&
+                    baseMediaStoreSongs.isNotEmpty()
+                ) {
+                    ElovaireTrace.section("mediastore_discovery") {
+                        ElovaireTrace.section("mediastore_query_delta") {
+                            if (mediaStoreGenerationFloors.isNotEmpty()) {
+                                MediaStoreAudioQuery.queryDelta(
+                                    context.contentResolver,
+                                    mediaStoreGenerationFloors,
+                                    queryRelativeRoots,
+                                )
+                            } else {
+                                MediaStoreAudioQuery.queryDelta(
+                                    context.contentResolver,
+                                    requireNotNull(mediaStoreGenerationFloor),
+                                    queryRelativeRoots,
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    null
+                }
+                var deltaConsumed = false
+                try {
+                    val deltaIdentityKeys = if (deltaQuery != null) {
+                        mediaStoreDeltaIdentityOrFallback {
+                            val scanContext = currentCoroutineContext()
+                            ElovaireTrace.section("mediastore_delta_identity") {
+                                MediaStoreAudioQuery.queryIdentity(
+                                    context.contentResolver,
+                                    queryRelativeRoots,
+                                )?.use { cursor ->
+                                    val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                                    val volumeIndex = cursor.getColumnIndex(MediaStore.MediaColumns.VOLUME_NAME)
+                                    if (volumeIndex < 0) {
+                                        null
+                                    } else {
+                                        var hasInvalidIdentity = false
+                                        buildSet<String> {
+                                            while (cursor.moveToNext()) {
+                                                scanContext.ensureActive()
+                                                val volume = cursor.getString(volumeIndex)
+                                                val identity = MediaIdentityResolver.mediaStore(
+                                                    volume,
+                                                    cursor.getLong(idIndex),
+                                                )
+                                                if (identity == null) hasInvalidIdentity = true
+                                                identity?.stableKey?.let(::add)
+                                            }
+                                        }
+                                            .takeUnless { hasInvalidIdentity }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        null
+                    }
+                    val queryResult = if (deltaIdentityKeys != null) {
+                        deltaConsumed = true
+                        requireNotNull(deltaQuery)
+                    } else {
+                        ElovaireTrace.section("mediastore_discovery") {
+                            ElovaireTrace.section(
+                                if (refreshMediaPaths.isEmpty()) "mediastore_query_full" else "mediastore_query_delta",
+                            ) {
+                                MediaStoreAudioQuery.query(context.contentResolver, queryRelativeRoots)
+                            }
+                        }
+                    }
+                    MediaStoreQueryPlan(
+                        queryResult = queryResult,
+                        deltaIdentityKeys = deltaIdentityKeys,
+                    )
+                } finally {
+                    if (!deltaConsumed) deltaQuery?.cursor?.close()
+                }
+            }
+        }
+
+        suspend fun readQuery(
+            queryPlan: MediaStoreQueryPlan,
+            reportProgress: Boolean,
+        ): MediaStoreQueryRead {
+            val songs = mutableListOf<Song>()
+            val scannedMetadataUris = mutableSetOf<String>()
+            val rowIdentityKeys = mutableSetOf<String>()
+            var totalRows = 0
+            ElovaireTrace.section("library_mediastore_rows") {
+                val queryResult = queryPlan.queryResult
+                decisionMap.recordProjection(queryResult.projectionKind.name)
+                val cursor = queryResult.cursor
+                cursor.use {
+                    totalRows = cursor.count.coerceAtLeast(0)
+                    if (reportProgress) progressEmitter.emit(0, totalRows)
+                    val rowMapper = MediaStoreAudioRowMapper(context, cursor)
+                    val audioFileFilter = buildAudioFileFilter(
+                        allowUnscopedMediaStoreRows = scanRoots.canIncludeUnscopedMediaStoreRows(),
+                    )
+                    if (queryResult.projectionKind == MediaStoreAudioQuery.ProjectionKind.Compatibility ||
+                        !rowMapper.hasRelativePathColumn
+                    ) {
+                        decisionMap.recordFolderMetadataUnavailable()
+                    }
+
+                    val rowProcessor = MediaStoreRowProcessor(
+                        context = context,
+                        metadataCache = metadataCache,
+                        audioFormatDetector = audioFormatDetector,
+                        localMetadataReader = localMetadataReader,
+                        audioFileFilter = audioFileFilter,
+                        enrichMetadata = enrichMetadata,
+                        decisionMap = decisionMap,
+                    )
+                    val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                    val volumeIndex = cursor.getColumnIndex(MediaStore.MediaColumns.VOLUME_NAME)
+                    var processedRows = 0
+                    while (cursor.moveToNext()) {
+                        currentCoroutineContext().ensureActive()
+                        processedRows += 1
+                        try {
+                            val row = rowMapper.row(cursor)
+                            val processedSong = rowProcessor.process(row)
+                            if (volumeIndex >= 0) {
+                                MediaIdentityResolver.mediaStore(
+                                    cursor.getString(volumeIndex),
+                                    cursor.getLong(idIndex),
+                                )?.stableKey?.let(rowIdentityKeys::add)
+                            }
+                            processedSong?.let { song ->
+                                scannedMetadataUris += song.identityKey
+                                songs += song.song
+                            }
+                        } catch (failure: CancellationException) {
+                            throw failure
+                        } catch (failure: RuntimeException) {
+                            // One malformed provider row must not hide otherwise valid library rows.
+                            decisionMap.recordMediaStoreExclude(
+                                "Row processing failed: ${failure::class.simpleName ?: "Unknown"}",
+                            )
+                        }
+                        if (reportProgress && (processedRows == totalRows || processedRows % 24 == 0)) {
+                            progressEmitter.emit(processedRows, totalRows)
+                        }
+                    }
+                }
+            }
+            return MediaStoreQueryRead(
+                songs = songs,
+                scannedMetadataUris = scannedMetadataUris,
+                rowIdentityKeys = rowIdentityKeys,
+                totalRows = totalRows,
+            )
+        }
+
+        val indexRefreshResult = indexRefreshJob?.await()
+        indexRefreshResult?.let(decisionMap::recordIndexRefresh)
+        val queryPlan = queryPlanForCurrentProvider(useDelta = true)
+        val queryRead = readQuery(queryPlan, reportProgress = true)
+
+        val totalRows = queryRead.totalRows
+        val songs = queryRead.songs
+        val scannedMetadataUris = queryRead.scannedMetadataUris.toMutableSet()
+        val deltaIdentityKeys = queryPlan.deltaIdentityKeys
+        val usingDelta = deltaIdentityKeys != null
+
+        if (totalRows == 0) {
+            progressEmitter.emit(1, 1)
+        } else {
+            progressEmitter.emit(totalRows, totalRows)
+        }
+
+        currentCoroutineContext().ensureActive()
+        val mergedSongs = if (usingDelta) {
+            val merged = mergeMediaStoreDelta(
+                baseSongs = baseMediaStoreSongs,
+                changedSongs = songs,
+                changedRowIdentityKeys = queryRead.rowIdentityKeys,
+                currentIdentityKeys = requireNotNull(deltaIdentityKeys),
+            )
+            scannedMetadataUris.addAll(merged.retainedIdentityKeys)
+            merged.songs
+        } else {
+            songs
+        }
+        decisionMap.logSummary(mergedSongs.size)
+
+        metadataCache.retainOnly(scannedMetadataUris)
+
+        return mergedSongs
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    internal suspend fun scanSafely(
+        refreshMediaIndex: Boolean = false,
+        refreshMediaPaths: List<String> = emptyList(),
+        enrichMetadata: Boolean = true,
+        mediaStoreGenerationFloor: Long? = null,
+        mediaStoreGenerationFloors: Map<String, Long> = emptyMap(),
+        baseMediaStoreSongs: List<Song> = emptyList(),
+        reuseMediaStoreState: Boolean = false,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+    ): LocalLibraryScanResult {
+        return try {
+            LocalLibraryScanResult.Complete(
+                scan(
+                    refreshMediaIndex = refreshMediaIndex,
+                    refreshMediaPaths = refreshMediaPaths,
+                    enrichMetadata = enrichMetadata,
+                    mediaStoreGenerationFloor = mediaStoreGenerationFloor,
+                    mediaStoreGenerationFloors = mediaStoreGenerationFloors,
+                    baseMediaStoreSongs = baseMediaStoreSongs,
+                    reuseMediaStoreState = reuseMediaStoreState,
+                    onProgress = onProgress,
+                ),
+            )
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (failure: Exception) {
+            LocalLibraryScanResult.Unavailable(failure)
+        }
+    }
+
+    suspend fun findExistingSongIds(songIds: Set<Long>): Set<Long> {
+        if (songIds.isEmpty()) return emptySet()
+        return songIds.chunked(MEDIASTORE_ID_QUERY_CHUNK_SIZE).flatMapTo(linkedSetOf()) { chunk ->
+            queryExistingSongIdsOrRetain(chunk.toSet()) {
+                val placeholders = List(chunk.size) { "?" }.joinToString(",")
+                context.contentResolver.queryCancellable(
+                    MediaStoreAudioQuery.collectionUri,
+                    arrayOf(MediaStore.Audio.Media._ID),
+                    "${MediaStoreAudioQuery.selection} AND " +
+                        "${MediaStore.Audio.Media._ID} IN ($placeholders)",
+                    chunk.map(Long::toString).toTypedArray(),
+                    null,
+                )?.use { cursor ->
+                    val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                    buildSet {
+                        while (cursor.moveToNext()) add(cursor.getLong(idIndex))
+                    }
+                }
+            }
+        }
+    }
+
+    fun musicDirectory(): File {
+        return MediaFilePathResolver.defaultMusicDirectory()
+    }
+
+    fun refreshMediaIndex(
+        shouldContinue: () -> Unit = {},
+    ): MediaStoreIndexRefreshResult = mediaStoreIndexer.refreshAll {
+        shouldContinue()
+    }
+
+    fun refreshMediaIndex(
+        paths: List<String>,
+        shouldContinue: () -> Unit = {},
+    ): MediaStoreIndexRefreshResult = mediaStoreIndexer.refreshPaths(paths) {
+        shouldContinue()
+    }
+
+    private fun buildAudioFileFilter(
+        allowUnscopedMediaStoreRows: Boolean = false,
+    ): LibraryAudioFileFilter {
+        return LibraryAudioFileFilter(
+            selectedRelativeRoots = scanRoots.relativeRoots(),
+            libraryRootPaths = scanRoots.normalizedFileRootPaths(),
+            explicitCustomRootPaths = scanRoots.explicitCustomFileRootPaths(),
+            explicitCustomRelativeRoots = scanRoots.explicitCustomRelativeRoots(),
+            allowUnscopedMediaStoreRows = allowUnscopedMediaStoreRows,
+        )
+    }
+
+    internal companion object {
+        const val MEDIASTORE_ID_QUERY_CHUNK_SIZE = 400
+    }
+
+}
+
+internal suspend fun queryExistingSongIdsOrRetain(
+    requestedSongIds: Set<Long>,
+    query: suspend () -> Set<Long>?,
+): Set<Long> = try {
+    query() ?: requestedSongIds
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    requestedSongIds
+}
+
+internal suspend fun <T> mediaStoreDeltaIdentityOrFallback(
+    readIdentity: suspend () -> T?,
+): T? = try {
+    readIdentity()
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (failure: SecurityException) {
+    throw failure
+} catch (_: Exception) {
+    null
+}
+
+internal class MediaStoreQueryUnavailableException(cause: Throwable? = null) : IllegalStateException(
+    "MediaStore audio query returned no cursor.",
+    cause,
+)
+
+private data class MediaStoreQueryPlan(
+    val queryResult: MediaStoreAudioQuery.QueryResult,
+    val deltaIdentityKeys: Set<String>?,
+)
+
+private data class MediaStoreQueryRead(
+    val songs: List<Song>,
+    val scannedMetadataUris: Set<String>,
+    val rowIdentityKeys: Set<String>,
+    val totalRows: Int,
+)
+
+internal data class MediaStoreDeltaMergeResult(
+    val songs: List<Song>,
+    val retainedIdentityKeys: Set<String>,
+)
+
+internal fun mergeMediaStoreDelta(
+    baseSongs: List<Song>,
+    changedSongs: List<Song>,
+    changedRowIdentityKeys: Set<String>,
+    currentIdentityKeys: Set<String>,
+): MediaStoreDeltaMergeResult {
+    val changedByKey = LinkedHashMap<String, Song>(changedSongs.size)
+    changedSongs.forEach { changedSong ->
+        val key = MediaIdentityResolver.stableKey(changedSong)
+        changedByKey[key] = changedSong
+    }
+    val baseKeys = HashSet<String>(baseSongs.size)
+    val retainedIdentityKeys = changedByKey.keys.toMutableSet()
+    val mergedSongs = buildList(baseSongs.size + changedSongs.size) {
+        baseSongs.forEach { baseSong ->
+            val key = MediaIdentityResolver.stableKey(baseSong)
+            baseKeys += key
+            if (key in changedRowIdentityKeys) {
+                changedByKey[key]?.let { changedSong ->
+                    add(changedSong)
+                    retainedIdentityKeys += key
+                }
+            } else if (key in currentIdentityKeys) {
+                add(baseSong)
+                retainedIdentityKeys += key
+            }
+        }
+        changedByKey.forEach { (key, changedSong) ->
+            if (key !in baseKeys) {
+                add(changedSong)
+            }
+        }
+    }
+    return MediaStoreDeltaMergeResult(mergedSongs, retainedIdentityKeys)
+}
+
+internal sealed interface LocalLibraryScanResult {
+    data class Complete(val songs: List<Song>) : LocalLibraryScanResult
+    data class Unavailable(val failure: Throwable) : LocalLibraryScanResult
+}
+
+internal fun canQueryMediaStoreGenre(songId: Long): Boolean {
+    return songId in 1L..Int.MAX_VALUE.toLong()
+}
+
+internal fun mediaStoreGenreVolumes(preferredVolumeName: String?): List<String> {
+    val preferredVolume = preferredVolumeName?.trim()?.takeIf { it.isNotBlank() }
+    return if (preferredVolume != null) {
+        listOf(preferredVolume)
+    } else {
+        listOf(MediaStore.VOLUME_EXTERNAL, MediaStore.VOLUME_EXTERNAL_PRIMARY)
+    }
+}
+
+internal fun sortAlbumSongs(albumSongs: List<Song>): List<Song> {
+    val songsByFileName = albumSongs.map { song ->
+        song to song.fileName.lowercase(Locale.ROOT)
+    }
+    val hasTrackTags = albumSongs.any { it.trackNumber > 0 }
+    return if (hasTrackTags) {
+        songsByFileName.sortedWith(
+            compareBy<Pair<Song, String>>(
+                { (song, _) -> song.discNumber.takeIf { discNumber -> discNumber > 0 } ?: 1 },
+                { (song, _) -> if (song.trackNumber > 0) 0 else 1 },
+                { (song, _) -> if (song.trackNumber > 0) song.trackNumber else Int.MAX_VALUE },
+                { (_, normalizedFileName) -> normalizedFileName },
+            ),
+        ).map { (song, _) -> song }
+    } else {
+        songsByFileName.sortedBy { it.second }.map { it.first }
+    }
+}
+
+internal fun Song.qualityNeedsEnrichment(): Boolean {
+    if (audioQuality.isNullOrBlank()) return true
+    val normalizedFormat = audioFormat.uppercase()
+    return when {
+        isLossyFormat(normalizedFormat) -> !audioQuality.contains("/")
+        isLosslessFormat(normalizedFormat) -> !LOSSLESS_QUALITY_REGEX.matches(audioQuality)
+        else -> false
+    }
+}
+
+private fun isLossyFormat(format: String): Boolean {
+    return format in LOSSY_AUDIO_FORMATS
+}
+
+private fun isLosslessFormat(format: String): Boolean {
+    return format in LOSSLESS_AUDIO_FORMATS
+}
+
+internal fun isSupportedAudioExtension(extension: String): Boolean {
+    return extension.lowercase(Locale.ROOT) in AudioFormatPolicy.scannerExtensions
+}
+
+internal fun isSupportedAudioFileName(fileName: String): Boolean {
+    return fileName.substringAfterLast('.', "").let(::isSupportedAudioExtension)
+}
+
+internal fun isSupportedLibrarySong(song: Song): Boolean {
+    if (isSupportedAudioFileName(song.fileName)) return true
+    val normalizedFormat = song.audioFormat.trim().uppercase(Locale.ROOT)
+    return normalizedFormat in SUPPORTED_DETECTED_FORMAT_NAMES
+}
+
+private val SUPPORTED_DETECTED_FORMAT_NAMES = setOf(
+    "MP3",
+    "M4A",
+    "M4B",
+    "MP4 AUDIO",
+    "AAC",
+    "FLAC",
+    "WAV",
+    "OGG",
+    "OGG/VORBIS",
+    "OGG/OPUS",
+    "OGG/FLAC",
+    "OPUS",
+    "AMR",
+    "3GP AUDIO",
+    "MKA",
+)
+
+private const val FILTER_FINGERPRINT_VERSION = 4
+
+private val LOSSY_AUDIO_FORMATS = setOf(
+    "MP3",
+    "AAC",
+    "OGG",
+    "OGG/OPUS",
+    "OPUS",
+    "AMR",
+    "3GP",
+    "3GP AUDIO",
+    "MP4",
+    "MP4 AUDIO",
+    "M4A",
+    "MKA",
+)
+private val LOSSLESS_AUDIO_FORMATS = setOf("FLAC", "WAV")
+private val LOSSLESS_QUALITY_REGEX = Regex("""\d{1,2}/\d{1,3}(?:\.\d)?kHz""")

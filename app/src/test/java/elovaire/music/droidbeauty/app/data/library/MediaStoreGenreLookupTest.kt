@@ -1,0 +1,70 @@
+package elovaire.music.droidbeauty.app.data.library
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class MediaStoreGenreLookupTest {
+    @Test
+    fun genreVolumes_prioritizeTheRowVolumeWithoutRepeatingFallbacks() {
+        val volumes = mediaStoreGenreVolumes("removable")
+
+        assertEquals(listOf("removable"), volumes)
+    }
+
+    @Test
+    fun genreVolumesUseAggregateFallbackOnlyWhenRowVolumeIsUnavailable() {
+        assertEquals(
+            listOf(android.provider.MediaStore.VOLUME_EXTERNAL, android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY),
+            mediaStoreGenreVolumes(null),
+        )
+    }
+
+    @Test
+    fun genreLookup_acceptsOnlyMediaStoreIdsRepresentableByThePlatformApi() {
+        assertTrue(canQueryMediaStoreGenre(1L))
+        assertTrue(canQueryMediaStoreGenre(Int.MAX_VALUE.toLong()))
+        assertFalse(canQueryMediaStoreGenre(0L))
+        assertFalse(canQueryMediaStoreGenre(Int.MAX_VALUE.toLong() + 1L))
+    }
+
+    @Test
+    fun genreFallbackIsNotQueriedWhenMetadataAlreadyResolved() {
+        var fallbackCalls = 0
+
+        val genre = resolveMediaStoreGenre("Rock") {
+            fallbackCalls += 1
+            "Fallback"
+        }
+
+        assertEquals("Rock", genre)
+        assertEquals(0, fallbackCalls)
+    }
+
+    @Test
+    fun genreFallbackIsQueriedWhenMetadataIsMissing() {
+        var fallbackCalls = 0
+
+        val genre = resolveMediaStoreGenre(null) {
+            fallbackCalls += 1
+            "Fallback"
+        }
+
+        assertEquals("Fallback", genre)
+        assertEquals(1, fallbackCalls)
+    }
+
+    @Test
+    fun genreFallbackIsQueriedWhenMetadataIsBlank() {
+        var fallbackCalls = 0
+
+        val genre = resolveMediaStoreGenre("  ") {
+            fallbackCalls += 1
+            "Fallback"
+        }
+
+        assertEquals("Fallback", genre)
+        assertEquals(1, fallbackCalls)
+    }
+}

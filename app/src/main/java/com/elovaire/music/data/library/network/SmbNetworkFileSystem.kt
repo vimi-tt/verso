@@ -1,0 +1,706 @@
+package elovaire.music.droidbeauty.app.data.library.network
+
+import com.hierynomus.msdtyp.AccessMask
+import com.hierynomus.msfscc.FileAttributes
+import com.hierynomus.msfscc.fileinformation.FileIdBothDirectoryInformation
+import com.hierynomus.mssmb2.SMBApiException
+import com.hierynomus.mserref.NtStatus
+import com.hierynomus.mssmb2.SMB2CreateDisposition
+import com.hierynomus.mssmb2.SMB2CreateOptions
+import com.hierynomus.mssmb2.SMB2ShareAccess
+import com.hierynomus.smbj.SMBClient
+import com.hierynomus.smbj.SmbConfig
+import com.hierynomus.smbj.auth.AuthenticationContext
+import com.hierynomus.smbj.share.DiskShare
+import java.io.IOException
+import java.io.InputStream
+import java.io.File
+import java.security.MessageDigest
+import java.util.EnumSet
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceKind
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceRegistry
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceTracker
+import elovaire.music.droidbeauty.app.core.AndroidAppClock
+import elovaire.music.droidbeauty.app.core.AppClock
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+internal class SmbNetworkFileSystem(
+    private val scope: CoroutineScope,
+    private val clock: AppClock = AndroidAppClock,
+    private val resourceTracker: BackendResourceTracker = BackendResourceRegistry,
+) : NetworkFileSystem {
+    private val sessionMapLock = Any()
+    private val sessions = mutableMapOf<String, SourceSession>()
+    private val released = AtomicBoolean(false)
+
+    override fun probeBlocking(
+        source: NetworkLibrarySource,
+        credentials: NetworkCredentials,
+    ): NetworkProbeResult {
+        checkNotReleased()
+        return networkProbeResult(
+            attempt = {
+                val exists = withShare(source, credentials) { share -> share.folderExists(smbPath(source)) }
+                smbFolderProbeResult(exists)
+            },
+            onFailure = { failure ->
+                val remoteFailure = failure.asRemoteIoFailure()
+                NetworkProbeResult(
+                    availability = remoteFailure.kind.toNetworkAvailability(),
+                    message = remoteFailure::class.simpleName,
+                )
+            },
+        )
+    }
+
+    override fun listBlocking(
+        source: NetworkLibrarySource,
+        credentials: NetworkCredentials,
+        maxEntries: Int,
+        maxDepth: Int,
+    ): NetworkListingResult = withShare(source, credentials) { share ->
+        require(maxEntries > 0)
+        val entries = ArrayList<NetworkFileEntry>()
+        val pending = ArrayDeque<Pair<String, Int>>()
+        val visitedDirectories = HashSet<String>()
+        val rootPath = smbPath(source)
+        pending.addLast(rootPath to 0)
+        var directoryCount = 0
+        var incompleteReason: String? = null
+        while (pending.isNotEmpty() && entries.size < maxEntries) {
+            val (directory, depth) = pending.removeFirst()
+            if (!visitedDirectories.add(directory)) continue
+            if (++directoryCount > MAX_DIRECTORY_COUNT) {
+                incompleteReason = "directory-budget"
+                break
+            }
+            share.openDirectory(
+                directory,
+                EnumSet.of(AccessMask.FILE_LIST_DIRECTORY, AccessMask.FILE_READ_ATTRIBUTES, AccessMask.FILE_READ_EA),
+                null,
+                SMB2ShareAccess.ALL,
+                SMB2CreateDisposition.FILE_OPEN,
+                null,
+            ).use { openedDirectory ->
+                consumeWhile(
+                    iterator = openedDirectory.iterator(FileIdBothDirectoryInformation::class.java),
+                    shouldContinue = { entries.size < maxEntries },
+                ) { item ->
+                    val name = item.fileName ?: return@consumeWhile
+                    if (name == "." || name == "..") return@consumeWhile
+                    if (name.contains('/') || name.contains('\\') || name.contains('\u0000')) return@consumeWhile
+                    val fullPath = NetworkPathPolicy.join(directory, name)
+                    val directoryEntry = item.isDirectory()
+                    val entry = NetworkFileEntry(
+                        path = fullPath.removeRootPath(rootPath),
+                        isDirectory = directoryEntry,
+                        sizeBytes = item.endOfFile.takeIf { it >= 0L },
+                        modifiedAtMs = item.lastWriteTime?.toEpochMillis(),
+                        sourceEntryId = item.fileId.takeIf { it != 0L }?.toString(),
+                    )
+                    entries += entry
+                    val isReparsePoint = item.fileAttributes and FileAttributes.FILE_ATTRIBUTE_REPARSE_POINT.value != 0L
+                    if (directoryEntry && !isReparsePoint) {
+                        if (depth < maxDepth) {
+                            pending.addLast(fullPath to depth + 1)
+                        } else {
+                            incompleteReason = incompleteReason ?: "depth-budget"
+                        }
+                    }
+                }
+            }
+            if (entries.size >= maxEntries) incompleteReason = incompleteReason ?: "entry-budget"
+        }
+        if (entries.size >= maxEntries) incompleteReason = incompleteReason ?: "entry-budget"
+        incompleteReason?.let { NetworkListingResult.Incomplete(entries, it) }
+            ?: NetworkListingResult.Complete(entries)
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    override fun openBlocking(
+        source: NetworkLibrarySource,
+        credentials: NetworkCredentials,
+        path: String,
+        position: Long,
+        length: Long,
+    ): NetworkReadHandle {
+        checkNotReleased()
+        require(position >= 0L)
+        require(length == -1L || length >= 0L)
+        val relativePath = NetworkPathPolicy.validateRelativePath(path)
+            ?: throw IOException("Invalid SMB media path")
+        if (length == 0L) return NetworkReadHandle.empty()
+        val session = sessionFor(source, credentials)
+        val lease = session.acquire(credentials)
+        var file: com.hierynomus.smbj.share.File? = null
+        return try {
+            val openedFile = lease.share.openFile(
+                NetworkPathPolicy.join(smbPath(source), relativePath),
+                EnumSet.of(AccessMask.FILE_READ_DATA),
+                EnumSet.of(FileAttributes.FILE_ATTRIBUTE_NORMAL),
+                EnumSet.of(SMB2ShareAccess.FILE_SHARE_READ),
+                SMB2CreateDisposition.FILE_OPEN,
+                EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE),
+            )
+            file = openedFile
+            val totalLength = openedFile.getFileInformation(
+                com.hierynomus.msfscc.fileinformation.FileStandardInformation::class.java,
+            ).endOfFile
+            val range = resolveNetworkRange(totalLength, position, length)
+            val start = position
+            NetworkReadHandle(
+                input = SmbRangeInputStream(
+                    file = openedFile,
+                    start = start,
+                    requestedLength = range.exposedLength,
+                    totalLength = totalLength,
+                    onReadFailure = { failure ->
+                        if (failure.shouldInvalidateSession()) session.invalidate()
+                        failure.asRemoteIoFailure()
+                    },
+                ),
+                length = range.exposedLength,
+                closeHandle = {
+                    runCatching { openedFile.close() }
+                    lease.close()
+                },
+            )
+        } catch (failure: Throwable) {
+            runCatching { file?.close() }
+            lease.close()
+            if (failure.shouldInvalidateSession()) session.invalidate()
+            throw failure.asRemoteIoFailure()
+        } finally {
+            if (file == null) {
+                lease.close()
+            }
+        }
+    }
+
+    override fun replaceBlocking(
+        source: NetworkLibrarySource,
+        credentials: NetworkCredentials,
+        path: String,
+        expectedOriginal: File,
+        replacement: File,
+        operationId: String,
+        recordTemporary: (String) -> Unit,
+        resolveTemporary: () -> Unit,
+        onCommitStarting: () -> Unit,
+    ) = withShare(source, credentials) { share ->
+        SmbConditionalWriter(SmbStore(share, smbPath(source))).replace(path, expectedOriginal, replacement,
+            operationId, recordTemporary, resolveTemporary, onCommitStarting)
+    }
+
+    override fun cleanupTemporaryBlocking(
+        source: NetworkLibrarySource,
+        credentials: NetworkCredentials,
+        targetPath: String,
+        temporaryPath: String,
+        operationId: String,
+        expectedFiles: List<File>,
+        onDeleteStarting: () -> Unit,
+    ) = withShare(source, credentials) { share ->
+        SmbConditionalWriter(SmbStore(share, smbPath(source))).cleanup(targetPath, temporaryPath,
+            operationId, expectedFiles, onDeleteStarting)
+    }
+
+    private class SmbStore(private val share: DiskShare, private val root: String) : SmbEditStore {
+        override fun create(path: String): SmbEditHandle? = openFile(path, create = true)
+        override fun open(path: String): SmbEditHandle? = openFile(path, create = false)
+
+        private fun openFile(path: String, create: Boolean): SmbEditHandle? {
+            val access = EnumSet.of(AccessMask.FILE_READ_DATA, AccessMask.FILE_READ_ATTRIBUTES, AccessMask.DELETE)
+            if (create) access.add(AccessMask.FILE_WRITE_DATA)
+            val file = try {
+                share.openFile(
+                    NetworkPathPolicy.join(root, path), access,
+                    EnumSet.of(FileAttributes.FILE_ATTRIBUTE_NORMAL), EnumSet.noneOf(SMB2ShareAccess::class.java),
+                    if (create) SMB2CreateDisposition.FILE_CREATE else SMB2CreateDisposition.FILE_OPEN,
+                    EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE),
+                )
+            } catch (failure: SMBApiException) {
+                if ((create && failure.status == NtStatus.STATUS_OBJECT_NAME_COLLISION) ||
+                    (!create && failure.status in setOf(NtStatus.STATUS_OBJECT_NAME_NOT_FOUND,
+                        NtStatus.STATUS_OBJECT_PATH_NOT_FOUND, NtStatus.STATUS_NO_SUCH_FILE))
+                ) return null
+                throw failure
+            }
+            return object : SmbEditHandle {
+                override fun input(): InputStream {
+                    val length = file.length
+                    if (length < 0L) throw IOException("Invalid SMB file length")
+                    return object : InputStream() {
+                        private var position = 0L
+                        override fun read(): Int {
+                            val one = ByteArray(1)
+                            return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xff
+                        }
+                        override fun read(buffer: ByteArray, offset: Int, count: Int): Int {
+                            if (offset < 0 || count < 0 || count > buffer.size - offset) throw IndexOutOfBoundsException()
+                            if (count == 0) return 0
+                            val remaining = length - position
+                            if (remaining == 0L) return -1
+                            val read = file.read(buffer, position, offset, minOf(count.toLong(), remaining).toInt())
+                            if (read > 0) position += read
+                            return read
+                        }
+                    }
+                }
+                override fun output() = file.outputStream
+                override fun flush() = file.flush()
+                override fun rename(path: String) = file.rename(NetworkPathPolicy.join(root, path).replace('/', '\\'), false)
+                override fun deleteOnClose() = file.deleteOnClose()
+                override fun close() = file.close()
+            }
+        }
+    }
+
+    override fun invalidate(sourceId: String) {
+        val session = synchronized(sessionMapLock) { sessions.remove(sourceId) }
+        session?.invalidate()
+    }
+
+    override fun invalidateAll() {
+        val activeSessions = synchronized(sessionMapLock) {
+            sessions.values.toList().also { sessions.clear() }
+        }
+        activeSessions.forEach(SourceSession::invalidate)
+    }
+
+    override fun release() {
+        if (!released.compareAndSet(false, true)) return
+        val activeSessions = synchronized(sessionMapLock) {
+            sessions.values.toList().also { sessions.clear() }
+        }
+        activeSessions.forEach(SourceSession::release)
+    }
+
+    private fun checkNotReleased() {
+        check(!released.get()) { "SMB file system is released" }
+    }
+
+    private fun smbPath(source: NetworkLibrarySource): String {
+        return NetworkPathPolicy.smbShareAndPath(source.shareOrPath)?.second.orEmpty()
+    }
+
+    private fun String.removeRootPath(rootPath: String): String {
+        if (rootPath.isBlank()) return this
+        return removePrefix(rootPath).trimStart('/').ifBlank { this }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun <T> withShare(
+        source: NetworkLibrarySource,
+        credentials: NetworkCredentials,
+        block: (DiskShare) -> T,
+    ): T {
+        checkNotReleased()
+        val session = sessionFor(source, credentials)
+        val lease = session.acquire(credentials)
+        return try {
+            block(lease.share)
+        } catch (failure: Throwable) {
+            if (failure.shouldInvalidateSession()) session.invalidate()
+            throw failure.asRemoteIoFailure()
+        } finally {
+            lease.close()
+        }
+    }
+
+    private fun sessionFor(
+        source: NetworkLibrarySource,
+        credentials: NetworkCredentials,
+    ): SourceSession {
+        val key = SessionKey(
+            sourceKey = source.id,
+            server = source.server,
+            shareOrPath = source.shareOrPath,
+            username = credentials.username,
+            domain = credentials.domain,
+            passwordFingerprint = credentials.password.fingerprint(),
+        )
+        val staleSessions = mutableListOf<SourceSession>()
+        val selected = synchronized(sessionMapLock) {
+            check(!released.get()) { "SMB file system is released" }
+            sessions.values.filterTo(staleSessions) { it.isIdle(clock.elapsedTimeMs()) }
+            staleSessions.forEach { session -> sessions.remove(session.key.sourceKey, session) }
+            val current = sessions[source.id]
+            if (current != null && current.key == key && current.isUsable()) {
+                current
+            } else {
+                current?.let(staleSessions::add)
+                SourceSession(key, source).also { sessions[source.id] = it }
+            }
+        }
+        staleSessions.distinct().forEach(SourceSession::invalidate)
+        return selected
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun createSessionResources(
+        source: NetworkLibrarySource,
+        credentials: NetworkCredentials,
+    ): SessionResources {
+        val host = NetworkPathPolicy.smbServer(source.server) ?: throw IOException("SMB server is invalid")
+        val shareName = NetworkPathPolicy.smbShareAndPath(source.shareOrPath)?.first
+            ?: throw IOException("SMB share is missing")
+        val client = SMBClient(SMB_CONFIG)
+        var connection: com.hierynomus.smbj.connection.Connection? = null
+        var session: com.hierynomus.smbj.session.Session? = null
+        var share: DiskShare? = null
+        return try {
+            connection = client.connect(host, NetworkPathPolicy.smbPort(source.server))
+            session = connection.authenticate(
+                AuthenticationContext(
+                    credentials.username,
+                    credentials.password.toCharArray(),
+                    credentials.domain,
+                ),
+            )
+            share = session.connectShare(shareName) as? DiskShare
+                ?: throw IOException("SMB share is not a disk share")
+            SessionResources(client, connection, session, share, resourceTracker)
+        } catch (failure: Exception) {
+            listOf(share, session, connection, client)
+                .forEach { resource -> resource?.let { runCatching { it.close() } } }
+            throw failure
+        }
+    }
+
+    private inner class SourceSession(
+        val key: SessionKey,
+        private val source: NetworkLibrarySource,
+    ) {
+        private val lock = Any()
+        private var resources: SessionResources? = null
+        private var connecting: CompletableFuture<SessionResources>? = null
+        private var activeLeases = 0
+        private var lastUsedElapsedMs = clock.elapsedTimeMs()
+        private var invalidated = false
+        private var idleCloseJob: Job? = null
+
+        fun isUsable(): Boolean = synchronized(lock) {
+            !invalidated && (resources == null || resources?.share?.isConnected == true)
+        }
+
+        fun isIdle(nowElapsedMs: Long): Boolean = synchronized(lock) {
+            activeLeases == 0 && nowElapsedMs - lastUsedElapsedMs >= SESSION_IDLE_TIMEOUT_MS
+        }
+
+        @Suppress("TooGenericExceptionCaught")
+        fun acquire(credentials: NetworkCredentials): SessionLease {
+            val connectFuture: CompletableFuture<SessionResources>
+            val ownsConnect: Boolean
+            synchronized(lock) {
+                check(!invalidated) { "SMB session is invalidated" }
+                val currentResources = resources
+                if (currentResources?.share?.isConnected == true) {
+                    idleCloseJob?.cancel()
+                    idleCloseJob = null
+                    activeLeases += 1
+                    lastUsedElapsedMs = clock.elapsedTimeMs()
+                    return SessionLease(currentResources.share, ::releaseLease)
+                }
+                val existingConnect = connecting
+                if (existingConnect != null) {
+                    connectFuture = existingConnect
+                    ownsConnect = false
+                } else {
+                    connectFuture = CompletableFuture()
+                    connecting = connectFuture
+                    ownsConnect = true
+                }
+            }
+
+            if (ownsConnect) {
+                try {
+                    val created = createSessionResources(source, credentials)
+                    val rejected = synchronized(lock) {
+                        if (connecting === connectFuture) connecting = null
+                        if (invalidated) {
+                            connectFuture.completeExceptionally(IOException("SMB session was invalidated"))
+                            true
+                        } else {
+                            resources = created
+                            connectFuture.complete(created)
+                            false
+                        }
+                    }
+                    if (rejected) created.close()
+                } catch (failure: Throwable) {
+                    synchronized(lock) {
+                        if (connecting === connectFuture) connecting = null
+                        connectFuture.completeExceptionally(failure)
+                    }
+                    throw failure
+                }
+            }
+
+            val resolved = try {
+                connectFuture.get()
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw IOException("SMB session acquisition interrupted", interrupted)
+            } catch (failure: ExecutionException) {
+                throw (failure.cause ?: failure)
+            }
+            synchronized(lock) {
+                check(!invalidated) { "SMB session is invalidated" }
+                check(resources === resolved && resolved.share.isConnected) { "SMB session is unavailable" }
+                idleCloseJob?.cancel()
+                idleCloseJob = null
+                activeLeases += 1
+                lastUsedElapsedMs = clock.elapsedTimeMs()
+                return SessionLease(resolved.share, ::releaseLease)
+            }
+        }
+
+        fun invalidate() {
+            val closing = synchronized(lock) {
+                invalidated = true
+                connecting?.completeExceptionally(IOException("SMB session was invalidated"))
+                connecting = null
+                if (activeLeases == 0) detachResourcesLocked() else null
+            }
+            closing?.close()
+        }
+
+        fun release() {
+            val closing = synchronized(lock) {
+                invalidated = true
+                connecting?.completeExceptionally(IOException("SMB session was released"))
+                connecting = null
+                detachResourcesLocked()
+            }
+            closing?.close()
+        }
+
+        private fun releaseLease() {
+            val closing = synchronized(lock) {
+                activeLeases = (activeLeases - 1).coerceAtLeast(0)
+                lastUsedElapsedMs = clock.elapsedTimeMs()
+                if (activeLeases == 0) {
+                    if (invalidated) {
+                        detachResourcesLocked()
+                    } else {
+                        scheduleIdleCloseLocked()
+                        null
+                    }
+                } else null
+            }
+            closing?.close()
+        }
+
+        private fun scheduleIdleCloseLocked() {
+            idleCloseJob?.cancel()
+            idleCloseJob = scope.launch(Dispatchers.IO) {
+                delay(SESSION_IDLE_TIMEOUT_MS)
+                val closing = synchronized(lock) {
+                    if (
+                        activeLeases == 0 &&
+                        !invalidated &&
+                        clock.elapsedTimeMs() - lastUsedElapsedMs >= SESSION_IDLE_TIMEOUT_MS
+                    ) {
+                        invalidated = true
+                        detachResourcesLocked()
+                    } else {
+                        idleCloseJob = null
+                        null
+                    }
+                }
+                closing?.close()
+            }
+        }
+
+        private fun detachResourcesLocked(): SessionResources? {
+            idleCloseJob?.cancel()
+            idleCloseJob = null
+            return resources.also { resources = null }
+        }
+    }
+
+    private class SessionLease(
+        val share: DiskShare,
+        private val onClose: () -> Unit,
+    ) : AutoCloseable {
+        private val closed = AtomicBoolean(false)
+
+        override fun close() {
+            if (closed.compareAndSet(false, true)) onClose()
+        }
+    }
+
+    private data class SessionResources(
+        val client: SMBClient,
+        val connection: com.hierynomus.smbj.connection.Connection,
+        val session: com.hierynomus.smbj.session.Session,
+        val share: DiskShare,
+        private val resourceTracker: BackendResourceTracker,
+    ) : AutoCloseable {
+        private val resource = resourceTracker.acquire(BackendResourceKind.ActiveSmbSession)
+
+        override fun close() {
+            try {
+                listOf(share, session, connection, client)
+                    .forEach { resource -> runCatching { resource.close() } }
+            } finally {
+                resource.close()
+            }
+        }
+    }
+
+    private data class SessionKey(
+        val sourceKey: String,
+        val server: String,
+        val shareOrPath: String,
+        val username: String,
+        val domain: String?,
+        val passwordFingerprint: String,
+    )
+
+    private fun String.fingerprint(): String = MessageDigest.getInstance("SHA-256")
+        .digest(toByteArray(Charsets.UTF_8))
+        .joinToString("") { byte -> "%02x".format(byte) }
+
+    private fun Throwable.asRemoteIoFailure(): NetworkRemoteIoException {
+        if (this is CancellationException || this !is Exception) throw this
+        if (this is NetworkRemoteIoException) return this
+        val kind = when (this) {
+            is SMBApiException -> when (getStatus()) {
+                NtStatus.STATUS_LOGON_FAILURE,
+                NtStatus.STATUS_PASSWORD_EXPIRED,
+                NtStatus.STATUS_ACCOUNT_DISABLED,
+                -> RemoteIoFailureKind.Authentication
+                NtStatus.STATUS_ACCESS_DENIED,
+                NtStatus.STATUS_PRIVILEGE_NOT_HELD,
+                NtStatus.STATUS_LOGON_TYPE_NOT_GRANTED,
+                -> RemoteIoFailureKind.Permission
+                NtStatus.STATUS_BAD_NETWORK_NAME -> RemoteIoFailureKind.ShareMissing
+                NtStatus.STATUS_OBJECT_NAME_NOT_FOUND,
+                NtStatus.STATUS_OBJECT_PATH_NOT_FOUND,
+                NtStatus.STATUS_NO_SUCH_FILE,
+                NtStatus.STATUS_NOT_FOUND,
+                NtStatus.STATUS_FILE_DELETED,
+                -> RemoteIoFailureKind.PathMissing
+                NtStatus.STATUS_TIMEOUT,
+                NtStatus.STATUS_IO_TIMEOUT,
+                -> RemoteIoFailureKind.Timeout
+                NtStatus.STATUS_CONNECTION_DISCONNECTED,
+                NtStatus.STATUS_CONNECTION_RESET,
+                NtStatus.STATUS_NETWORK_NAME_DELETED,
+                -> RemoteIoFailureKind.ConnectionReset
+                NtStatus.STATUS_NETWORK_SESSION_EXPIRED,
+                NtStatus.STATUS_USER_SESSION_DELETED,
+                -> RemoteIoFailureKind.SessionInvalid
+                NtStatus.STATUS_BAD_NETWORK_PATH -> RemoteIoFailureKind.HostUnreachable
+                NtStatus.STATUS_NOT_SUPPORTED,
+                NtStatus.STATUS_NOT_IMPLEMENTED,
+                NtStatus.STATUS_INVALID_PARAMETER,
+                -> RemoteIoFailureKind.Protocol
+                NtStatus.STATUS_RETRY,
+                NtStatus.STATUS_REQUEST_NOT_ACCEPTED,
+                -> RemoteIoFailureKind.TransientServer
+                else -> RemoteIoFailureKind.Unknown
+            }
+            else -> remoteIoFailureKind()
+        }
+        return NetworkRemoteIoException(kind, "SMB operation failed", this)
+    }
+
+    private fun Throwable.shouldInvalidateSession(): Boolean {
+        val kind = when (this) {
+            is SMBApiException -> when (getStatus()) {
+                NtStatus.STATUS_TIMEOUT,
+                NtStatus.STATUS_IO_TIMEOUT,
+                NtStatus.STATUS_CONNECTION_DISCONNECTED,
+                NtStatus.STATUS_CONNECTION_RESET,
+                NtStatus.STATUS_NETWORK_NAME_DELETED,
+                NtStatus.STATUS_NETWORK_SESSION_EXPIRED,
+                NtStatus.STATUS_USER_SESSION_DELETED,
+                -> RemoteIoFailureKind.ConnectionReset
+                else -> RemoteIoFailureKind.Unknown
+            }
+            else -> remoteIoFailureKind()
+        }
+        return kind in setOf(
+            RemoteIoFailureKind.HostUnreachable,
+            RemoteIoFailureKind.Timeout,
+            RemoteIoFailureKind.ConnectionReset,
+            RemoteIoFailureKind.SessionInvalid,
+        )
+    }
+
+    private fun FileIdBothDirectoryInformation.isDirectory(): Boolean {
+        return fileAttributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value != 0L
+    }
+
+    private inner class SmbRangeInputStream(
+        private val file: com.hierynomus.smbj.share.File,
+        private val start: Long,
+        private val requestedLength: Long?,
+        private val totalLength: Long,
+        private val onReadFailure: (Throwable) -> Throwable,
+    ) : InputStream() {
+        private var position = 0L
+
+        override fun read(): Int {
+            val one = ByteArray(1)
+            return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xff
+        }
+
+        @Suppress("TooGenericExceptionCaught")
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (offset < 0 || length < 0 || length > buffer.size - offset) {
+                throw IndexOutOfBoundsException()
+            }
+            if (length == 0) return 0
+            val remaining = requestedLength?.minus(position)?.coerceAtLeast(0L)
+                ?: (totalLength - start - position).coerceAtLeast(0L)
+            if (remaining == 0L) return -1
+            val count = try {
+                file.read(buffer, start + position, offset, minOf(length.toLong(), remaining).toInt())
+            } catch (failure: IOException) {
+                throw onReadFailure(failure)
+            } catch (failure: RuntimeException) {
+                throw onReadFailure(failure)
+            }
+            if (count == 0) {
+                throw onReadFailure(IOException("SMB read returned no data for a non-empty request"))
+            }
+            if (count > 0) position += count
+            return count
+        }
+
+        override fun close() = Unit
+    }
+
+    private companion object {
+        val SMB_CONFIG = SmbConfig.builder()
+            .withDialects(
+                com.hierynomus.mssmb2.SMB2Dialect.SMB_2_0_2,
+                com.hierynomus.mssmb2.SMB2Dialect.SMB_2_1,
+                com.hierynomus.mssmb2.SMB2Dialect.SMB_3_0,
+                com.hierynomus.mssmb2.SMB2Dialect.SMB_3_0_2,
+                com.hierynomus.mssmb2.SMB2Dialect.SMB_3_1_1,
+            )
+            .withTimeout(12, TimeUnit.SECONDS)
+            .withSoTimeout(12, TimeUnit.SECONDS)
+            .build()
+        const val SESSION_IDLE_TIMEOUT_MS = 60_000L
+        const val MAX_DIRECTORY_COUNT = 25_000
+    }
+}
+
+internal fun smbFolderProbeResult(exists: Boolean): NetworkProbeResult =
+    if (exists) NetworkProbeResult(NetworkAvailability.Available)
+    else NetworkProbeResult(NetworkAvailability.Unavailable, "PathMissing")

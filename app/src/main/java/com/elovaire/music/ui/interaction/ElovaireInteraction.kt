@@ -1,0 +1,205 @@
+package elovaire.music.droidbeauty.app.ui.interaction
+
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.Role
+import elovaire.music.droidbeauty.app.ui.motion.MotionScale
+import elovaire.music.droidbeauty.app.ui.motion.elovairePressScaleMotion
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
+
+enum class ElovaireInteractionRole {
+    ChromeAction,
+    CompactAction,
+    MediaAction,
+    PrimaryAction,
+    SelectionAction,
+    ToggleAction,
+    DestructiveAction,
+}
+
+@Immutable
+data class ElovaireInteractionSpecs(
+    val chromePressScale: Float = MotionScale.ChromePressed,
+    val compactPressScale: Float = MotionScale.CompactPressed,
+    val mediaPressScale: Float = MotionScale.MediaPressed,
+    val primaryPressScale: Float = MotionScale.PrimaryPressed,
+    val selectionPressScale: Float = MotionScale.SelectionPressed,
+    val togglePressScale: Float = MotionScale.TogglePressed,
+    val destructivePressScale: Float = MotionScale.DestructivePressed,
+) {
+    fun pressedScale(role: ElovaireInteractionRole): Float = when (role) {
+        ElovaireInteractionRole.ChromeAction -> chromePressScale
+        ElovaireInteractionRole.CompactAction -> compactPressScale
+        ElovaireInteractionRole.MediaAction -> mediaPressScale
+        ElovaireInteractionRole.PrimaryAction -> primaryPressScale
+        ElovaireInteractionRole.SelectionAction -> selectionPressScale
+        ElovaireInteractionRole.ToggleAction -> togglePressScale
+        ElovaireInteractionRole.DestructiveAction -> destructivePressScale
+    }
+}
+
+object ElovaireInteraction {
+    val specs = ElovaireInteractionSpecs()
+}
+
+@Composable
+fun Modifier.elovaireClickable(
+    enabled: Boolean = true,
+    interactionSource: MutableInteractionSource? = null,
+    onClickLabel: String? = null,
+    role: Role? = null,
+    onClick: () -> Unit,
+): Modifier {
+    val source = interactionSource ?: rememberElovaireInteractionSource()
+    return elovairePressScale(
+        enabled = enabled,
+        pressedScale = MotionScale.SelectionPressed,
+        interactionSource = source,
+    ).clickable(
+        enabled = enabled,
+        interactionSource = source,
+        indication = null,
+        onClickLabel = onClickLabel,
+        role = role,
+        onClick = onClick,
+    )
+}
+
+@Composable
+fun Modifier.elovaireCombinedClickable(
+    interactionSource: MutableInteractionSource? = null,
+    enabled: Boolean = true,
+    onClickLabel: String? = null,
+    role: Role? = null,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+): Modifier {
+    val source = interactionSource ?: rememberElovaireInteractionSource()
+    return elovairePressScale(
+        enabled = enabled,
+        pressedScale = MotionScale.SelectionPressed,
+        interactionSource = source,
+    ).combinedClickable(
+        enabled = enabled,
+        interactionSource = source,
+        indication = null,
+        onClickLabel = onClickLabel,
+        role = role,
+        onLongClick = onLongClick,
+        onClick = onClick,
+    )
+}
+
+internal fun pillActionTargetScale(
+    pressed: Boolean,
+    confirmation: Boolean,
+    pressedScale: Float,
+    confirmationScale: Float,
+): Float = when {
+    pressed -> pressedScale
+    confirmation -> confirmationScale
+    else -> 1f
+}
+
+/** Shared press/release response for discrete pill and circular actions. */
+fun Modifier.elovaireActionBump(
+    enabled: Boolean = true,
+    pressedScale: Float = ElovaireInteraction.specs.pressedScale(
+        ElovaireInteractionRole.CompactAction,
+    ),
+    interactionSource: MutableInteractionSource? = null,
+    label: String = "elovaireActionBump",
+): Modifier = if (!enabled) this else elovairePillActionMotion(
+        pressedScale = pressedScale,
+        interactionSource = interactionSource,
+        label = label,
+    )
+
+/**
+ * Canonical tactile response for interactive capsules and compact discrete actions.
+ * The transform is draw-only, so the visual response never changes the hit target or layout.
+ */
+fun Modifier.elovairePillActionMotion(
+    enabled: Boolean = true,
+    pressedScale: Float = ElovaireInteraction.specs.pressedScale(
+        ElovaireInteractionRole.CompactAction,
+    ),
+    confirmation: Boolean = false,
+    confirmationScale: Float = 1.035f,
+    interactionSource: MutableInteractionSource? = null,
+    label: String = "elovairePillActionMotion",
+): Modifier = composed {
+    if (!enabled) return@composed this
+    val motionSpecs = rememberMotionSpecs()
+    val resolvedInteractionSource = interactionSource ?: rememberElovaireInteractionSource()
+    val pressed by resolvedInteractionSource.collectIsPressedAsState()
+    val scale = animateFloatAsState(
+        targetValue = pillActionTargetScale(
+            pressed = pressed,
+            confirmation = confirmation,
+            pressedScale = pressedScale,
+            confirmationScale = confirmationScale,
+        ),
+        animationSpec = if (pressed) motionSpecs.pressDown() else motionSpecs.mediaRelease(),
+        label = label,
+    )
+    graphicsLayer {
+        scaleX = scale.value
+        scaleY = scale.value
+    }
+}
+
+@Composable
+fun rememberElovaireInteractionSource(): MutableInteractionSource {
+    return remember { MutableInteractionSource() }
+}
+
+fun Modifier.elovairePressScale(
+    enabled: Boolean = true,
+    pressedScale: Float = ElovaireInteraction.specs.chromePressScale,
+    animationSpec: FiniteAnimationSpec<Float>? = null,
+    interactionSource: MutableInteractionSource? = null,
+    label: String = "elovairePressScale",
+): Modifier = composed {
+    if (!enabled) return@composed this
+    val motionSpecs = rememberMotionSpecs()
+    val resolvedInteractionSource = interactionSource ?: rememberElovaireInteractionSource()
+    val pressed by resolvedInteractionSource.collectIsPressedAsState()
+    elovairePressScaleMotion(
+        pressed = pressed,
+        pressedScale = pressedScale,
+        pressSpec = motionSpecs.pressDown(),
+        releaseSpec = animationSpec ?: motionSpecs.chromeRelease(),
+        label = label,
+    )
+}
+
+fun Modifier.consumePointersWithoutSemantics(): Modifier {
+    return clearAndSetSemantics {}
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Final)
+                    event.changes.forEach { change ->
+                        if (!change.isConsumed) {
+                            change.consume()
+                        }
+                    }
+                }
+            }
+        }
+}

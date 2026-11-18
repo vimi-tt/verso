@@ -1,0 +1,245 @@
+package elovaire.music.droidbeauty.app.data.library.network
+
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import elovaire.music.droidbeauty.app.core.backend.BackendFailureDisposition
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class NetworkSourceMutationRuntimeTest {
+    @Test
+    fun canceledBeforeStartDoesNotRetainSourceSlots() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val runtime = NetworkSourceMutationRuntime(
+            scope = this,
+            coordinator = object : NetworkSourceMutationBackend {
+                override suspend fun save(source: NetworkLibrarySource, credentials: NetworkCredentials) =
+                    NetworkSourceMutationOutcome(NetworkProbeResult(NetworkAvailability.Available), false)
+                override suspend fun remove(source: NetworkLibrarySource) = Unit
+            },
+            onResult = {},
+            ioDispatcher = dispatcher,
+        )
+        repeat(20) {
+            runtime.save(source(), NetworkCredentials("user", "password"))
+        }
+        advanceUntilIdle()
+        val slots = NetworkSourceMutationRuntime::class.java.getDeclaredField("sourceSlots").apply { isAccessible = true }
+        assertEquals(0, (slots.get(runtime) as Map<*, *>).size)
+        runtime.release()
+    }
+
+    @Test
+    fun saveEmitsOneTypedCurrentGenerationOutcome() = runTest {
+        val source = source()
+        val results = mutableListOf<NetworkSourceMutationResult>()
+        val runtime = NetworkSourceMutationRuntime(
+            scope = this,
+            coordinator = object : NetworkSourceMutationBackend {
+                override suspend fun save(
+                    source: NetworkLibrarySource,
+                    credentials: NetworkCredentials,
+                ) = NetworkSourceMutationOutcome(
+                    probeResult = NetworkProbeResult(NetworkAvailability.Available),
+                    refreshRequired = true,
+                )
+
+                override suspend fun remove(source: NetworkLibrarySource) = Unit
+            },
+            onResult = results::add,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        runtime.save(source, NetworkCredentials("user", "password"))
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(
+                NetworkSourceMutationResult.Checking(source.id),
+                NetworkSourceMutationResult.Saved(
+                    sourceId = source.id,
+                    probeResult = NetworkProbeResult(NetworkAvailability.Available),
+                    refreshRequired = true,
+                ),
+            ),
+            results,
+        )
+        runtime.release()
+    }
+
+    @Test
+    fun failedMutationPreservesFailureOutcomeWithoutPublishingAChange() = runTest {
+        val source = source()
+        val results = mutableListOf<NetworkSourceMutationResult>()
+        val runtime = NetworkSourceMutationRuntime(
+            scope = this,
+            coordinator = object : NetworkSourceMutationBackend {
+                override suspend fun save(
+                    source: NetworkLibrarySource,
+                    credentials: NetworkCredentials,
+                ): NetworkSourceMutationOutcome = error("not available")
+
+                override suspend fun remove(source: NetworkLibrarySource) = Unit
+            },
+            onResult = results::add,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        runtime.save(source, NetworkCredentials("user", "password"))
+        advanceUntilIdle()
+
+        assertEquals(source.id, results.first().sourceId)
+        assertEquals(NetworkSourceMutationResult.Checking(source.id), results.first())
+        val failure = results.last() as NetworkSourceMutationResult.Failed
+        assertEquals(source.id, failure.sourceId)
+        assertEquals("IllegalStateException", failure.failureType)
+        assertEquals(BackendFailureDisposition.InvariantViolation, failure.disposition)
+        assertEquals("not available", failure.failure?.cause?.message)
+        runtime.release()
+    }
+
+    @Test
+    fun remoteFailureRetainsRetryDisposition() = runTest {
+        val source = source()
+        val results = mutableListOf<NetworkSourceMutationResult>()
+        val runtime = NetworkSourceMutationRuntime(
+            scope = this,
+            coordinator = object : NetworkSourceMutationBackend {
+                override suspend fun save(
+                    source: NetworkLibrarySource,
+                    credentials: NetworkCredentials,
+                ): NetworkSourceMutationOutcome = throw NetworkRemoteIoException(
+                    kind = RemoteIoFailureKind.Timeout,
+                    message = "temporary timeout",
+                )
+
+                override suspend fun remove(source: NetworkLibrarySource) = Unit
+            },
+            onResult = results::add,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        runtime.save(source, NetworkCredentials("user", "password"))
+        advanceUntilIdle()
+
+        val failure = results.last() as NetworkSourceMutationResult.Failed
+        assertEquals(BackendFailureDisposition.RetryableTransient, failure.disposition)
+        runtime.release()
+    }
+
+    @Test
+    fun newerMutationSuppressesOlderTypedOutcome() = runTest {
+        val source = source()
+        val first = CompletableDeferred<NetworkSourceMutationOutcome>()
+        val second = CompletableDeferred<NetworkSourceMutationOutcome>()
+        val results = mutableListOf<NetworkSourceMutationResult>()
+        var saveCount = 0
+        val runtime = NetworkSourceMutationRuntime(
+            scope = this,
+            coordinator = object : NetworkSourceMutationBackend {
+                override suspend fun save(
+                    source: NetworkLibrarySource,
+                    credentials: NetworkCredentials,
+                ): NetworkSourceMutationOutcome {
+                    return if (saveCount++ == 0) first.await() else second.await()
+                }
+
+                override suspend fun remove(source: NetworkLibrarySource) = Unit
+            },
+            onResult = results::add,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        runtime.save(source, NetworkCredentials("user-a", "password"))
+        advanceUntilIdle()
+        runtime.save(source, NetworkCredentials("user-b", "password"))
+        second.complete(
+            NetworkSourceMutationOutcome(
+                probeResult = NetworkProbeResult(NetworkAvailability.Available, "new"),
+                refreshRequired = true,
+            ),
+        )
+        advanceUntilIdle()
+        first.complete(
+            NetworkSourceMutationOutcome(
+                probeResult = NetworkProbeResult(NetworkAvailability.Available, "old"),
+                refreshRequired = false,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(2, saveCount)
+        assertEquals(2, results.count { it is NetworkSourceMutationResult.Checking })
+        assertEquals(
+            NetworkSourceMutationResult.Saved(
+                sourceId = source.id,
+                probeResult = NetworkProbeResult(NetworkAvailability.Available, "new"),
+                refreshRequired = true,
+            ),
+            results.last(),
+        )
+        assert(results.none { result ->
+            result is NetworkSourceMutationResult.Saved && result.probeResult.message == "old"
+        })
+        runtime.release()
+    }
+
+    @Test
+    fun consumerFailureIsNotReclassifiedAsMutationFailure() = runTest {
+        val source = source()
+        val results = mutableListOf<NetworkSourceMutationResult>()
+        val failures = mutableListOf<Throwable>()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val scope = CoroutineScope(
+            SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, failure ->
+                failures += failure
+            },
+        )
+        val runtime = NetworkSourceMutationRuntime(
+            scope = scope,
+            coordinator = object : NetworkSourceMutationBackend {
+                override suspend fun save(
+                    source: NetworkLibrarySource,
+                    credentials: NetworkCredentials,
+                ) = NetworkSourceMutationOutcome(
+                    probeResult = NetworkProbeResult(NetworkAvailability.Available),
+                    refreshRequired = false,
+                )
+
+                override suspend fun remove(source: NetworkLibrarySource) = Unit
+            },
+            onResult = { result ->
+                results += result
+                if (result is NetworkSourceMutationResult.Saved) error("consumer failure")
+            },
+            ioDispatcher = dispatcher,
+        )
+
+        runtime.save(source, NetworkCredentials("user", "password"))
+        advanceUntilIdle()
+
+        assertEquals(2, results.size)
+        assertEquals(1, failures.size)
+        assertEquals("consumer failure", failures.single().message)
+        runtime.release()
+        scope.cancel()
+    }
+
+    private fun source() = NetworkLibrarySource(
+        id = "source-a",
+        name = "Source A",
+        protocol = NetworkLibraryProtocol.Smb,
+        server = "server",
+        shareOrPath = "share",
+        username = "user",
+        credentialKey = "key",
+    )
+}

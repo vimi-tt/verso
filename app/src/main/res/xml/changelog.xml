@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<changelog>
+    <!--
+      Keep this file simple:
+      1. Change the version value below.
+      2. Edit the bullet points inside that release.
+      3. Add newer releases above older ones.
+    -->
+    <release version="1.0-beta1">
+        <item>Rebranded to Verso with a new Option 1 adaptive icon and redesigned About screen</item>
+        <item>Added YouTube Music streaming, account login, synced favorites, library browsing, and Activity Mix on Home</item>
+        <item>Added fast chunked offline downloads with offline playback for downloaded albums and playlists</item>
+        <item>Added BetterLyrics word-by-word synced lyrics with customizable provider priority and LRCLIB fallback</item>
+        <item>Added Last.fm integration with automatic 30-second scrobbling and genre discovery</item>
+        <item>Added Last.fm-style listening stats in Library and a shareable Verso Recap story experience</item>
+        <item>Redesigned the Now Playing player, floating minimal navigation capsule, and album/playlist views</item>
+        <item>Added audio quality controls and music cache/download management in Settings</item>
+    </release>
+    <release version="3.2">
+        <item>UI tweaks in equalizer, lyrics and tag editing screen</item>
+        <item>Added basic tablet layout support in horizontal orientation</item>
+        <item>Added support for the app to work on Huawei devices with Kirin CPUs</item>
+    </release>
+</changelog>

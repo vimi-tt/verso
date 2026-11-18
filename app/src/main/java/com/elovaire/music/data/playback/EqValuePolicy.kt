@@ -1,0 +1,84 @@
+package elovaire.music.droidbeauty.app.data.playback
+
+import elovaire.music.droidbeauty.app.domain.model.EqSettings
+import elovaire.music.droidbeauty.app.domain.model.SpaciousnessMode
+import kotlin.math.abs
+import kotlin.math.round
+
+internal object EqValuePolicy {
+    const val MIN_GAIN_DB = -8f
+    const val MAX_GAIN_DB = 8f
+    const val MIN_PREAMP_DB = -6f
+    const val MAX_PREAMP_DB = 6f
+    const val GAIN_STEP_DB = 0.5f
+    const val MIN_NORMALIZED = -1f
+    const val MAX_NORMALIZED = 1f
+    const val MACRO_STEP = 0.01f
+    const val EFFECT_BYPASS_EPSILON = 0.01f
+
+    fun clampBandNormalized(value: Float): Float {
+        val db = normalizedToDb(value)
+        return dbToNormalized(round(db / GAIN_STEP_DB) * GAIN_STEP_DB)
+    }
+
+    fun clampMacro(value: Float): Float {
+        val clamped = value.finiteOr(0f).coerceIn(MIN_NORMALIZED, MAX_NORMALIZED)
+        return (round(clamped / MACRO_STEP) * MACRO_STEP).coerceIn(MIN_NORMALIZED, MAX_NORMALIZED)
+    }
+
+    fun clampPositiveMacro(value: Float): Float = clampMacro(value).coerceAtLeast(0f)
+
+    fun clampPreamp(value: Float): Float = value.finiteOr(0f).coerceIn(MIN_PREAMP_DB, MAX_PREAMP_DB)
+
+    fun snapPreamp(value: Float, magnetizeCenter: Boolean = false): Float {
+        val clamped = clampPreamp(value)
+        if (magnetizeCenter && abs(clamped) <= 0.35f) return 0f
+        return (round(clamped / GAIN_STEP_DB) * GAIN_STEP_DB)
+            .coerceIn(MIN_PREAMP_DB, MAX_PREAMP_DB)
+    }
+
+    fun normalizedToDb(value: Float): Float {
+        val normalized = value.finiteOr(0f).coerceIn(MIN_NORMALIZED, MAX_NORMALIZED)
+        return if (normalized >= 0f) normalized * MAX_GAIN_DB else -normalized * MIN_GAIN_DB
+    }
+
+    fun dbToNormalized(valueDb: Float): Float {
+        val clamped = valueDb.finiteOr(0f).coerceIn(MIN_GAIN_DB, MAX_GAIN_DB)
+        return if (clamped >= 0f) clamped / MAX_GAIN_DB else clamped / -MIN_GAIN_DB
+    }
+
+    fun sanitize(settings: EqSettings): EqSettings {
+        val spaciousness = clampPositiveMacro(settings.spaciousness)
+        val spaciousnessMode = if (spaciousness <= EFFECT_BYPASS_EPSILON) {
+            SpaciousnessMode.Off
+        } else {
+            settings.spaciousnessMode
+        }
+        return settings.copy(
+            bands = List(EqualizerDspModel.BAND_COUNT) { index ->
+                clampBandNormalized(settings.bands.getOrElse(index) { 0f })
+            },
+            preampDb = clampPreamp(settings.preampDb),
+            bass = clampPositiveMacro(settings.bass),
+            midrange = clampMacro(settings.midrange),
+            treble = clampMacro(settings.treble),
+            spaciousness = if (spaciousnessMode == SpaciousnessMode.Off) 0f else spaciousness,
+            spaciousnessMode = spaciousnessMode,
+            reverbDurationMs = normalizeReverbDurationMs(settings.reverbDurationMs),
+        )
+    }
+
+    private fun Float.finiteOr(fallback: Float): Float = takeIf(Float::isFinite) ?: fallback
+
+    fun hasSignalAlteringEffects(settings: EqSettings): Boolean {
+        val sanitized = sanitize(settings)
+        return sanitized.bands.any { abs(it) >= EFFECT_BYPASS_EPSILON } ||
+            abs(sanitized.preampDb) >= EFFECT_BYPASS_EPSILON ||
+            abs(sanitized.bass) >= EFFECT_BYPASS_EPSILON ||
+            abs(sanitized.midrange) >= EFFECT_BYPASS_EPSILON ||
+            abs(sanitized.treble) >= EFFECT_BYPASS_EPSILON ||
+            sanitized.reverbDurationMs > 0 ||
+            (sanitized.spaciousnessMode != SpaciousnessMode.Off &&
+                abs(sanitized.spaciousness) >= EFFECT_BYPASS_EPSILON)
+    }
+}

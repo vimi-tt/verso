@@ -1,0 +1,174 @@
+package elovaire.music.droidbeauty.app.data.lyrics
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class LrcParserTest {
+    @Test
+    fun parsesMultipleTimestampPrecisionsAndAppliesGlobalOffset() {
+        val payload = requireNotNull(
+            parseLrcOrPlain(
+                raw = """
+                    [00:01.50][00:02.500]First line
+                    [offset:250]
+                    [00:03]Second line
+                """.trimIndent(),
+            ),
+        )
+
+        assertTrue(payload.isSynced)
+        assertEquals(listOf(1_750L, 2_750L, 3_250L), payload.lines.map { it.startTimeMs })
+        assertEquals(listOf(0, 1, 2), payload.lines.map { it.index })
+    }
+
+    @Test
+    fun plainLyricsRemainVisibleWithoutTiming() {
+        val payload = requireNotNull(
+            parseLrcOrPlain(
+                raw = "First line\nSecond line",
+            ),
+        )
+
+        assertFalse(payload.isSynced)
+        assertEquals(listOf("First line", "Second line"), payload.lines.map { it.text })
+        assertEquals(listOf(null, null), payload.lines.map { it.startTimeMs })
+    }
+
+    @Test
+    fun linesWithOnlyInvalidTimestampsFallBackToPlainLyrics() {
+        val payload = requireNotNull(parseLrcOrPlain("[00:99.00]First line\n[01:70]Second line"))
+        assertFalse(payload.isSynced)
+        assertEquals(listOf("First line", "Second line"), payload.lines.map { it.text })
+    }
+
+    @Test
+    fun blankTimedLinesAndMetadataDoNotCreateVisibleRows() {
+        val payload = requireNotNull(
+            parseLrcOrPlain(
+                raw = """
+                    [ar:Artist]
+                    [ti:Title]
+                    [00:01.00]
+                    [00:02.00]Visible
+                """.trimIndent(),
+            ),
+        )
+
+        assertEquals(listOf("Visible"), payload.lines.map { it.text })
+    }
+
+    @Test
+    fun nullSentinelIsNotDisplayedAsLyrics() {
+        assertNull(parseLrcOrPlain("null"))
+        assertNull(parseLrcOrPlain(" NULL "))
+    }
+
+    @Test
+    fun duplicateTimestampsUseNextDistinctLineForEndTime() {
+        val payload = requireNotNull(
+            parseLrcOrPlain(
+                raw = """
+                    [00:10.00]First
+                    [00:10.00]Echo
+                    [00:12.00]Second
+                """.trimIndent(),
+            ),
+        )
+
+        assertTrue(payload.isSynced)
+        assertEquals(listOf(10_000L, 10_000L, 12_000L), payload.lines.map { it.startTimeMs })
+        assertEquals(listOf(11_999L, 11_999L, null), payload.lines.map { it.endTimeMs })
+    }
+
+    @Test
+    fun duplicateTimestampRunsRemainBoundedAtLargeInput() {
+        val raw = buildString {
+            repeat(19_999) { append("[00:10.00]Echo\n") }
+            append("[00:12.00]Final")
+        }
+
+        val payload = requireNotNull(parseLrcOrPlain(raw))
+
+        assertEquals(20_000, payload.lines.size)
+        assertEquals(11_999L, payload.lines.first().endTimeMs)
+        assertNull(payload.lines.last().endTimeMs)
+    }
+
+    @Test
+    fun embeddedTextKeepsSyncedSourceInsteadOfFlatteningTiming() {
+        val raw = "[00:01.00]First line\r\n[00:02.00]Second line\n\n\n"
+        val payload = requireNotNull(
+            parseLrcOrPlain(
+                raw = raw,
+            ),
+        )
+
+        assertTrue(payload.isSynced)
+        assertEquals("[00:01.00]First line\n[00:02.00]Second line", payload.toEmbeddedLyricsText())
+    }
+
+    @Test
+    fun displayPayloadStripsTimestampMarkersButKeepsEmbeddingSource() {
+        val payload = requireNotNull(
+            parseLrcOrPlain(
+                raw = "[00:01.00]First line\n[00:02.00]Second line",
+            ),
+        ).copy(
+            lines = listOf(
+                LyricsLine(text = "[00:01.00]First line", startTimeMs = 1_000L, index = 0),
+                LyricsLine(text = "[00:02.00]Second line", startTimeMs = 2_000L, index = 1),
+            ),
+        )
+
+        val displayPayload = payload.toDisplayPayload()
+
+        assertEquals(listOf("First line", "Second line"), displayPayload.lines.map { it.text })
+        assertEquals("[00:01.00]First line\n[00:02.00]Second line", displayPayload.toEmbeddedLyricsText())
+    }
+
+    @Test
+    fun rejectsLyricsBeyondCharacterAndLineLimits() {
+        assertNull(parseLrcOrPlain("x".repeat(MAX_LYRICS_CHARACTERS + 1)))
+        assertNull(parseLrcOrPlain("x\n".repeat(MAX_LYRICS_LINES + 1)))
+        assertNull(parseLrcOrPlain("x".repeat(16 * 1024 + 1)))
+    }
+
+    @Test
+    fun rejectsTimestampFanOutBeyondPerLineLimit() {
+        val timestamps = (0..64).joinToString("") { "[00:01.00]" }
+        assertNull(parseLrcOrPlain("${timestamps}line"))
+    }
+
+    @Test
+    fun validatesPayloadTimingWithoutOverflowingGraceWindow() {
+        val payload = LyricsPayload(
+            lines = listOf(
+                LyricsLine(
+                    text = "Line",
+                    startTimeMs = Long.MAX_VALUE - 10L,
+                    endTimeMs = Long.MAX_VALUE - 1L,
+                ),
+            ),
+            isSynced = true,
+        )
+
+        assertEquals(payload, payload.validatedForPlayback())
+        assertEquals(
+            0,
+            payload.currentLineIndexAtFast(Long.MAX_VALUE, switchGraceMs = 0L),
+        )
+        assertNull(
+            payload.copy(displayTimingOffsetMs = Long.MAX_VALUE).validatedForPlayback(),
+        )
+    }
+
+    @Test
+    fun vorbisCommentIterationIsBoundedByInputAndSafetyLimit() {
+        assertEquals(0, boundedVorbisCommentCount(Int.MAX_VALUE, 3))
+        assertEquals(2, boundedVorbisCommentCount(Int.MAX_VALUE, 9))
+        assertEquals(10_000, boundedVorbisCommentCount(Int.MAX_VALUE, 10_000 * 4))
+    }
+}

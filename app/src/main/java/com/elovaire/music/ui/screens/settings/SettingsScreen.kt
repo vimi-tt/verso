@@ -1,0 +1,1833 @@
+package elovaire.music.droidbeauty.app.ui.screens
+
+import elovaire.music.droidbeauty.app.ui.i18n.*
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
+import elovaire.music.droidbeauty.app.domain.model.UpscalerSettings
+import elovaire.music.droidbeauty.app.ui.screens.common.ModuleCard
+import elovaire.music.droidbeauty.app.ui.screens.common.SectionTitleRow
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.SystemClock
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import elovaire.music.droidbeauty.app.R
+import elovaire.music.droidbeauty.app.data.library.LibraryFolderSelection
+import elovaire.music.droidbeauty.app.data.playback.EqValuePolicy
+import elovaire.music.droidbeauty.app.data.update.AppUpdateUiState
+import elovaire.music.droidbeauty.app.data.update.UpdateController
+import elovaire.music.droidbeauty.app.domain.model.AppLanguage
+import elovaire.music.droidbeauty.app.domain.model.EqSettings
+import elovaire.music.droidbeauty.app.domain.model.TextSizePreset
+import elovaire.music.droidbeauty.app.domain.model.ThemeMode
+import elovaire.music.droidbeauty.app.ui.i18n.SettingsLanguageCopy
+import elovaire.music.droidbeauty.app.ui.i18n.commonUiCopy
+import elovaire.music.droidbeauty.app.ui.i18n.equalizerStatusLabel
+import elovaire.music.droidbeauty.app.ui.i18n.equalizerCustomLabel
+import elovaire.music.droidbeauty.app.ui.i18n.localizedEqualizerPreset
+import elovaire.music.droidbeauty.app.ui.i18n.libraryFoldersCopy
+import elovaire.music.droidbeauty.app.ui.i18n.libraryScanStatusCopy
+import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.privacyPolicyCopy
+import elovaire.music.droidbeauty.app.ui.i18n.privacyPolicySettingsSubtitle
+import elovaire.music.droidbeauty.app.ui.i18n.rootUiCopy
+import elovaire.music.droidbeauty.app.ui.i18n.settingsCopy
+import elovaire.music.droidbeauty.app.ui.i18n.nowPlayingBarStyleCopy
+import elovaire.music.droidbeauty.app.ui.i18n.audiobookSettingsCopy
+import elovaire.music.droidbeauty.app.ui.i18n.smartPlaylistSettingsCopy
+import elovaire.music.droidbeauty.app.ui.i18n.updateActionCopy
+import elovaire.music.droidbeauty.app.ui.i18n.settingsAccessibilityCopy
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireActionBump
+import elovaire.music.droidbeauty.app.ui.interaction.elovairePillActionMotion
+import elovaire.music.droidbeauty.app.ui.interaction.rememberElovaireInteractionSource
+import elovaire.music.droidbeauty.app.ui.motion.MotionDuration
+import elovaire.music.droidbeauty.app.ui.motion.MotionEasing
+import elovaire.music.droidbeauty.app.ui.motion.elovaireListReveal
+import elovaire.music.droidbeauty.app.ui.motion.PopupCardMotionHost
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionRevealRegistry
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionTransitions
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
+import elovaire.music.droidbeauty.app.ui.theme.InkText
+import elovaire.music.droidbeauty.app.ui.theme.ToggleEnabledGreen
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+
+@Composable
+internal fun SettingsScreen(
+    themeMode: ThemeMode,
+    textSizePreset: TextSizePreset,
+    appLanguage: AppLanguage,
+    eqSettings: EqSettings,
+    libraryScanIsLoading: Boolean,
+    libraryScanProgress: Float,
+    libraryScanError: String?,
+    libraryScanPermissionGranted: Boolean,
+    libraryContentRevision: String,
+    volumeNormalizationEnabled: Boolean,
+    onlineLyricsEnabled: Boolean,
+    crossfadeDurationMs: Long,
+    crossfadeSilenceThresholdDb: Float,
+    upscalerSettings: UpscalerSettings,
+    bottomPadding: Dp,
+    onBack: () -> Unit,
+    onThemeModeSelected: (ThemeMode) -> Unit,
+    onTextSizePresetSelected: (TextSizePreset) -> Unit,
+    onAppLanguageSelected: (AppLanguage) -> Unit,
+    onVolumeNormalizationChanged: (Boolean) -> Unit,
+    onOnlineLyricsChanged: (Boolean) -> Unit,
+    onOpenEqualizer: () -> Unit,
+    onOpenCrossfade: () -> Unit,
+    onOpenUpscaler: () -> Unit,
+    onOpenAudiobookSettings: () -> Unit,
+    onOpenLibraryFolders: () -> Unit,
+    onOpenManagePlaylists: () -> Unit,
+    onOpenSmartPlaylistSettings: () -> Unit,
+    onOpenNowPlayingBarStyle: () -> Unit,
+    onOpenHomeLayout: () -> Unit,
+    onOpenPrivacyPolicy: () -> Unit,
+    onOpenChangelog: () -> Unit,
+    onScanLibrary: () -> Unit,
+    updateController: UpdateController,
+    youTubeAccountState: elovaire.music.droidbeauty.app.data.youtube.YouTubeAccountUiState = elovaire.music.droidbeauty.app.data.youtube.YouTubeAccountUiState(),
+    onOpenYouTubeLogin: () -> Unit = {},
+    onSyncYouTubeAccount: () -> Unit = {},
+    onSignOutYouTube: () -> Unit = {},
+    youTubeQualityState: elovaire.music.droidbeauty.app.data.youtube.YouTubeQualitySettings = elovaire.music.droidbeauty.app.data.youtube.YouTubeQualitySettings(),
+    onWifiStreamingQualitySelected: (com.vimi.k7.innertube.stream.AudioPreference) -> Unit = {},
+    onCellularStreamingQualitySelected: (com.vimi.k7.innertube.stream.AudioPreference) -> Unit = {},
+    onDownloadQualitySelected: (com.vimi.k7.innertube.stream.AudioPreference) -> Unit = {},
+    onWifiOnlyDownloadsChanged: (Boolean) -> Unit = {},
+    onPreferredLyricsProviderSelected: (elovaire.music.droidbeauty.app.data.youtube.LyricsProviderPreference) -> Unit = {},
+    musicCacheSizeBytes: Long = 0L,
+    downloadsSizeBytes: Long = 0L,
+    onClearMusicCache: () -> Unit = {},
+    onClearDownloads: () -> Unit = {},
+    lastFmState: elovaire.music.droidbeauty.app.data.youtube.LastFmAccountState = elovaire.music.droidbeauty.app.data.youtube.LastFmAccountState(),
+    onSignInLastFm: (String, String) -> Unit = { _, _ -> },
+    onToggleLastFmScrobble: (Boolean) -> Unit = {},
+    onSignOutLastFm: () -> Unit = {},
+    onClearLastFmError: () -> Unit = {},
+    onSyncYouTubeHistoryChanged: (Boolean) -> Unit = {},
+    scrollToAccounts: Boolean = false,
+) {
+    val listState = rememberElovaireLazyListState("settings_screen")
+    LaunchedEffect(scrollToAccounts) {
+        if (scrollToAccounts) {
+            listState.scrollToItem(0)
+        }
+    }
+    val copy = remember(appLanguage) { settingsCopy(appLanguage) }
+    val styleCopy = remember(appLanguage) { nowPlayingBarStyleCopy(appLanguage) }
+    val upscalerCopy = elovaire.music.droidbeauty.app.ui.i18n.upscalerCopy(appLanguage)
+    val upscalerStatusCopy = remember(appLanguage) { upscalerStateCopy(appLanguage) }
+    val audiobookCopy = remember(appLanguage) { audiobookSettingsCopy(appLanguage) }
+    val smartPlaylistCopy = remember(appLanguage) { smartPlaylistSettingsCopy(appLanguage) }
+    val foldersCopy = remember(appLanguage) { libraryFoldersCopy(appLanguage) }
+    val scanStatusCopy = remember(appLanguage) { libraryScanStatusCopy(appLanguage) }
+    val motionTransitions = rememberMotionTransitions()
+    val updateState by updateController.uiState.collectAsStateWithLifecycle()
+    var scanPopupVisible by remember { mutableStateOf(false) }
+    var scanPopupDone by remember { mutableStateOf(false) }
+    var scanRequestId by remember { mutableStateOf(0) }
+    var scanStartedAtMillis by remember { mutableStateOf(0L) }
+    var scanStartingContentRevision by remember { mutableStateOf("") }
+    var scanObservedLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(
+        scanRequestId,
+        scanPopupVisible,
+        libraryScanIsLoading,
+        libraryScanProgress,
+        libraryScanError,
+        libraryScanPermissionGranted,
+        libraryContentRevision,
+    ) {
+        if (scanRequestId == 0 || !scanPopupVisible) return@LaunchedEffect
+        val activeRequestId = scanRequestId
+        if (libraryScanIsLoading) {
+            scanObservedLoading = true
+            scanPopupDone = false
+            return@LaunchedEffect
+        }
+        val scanFinished = scanObservedLoading ||
+            libraryScanProgress >= 1f ||
+            libraryScanError != null ||
+            !libraryScanPermissionGranted
+        if (!scanFinished) return@LaunchedEffect
+
+        delay(80L)
+        if (!scanPopupVisible) return@LaunchedEffect
+        val foundNewMedia = libraryScanError == null &&
+            libraryContentRevision != scanStartingContentRevision
+        if (foundNewMedia) {
+            scanPopupDone = true
+            delay(1_500L)
+        } else {
+            val visibleForMs = SystemClock.elapsedRealtime() - scanStartedAtMillis
+            delay((1_500L - visibleForMs).coerceAtLeast(0L))
+        }
+        if (scanRequestId == activeRequestId) scanPopupVisible = false
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        LazyColumn(
+            state = listState,
+            overscrollEffect = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .ensureSingleItemRubberBand(listState),
+            contentPadding = PaddingValues(
+                start = 18.dp,
+                top = topBarOccupiedHeight() + 8.dp,
+                end = 18.dp,
+                bottom = bottomPadding + buttonNavigationScrollBoost() + 20.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            item(key = "settings_accounts_header") {
+                val accountsTitle = when (appLanguage) {
+                    AppLanguage.Portuguese -> "Contas"
+                    AppLanguage.Spanish -> "Cuentas"
+                    AppLanguage.French -> "Comptes"
+                    AppLanguage.German -> "Konten"
+                    AppLanguage.Italian -> "Account"
+                    else -> "Accounts"
+                }
+                SettingsSectionHeader(
+                    title = accountsTitle,
+                    iconResId = R.drawable.ic_lucide_user_round,
+                )
+            }
+
+            item(key = "settings_accounts_youtube") {
+                val ytAccountCopy = remember(appLanguage) {
+                    elovaire.music.droidbeauty.app.ui.i18n.youtubeAccountCopy(appLanguage)
+                }
+                ModuleCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (!youTubeAccountState.isLoggedIn) {
+                            SettingNavigationRow(
+                                title = ytAccountCopy.signInLabel,
+                                subtitle = ytAccountCopy.signInSubtitle,
+                                onClick = onOpenYouTubeLogin,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                        } else {
+                            val identityTitle = youTubeAccountState.accountName
+                                ?.takeIf { it.isNotBlank() }
+                                ?: ytAccountCopy.accountTitle
+                            val identitySubtitle = youTubeAccountState.accountHandle
+                                ?.takeIf { it.isNotBlank() }
+                                ?: ytAccountCopy.connectedLabel
+                            SettingActionRow(
+                                title = identityTitle,
+                                subtitle = identitySubtitle,
+                                actionLabel = if (youTubeAccountState.isSyncing) {
+                                    ytAccountCopy.syncingLabel
+                                } else {
+                                    ytAccountCopy.syncNowLabel
+                                },
+                                enabled = !youTubeAccountState.isSyncing,
+                                onAction = onSyncYouTubeAccount,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                            SettingToggleRow(
+                                title = when (appLanguage) {
+                                    AppLanguage.Portuguese -> "Enviar histórico ao YouTube"
+                                    AppLanguage.Spanish -> "Enviar historial a YouTube"
+                                    else -> "Send history to YouTube"
+                                },
+                                subtitle = when (appLanguage) {
+                                    AppLanguage.Portuguese -> "Registra reproduções na conta para o Recap do YouTube"
+                                    AppLanguage.Spanish -> "Registra reproducciones en tu cuenta para el Recap de YouTube"
+                                    else -> "Reports plays to your account for YouTube Recap"
+                                },
+                                enabled = youTubeQualityState.syncPlaybackHistoryToYouTube,
+                                onEnabledChanged = onSyncYouTubeHistoryChanged,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                            SettingActionRow(
+                                title = ytAccountCopy.signOutLabel,
+                                subtitle = "",
+                                actionLabel = ytAccountCopy.signOutLabel,
+                                onAction = onSignOutYouTube,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                var showLastFmDialog by remember { mutableStateOf(false) }
+                val isPt = appLanguage == AppLanguage.Portuguese
+                val isEs = appLanguage == AppLanguage.Spanish
+                val lastFmSubtitle = when {
+                    lastFmState.isLoggedIn -> "@${lastFmState.username}"
+                    isPt -> "Envie suas reproduções para sua conta"
+                    isEs -> "Envía tus reproducciones a tu cuenta"
+                    else -> "Scrobble your plays to your account"
+                }
+                val connectLabel = when {
+                    isPt -> "Conectar"
+                    isEs -> "Conectar"
+                    else -> "Connect"
+                }
+                val scrobbleTitle = when {
+                    isPt -> "Scrobbling automático"
+                    isEs -> "Scrobbling automático"
+                    else -> "Automatic scrobbling"
+                }
+                val scrobbleSubtitle = when {
+                    isPt -> "Registra músicas após 30s de reprodução"
+                    isEs -> "Registra canciones tras 30s de reproducción"
+                    else -> "Scrobble tracks after 30s of playback"
+                }
+                ModuleCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (!lastFmState.isLoggedIn) {
+                            SettingActionRow(
+                                title = "Last.fm",
+                                subtitle = lastFmSubtitle,
+                                actionLabel = connectLabel,
+                                onAction = {
+                                    onClearLastFmError()
+                                    showLastFmDialog = true
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                        } else {
+                            SettingToggleRow(
+                                title = "Last.fm (${lastFmState.username})",
+                                subtitle = "$scrobbleTitle • $scrobbleSubtitle",
+                                enabled = lastFmState.scrobbleEnabled,
+                                onEnabledChanged = onToggleLastFmScrobble,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                            val signOutLabel = when {
+                                isPt -> "Sair"
+                                isEs -> "Cerrar sesión"
+                                else -> "Sign out"
+                            }
+                            SettingActionRow(
+                                title = signOutLabel,
+                                subtitle = "",
+                                actionLabel = signOutLabel,
+                                onAction = onSignOutLastFm,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                        }
+                    }
+                }
+
+                if (showLastFmDialog && !lastFmState.isLoggedIn) {
+                    var username by remember { mutableStateOf(lastFmState.username) }
+                    var password by remember { mutableStateOf("") }
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showLastFmDialog = false },
+                        title = { Text(text = "Last.fm") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                androidx.compose.material3.OutlinedTextField(
+                                    value = username,
+                                    onValueChange = { username = it },
+                                    label = { Text(if (isPt) "Usuário" else "Username") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                androidx.compose.material3.OutlinedTextField(
+                                    value = password,
+                                    onValueChange = { password = it },
+                                    label = { Text(if (isPt) "Senha" else "Password") },
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                if (!lastFmState.errorMessage.isNullOrBlank()) {
+                                    Text(
+                                        text = lastFmState.errorMessage,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(
+                                enabled = !lastFmState.isSigningIn,
+                                onClick = {
+                                    onSignInLastFm(username, password)
+                                },
+                            ) {
+                                Text(if (lastFmState.isSigningIn) "..." else connectLabel)
+                            }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(
+                                onClick = { showLastFmDialog = false },
+                            ) {
+                                Text(if (isPt) "Cancelar" else "Cancel")
+                            }
+                        },
+                    )
+                }
+            }
+
+            item {
+                val qualityCopy = remember(appLanguage) {
+                    elovaire.music.droidbeauty.app.ui.i18n.youtubeQualityCopy(appLanguage)
+                }
+                SettingsSectionHeader(
+                    title = qualityCopy.sectionTitle,
+                    iconResId = R.drawable.ic_lucide_network,
+                )
+            }
+
+            item {
+                val qualityCopy = remember(appLanguage) {
+                    elovaire.music.droidbeauty.app.ui.i18n.youtubeQualityCopy(appLanguage)
+                }
+                fun qualityLabel(pref: com.vimi.k7.innertube.stream.AudioPreference): String =
+                    when (pref) {
+                        com.vimi.k7.innertube.stream.AudioPreference.HIGHEST -> qualityCopy.qualityHighest
+                        com.vimi.k7.innertube.stream.AudioPreference.BALANCED -> qualityCopy.qualityBalanced
+                        com.vimi.k7.innertube.stream.AudioPreference.LOWEST -> qualityCopy.qualityLowest
+                    }
+                var activeChoicePicker by remember { mutableStateOf<String?>(null) }
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val powerManager = remember(context) {
+                    context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+                }
+                val isIgnoringBattery = remember(context, powerManager) {
+                    powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
+                }
+                val isPt = appLanguage == AppLanguage.Portuguese
+                val isEs = appLanguage == AppLanguage.Spanish
+                ModuleCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        SettingActionRow(
+                            title = qualityCopy.wifiQualityTitle,
+                            subtitle = qualityLabel(youTubeQualityState.wifiStreamingQuality),
+                            actionLabel = qualityLabel(youTubeQualityState.wifiStreamingQuality),
+                            onAction = { activeChoicePicker = "wifi" },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                        SettingActionRow(
+                            title = qualityCopy.cellularQualityTitle,
+                            subtitle = qualityLabel(youTubeQualityState.cellularStreamingQuality),
+                            actionLabel = qualityLabel(youTubeQualityState.cellularStreamingQuality),
+                            onAction = { activeChoicePicker = "cellular" },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                        SettingActionRow(
+                            title = qualityCopy.downloadQualityTitle,
+                            subtitle = qualityLabel(youTubeQualityState.downloadQuality),
+                            actionLabel = qualityLabel(youTubeQualityState.downloadQuality),
+                            onAction = { activeChoicePicker = "download" },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                        SettingToggleRow(
+                            title = qualityCopy.wifiOnlyDownloadsTitle,
+                            subtitle = qualityCopy.wifiOnlyDownloadsSubtitle,
+                            enabled = youTubeQualityState.wifiOnlyDownloads,
+                            onEnabledChanged = onWifiOnlyDownloadsChanged,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                        val currentProviderLabel = when (youTubeQualityState.preferredLyricsProvider) {
+                            elovaire.music.droidbeauty.app.data.youtube.LyricsProviderPreference.BetterLyrics -> "BetterLyrics"
+                            elovaire.music.droidbeauty.app.data.youtube.LyricsProviderPreference.Lrclib -> "LRCLIB"
+                        }
+                        SettingActionRow(
+                            title = qualityCopy.preferredLyricsProviderTitle,
+                            subtitle = currentProviderLabel,
+                            actionLabel = currentProviderLabel,
+                            onAction = { activeChoicePicker = "lyrics" },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                        SettingActionRow(
+                            title = when {
+                                isPt -> "Economia de bateria"
+                                isEs -> "Ahorro de batería"
+                                else -> "Battery optimization"
+                            },
+                            subtitle = when {
+                                isIgnoringBattery && isPt -> "Desativada para o Verso"
+                                isIgnoringBattery && isEs -> "Desactivada para Verso"
+                                isIgnoringBattery -> "Disabled for Verso"
+                                isPt -> "Evite pausas em segundo plano"
+                                isEs -> "Evita pausas en segundo plano"
+                                else -> "Prevent background playback pauses"
+                            },
+                            actionLabel = when {
+                                isIgnoringBattery && isPt -> "Ativo"
+                                isIgnoringBattery && isEs -> "Activo"
+                                isIgnoringBattery -> "Allowed"
+                                isPt -> "Desativar"
+                                isEs -> "Desactivar"
+                                else -> "Disable"
+                            },
+                            enabled = !isIgnoringBattery,
+                            onAction = {
+                                val intent = android.content.Intent(
+                                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    android.net.Uri.parse("package:${context.packageName}"),
+                                )
+                                runCatching { context.startActivity(intent) }.onFailure {
+                                    runCatching {
+                                        context.startActivity(
+                                            android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                                        )
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                        val cacheSizeLabel = remember(musicCacheSizeBytes, context) {
+                            android.text.format.Formatter.formatShortFileSize(context, musicCacheSizeBytes)
+                        }
+                        val downloadsSizeLabel = remember(downloadsSizeBytes, context) {
+                            android.text.format.Formatter.formatShortFileSize(context, downloadsSizeBytes)
+                        }
+                        SettingActionRow(
+                            title = qualityCopy.clearMusicCacheTitle,
+                            subtitle = cacheSizeLabel,
+                            actionLabel = qualityCopy.clearAction,
+                            enabled = musicCacheSizeBytes > 0L,
+                            onAction = onClearMusicCache,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                        SettingActionRow(
+                            title = qualityCopy.clearDownloadsTitle,
+                            subtitle = downloadsSizeLabel,
+                            actionLabel = qualityCopy.clearAction,
+                            enabled = downloadsSizeBytes > 0L,
+                            onAction = onClearDownloads,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                    }
+                }
+
+                if (activeChoicePicker != null) {
+                    val dialogTitle = when (activeChoicePicker) {
+                        "wifi" -> qualityCopy.wifiQualityTitle
+                        "cellular" -> qualityCopy.cellularQualityTitle
+                        "download" -> qualityCopy.downloadQualityTitle
+                        else -> qualityCopy.preferredLyricsProviderTitle
+                    }
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { activeChoicePicker = null },
+                        title = { Text(dialogTitle) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                if (activeChoicePicker == "lyrics") {
+                                    val providers = listOf(
+                                        elovaire.music.droidbeauty.app.data.youtube.LyricsProviderPreference.BetterLyrics to "BetterLyrics",
+                                        elovaire.music.droidbeauty.app.data.youtube.LyricsProviderPreference.Lrclib to "LRCLIB",
+                                    )
+                                    providers.forEach { (provider, label) ->
+                                        val selected = youTubeQualityState.preferredLyricsProvider == provider
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .elovaireClickable {
+                                                    onPreferredLyricsProviderSelected(provider)
+                                                    activeChoicePicker = null
+                                                }
+                                                .padding(vertical = 10.dp, horizontal = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        ) {
+                                            androidx.compose.material3.RadioButton(
+                                                selected = selected,
+                                                onClick = null,
+                                            )
+                                            Text(
+                                                text = label,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    val prefs = listOf(
+                                        com.vimi.k7.innertube.stream.AudioPreference.HIGHEST,
+                                        com.vimi.k7.innertube.stream.AudioPreference.BALANCED,
+                                        com.vimi.k7.innertube.stream.AudioPreference.LOWEST,
+                                    )
+                                    val currentPref = when (activeChoicePicker) {
+                                        "wifi" -> youTubeQualityState.wifiStreamingQuality
+                                        "cellular" -> youTubeQualityState.cellularStreamingQuality
+                                        else -> youTubeQualityState.downloadQuality
+                                    }
+                                    prefs.forEach { pref ->
+                                        val selected = currentPref == pref
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .elovaireClickable {
+                                                    when (activeChoicePicker) {
+                                                        "wifi" -> onWifiStreamingQualitySelected(pref)
+                                                        "cellular" -> onCellularStreamingQualitySelected(pref)
+                                                        else -> onDownloadQualitySelected(pref)
+                                                    }
+                                                    activeChoicePicker = null
+                                                }
+                                                .padding(vertical = 10.dp, horizontal = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        ) {
+                                            androidx.compose.material3.RadioButton(
+                                                selected = selected,
+                                                onClick = null,
+                                            )
+                                            Text(
+                                                text = qualityLabel(pref),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(
+                                onClick = { activeChoicePicker = null },
+                            ) {
+                                Text(if (isPt) "Fechar" else "Close")
+                            }
+                        },
+                    )
+                }
+            }
+
+            item {
+                SettingsSectionHeader(
+                    title = copy.appearance,
+                    iconResId = R.drawable.ic_lucide_palette,
+                )
+            }
+
+            item {
+                ModuleCard {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        SectionTitleRow(
+                            title = copy.theme,
+                            compact = true,
+                        )
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            ThemeModeSegmentedPicker(
+                                selectedMode = themeMode,
+                                onModeSelected = onThemeModeSelected,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 2.dp),
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            SectionTitleRow(
+                                title = copy.textSize,
+                                compact = true,
+                            )
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                TextSizeStepper(
+                                    selectedPreset = textSizePreset,
+                                    onPresetSelected = onTextSizePresetSelected,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 2.dp),
+                                )
+                            }
+                        }
+                        LanguagePickerRow(
+                            selectedLanguage = appLanguage,
+                            copy = copy,
+                            onLanguageSelected = onAppLanguageSelected,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SettingNavigationRow(
+                                title = homeLayoutTitle(appLanguage),
+                                subtitle = homeLayoutSubtitle(appLanguage),
+                                onClick = onOpenHomeLayout,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                            SettingNavigationRow(
+                                title = styleCopy.title,
+                                subtitle = styleCopy.subtitle,
+                                onClick = onOpenNowPlayingBarStyle,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                SettingsSectionHeader(
+                    title = copy.sound,
+                    iconResId = R.drawable.ic_lucide_volume_2,
+                )
+            }
+
+            item {
+                ModuleCard {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                    ) {
+                        SettingActionRow(
+                            title = "EQ",
+                            subtitle = equalizerStatusLabel(
+                                language = appLanguage,
+                                presetName = eqSettings.matchingEqPresetName()?.let { localizedEqualizerPreset(it, appLanguage) }
+                                    ?: equalizerCustomLabel(appLanguage).takeIf { EqValuePolicy.hasSignalAlteringEffects(eqSettings) },
+                            ),
+                            actionLabel = copy.equalizer,
+                            actionIconResId = R.drawable.ic_lucide_sliders_vertical,
+                            onAction = onOpenEqualizer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 2.dp),
+                        )
+                        SettingToggleRow(
+                            title = copy.volumeNormalization,
+                            subtitle = copy.volumeNormalizationSubtitle,
+                            enabled = volumeNormalizationEnabled,
+                            onEnabledChanged = onVolumeNormalizationChanged,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 2.dp)
+                                .align(Alignment.CenterHorizontally),
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SettingNavigationRow(
+                                title = copy.crossfadeTitle,
+                                subtitle = crossfadeSummary(
+                                    durationMs = crossfadeDurationMs,
+                                    silenceThresholdDb = crossfadeSilenceThresholdDb,
+                                    language = appLanguage,
+                                ),
+                                onClick = onOpenCrossfade,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 2.dp),
+                            )
+                            SettingNavigationRow(
+                                title = upscalerCopy.title,
+                                subtitle = if (upscalerSettings.enabled) {
+                                    "${upscalerStatusCopy.enabled} - ${upscalerSettings.multiplier}x"
+                                } else {
+                                    upscalerStatusCopy.disabled
+                                },
+                                onClick = onOpenUpscaler,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                            SettingNavigationRow(
+                                title = audiobookCopy.title,
+                                subtitle = audiobookCopy.subtitle,
+                                onClick = onOpenAudiobookSettings,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 2.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                SettingsSectionHeader(title = commonUiCopy(appLanguage).library, iconResId = R.drawable.ic_lucide_library)
+            }
+
+            item {
+                ModuleCard {
+                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SettingNavigationRow(
+                                title = foldersCopy.title,
+                                subtitle = foldersCopy.subtitle,
+                                onClick = onOpenLibraryFolders,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                            SettingNavigationRow(
+                                title = copy.managePlaylistsTitle,
+                                subtitle = copy.managePlaylistsSubtitle,
+                                onClick = onOpenManagePlaylists,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                            SettingNavigationRow(
+                                title = smartPlaylistCopy.title,
+                                subtitle = smartPlaylistCopy.subtitle,
+                                onClick = onOpenSmartPlaylistSettings,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                        }
+                        SettingActionRow(
+                            title = copy.scanLibrary,
+                            subtitle = copy.scanLibrarySubtitle,
+                            actionLabel = copy.scan,
+                            onAction = {
+                                scanStartingContentRevision = libraryContentRevision
+                                scanStartedAtMillis = SystemClock.elapsedRealtime()
+                                scanObservedLoading = libraryScanIsLoading
+                                scanPopupDone = false
+                                scanPopupVisible = true
+                                scanRequestId += 1
+                                onScanLibrary()
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                    }
+                }
+            }
+
+            item {
+                SettingsSectionHeader(title = copy.otherSettings, iconResId = R.drawable.ic_lucide_settings)
+            }
+            item {
+                ModuleCard {
+                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        SettingActionRow(title = copy.checkForUpdatesTitle, subtitle = copy.checkForUpdatesSubtitle, actionLabel = updateActionLabel(updateState, appLanguage), actionIconResId = R.drawable.ic_lucide_refresh_cw, enabled = !updateState.isChecking && !updateState.isDownloading && !updateState.isInstalling, onAction = { if (updateState.availableRelease == null) updateController.checkForUpdates(force = true) else updateController.startUpdate() }, modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp))
+                        SettingNavigationRow(title = privacyPolicyCopy(appLanguage).title, subtitle = privacyPolicySettingsSubtitle(appLanguage), onClick = onOpenPrivacyPolicy, modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp), testTag = "settings_privacy_policy")
+                    }
+                }
+            }
+
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)),
+                    )
+                    Column(
+                        modifier = Modifier.padding(top = 9.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text("Verso", style = MaterialTheme.typography.titleLarge)
+                            val changelogInteractionSource = rememberElovaireInteractionSource()
+                            Surface(
+                                modifier = Modifier.elovairePillActionMotion(
+                                    interactionSource = changelogInteractionSource,
+                                    label = "settings_changelog_pill_motion",
+                                ),
+                                shape = RoundedCornerShape(ElovaireRadii.pill),
+                                color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+                                    Color.White.copy(alpha = 0.1f)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                                },
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                onClick = onOpenChangelog,
+                                interactionSource = changelogInteractionSource,
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                ) {
+                                    Text(
+                                        text = copy.changelog,
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                    )
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_lucide_chevron_left),
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .rotate(180f),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        LibraryScanProgressPopup(
+            visible = scanPopupVisible,
+            done = scanPopupDone,
+            progress = if (scanObservedLoading || libraryScanIsLoading) {
+                libraryScanProgress.coerceIn(0f, 1f)
+            } else {
+                0f
+            },
+            motionTransitions = motionTransitions,
+            scanningLabel = scanStatusCopy.scanning,
+            doneLabel = scanStatusCopy.done,
+        )
+        PinnedBackTopBar(
+            title = copy.settings,
+            onBack = onBack,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+        FastScrollbar(
+            state = listState,
+            topInset = topBarOccupiedHeight() + 8.dp,
+            bottomInset = bottomPadding + buttonNavigationScrollBoost(),
+        )
+    }
+}
+
+@Composable
+private fun LanguagePickerRow(
+    selectedLanguage: AppLanguage,
+    copy: SettingsLanguageCopy,
+    modifier: Modifier = Modifier,
+    onLanguageSelected: (AppLanguage) -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+        ) {
+            Text(
+                text = copy.language,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = copy.currentlyUsed,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+        }
+        Box {
+            val interactionSource = remember { MutableInteractionSource() }
+            Surface(
+                modifier = Modifier.elovairePillActionMotion(
+                    interactionSource = interactionSource,
+                    pressedScale = 0.9f,
+                    label = "settings_language_button_scale",
+                ),
+                shape = RoundedCornerShape(ElovaireRadii.pill),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(ElovaireRadii.pill))
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = { expanded = true },
+                        )
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_lucide_languages),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = selectedLanguage.nativeName,
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                    )
+                }
+            }
+        }
+    }
+    LanguageSelectionDialog(
+        selectedLanguage = selectedLanguage,
+        title = copy.language,
+        visible = expanded,
+        onDismiss = { expanded = false },
+        onConfirm = { language ->
+            expanded = false
+            onLanguageSelected(language)
+        },
+    )
+}
+
+@Composable
+private fun LanguageSelectionDialog(
+    selectedLanguage: AppLanguage,
+    title: String,
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (AppLanguage) -> Unit,
+) {
+    val revealRegistry = rememberMotionRevealRegistry()
+    val listState = remember { androidx.compose.foundation.lazy.LazyListState() }
+    val motionSpecs = rememberMotionSpecs()
+    val copy = remember(selectedLanguage) { rootUiCopy(selectedLanguage) }
+    val languages = remember {
+        AppLanguage.entries.sortedBy { it.englishName }
+    }
+    var pendingLanguage by rememberSaveable(selectedLanguage) { mutableStateOf(selectedLanguage) }
+    val rowSpacing = 2.dp
+    var mounted by remember { mutableStateOf(false) }
+    LaunchedEffect(visible) {
+        if (visible) mounted = true
+    }
+
+    if (!visible && !mounted) return
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss,
+                ),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            PopupCardMotionHost(
+                surfaceId = "settings.language",
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.5f),
+                visible = visible,
+                onExitFinished = { if (!visible) mounted = false },
+            ) {
+                DynamicBackdropSurface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                        ),
+                    shape = RoundedCornerShape(
+                        topStart = ElovaireRadii.card,
+                        topEnd = ElovaireRadii.card,
+                    ),
+                    overlayAlpha = 0.6f,
+                    borderColor = null,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(start = 20.dp, top = 18.dp, end = 16.dp, bottom = 18.dp)
+                            .animateContentSize(animationSpec = motionSpecs.contentSize()),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_lucide_languages),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Text(
+                                        text = title,
+                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                                        .elovaireClickable(onClick = onDismiss),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_lucide_x),
+                                        contentDescription = settingsAccessibilityCopy(LocalAppLanguage.current).closeLanguage,
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                            ) {
+                        LazyColumn(
+                            state = listState,
+                            overscrollEffect = null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .ensureSingleItemRubberBand(listState),
+                            verticalArrangement = Arrangement.spacedBy(rowSpacing),
+                        ) {
+                            items(languages, key = { it.name }) { language ->
+                                LanguagePickerOptionRow(
+                                    language = language,
+                                    selected = language == pendingLanguage,
+                                    modifier = Modifier
+                                        .animateItem(
+                                            placementSpec = motionSpecs.listPlacement(),
+                                        )
+                                        .elovaireListReveal(
+                                            itemKey = language.name,
+                                            index = languages.indexOf(language),
+                                            registry = revealRegistry,
+                                        ),
+                                    onClick = { pendingLanguage = language },
+                                )
+                            }
+                        }
+                        FastScrollbar(
+                            state = listState,
+                            topInset = 0.dp,
+                            bottomInset = 0.dp,
+                            modifier = Modifier.padding(end = 2.dp),
+                        )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                val confirmInteractionSource = rememberElovaireInteractionSource()
+                                Surface(
+                                    modifier = Modifier.elovaireActionBump(
+                                        interactionSource = confirmInteractionSource,
+                                        label = "language_confirm_bump",
+                                    ),
+                                    onClick = { onConfirm(pendingLanguage) },
+                                    interactionSource = confirmInteractionSource,
+                                    shape = RoundedCornerShape(ElovaireRadii.pill),
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.92f),
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                ) {
+                                    Text(
+                                        text = copy.ok,
+                                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 9.dp),
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    )
+                                }
+                            }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguagePickerOptionRow(
+    language: AppLanguage,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val motionSpecs = rememberMotionSpecs()
+    val highlightColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = motionSpecs.tween(
+            durationMillis = MotionDuration.Fast,
+            easing = MotionEasing.SoftOut,
+        ),
+        label = "language_picker_row_highlight",
+    )
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .padding(end = 16.dp)
+            .clip(RoundedCornerShape(ElovaireRadii.tile))
+            .background(highlightColor)
+            .elovaireClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(width = 28.dp, height = 20.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = languageFlag(language),
+                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Text(
+                text = language.nativeName,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            SelectionIndicatorIcon(selected = selected)
+        }
+
+    }
+}
+
+@Composable
+private fun BoxScope.LibraryScanProgressPopup(
+    visible: Boolean,
+    done: Boolean,
+    progress: Float,
+    motionTransitions: elovaire.music.droidbeauty.app.ui.motion.MotionTransitions,
+    scanningLabel: String,
+    doneLabel: String,
+) {
+    val motionSpecs = rememberMotionSpecs()
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = motionSpecs.tween(MotionDuration.Quick, easing = MotionEasing.RefinedDecelerate),
+        label = "settings_library_scan_progress",
+    )
+    AnimatedVisibility(
+        visible = visible,
+        modifier = Modifier
+            .fillMaxWidth()
+            .align(Alignment.TopCenter)
+            .offset(y = topBarOccupiedHeight())
+            .zIndex(3f),
+        enter = motionTransitions.verticalRevealEnter(),
+        exit = motionTransitions.verticalRevealExit(),
+        label = "settings_library_scan_popup",
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+        ) {
+            FrostedTopBarBackground(
+                darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f,
+                modifier = Modifier.matchParentSize(),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = scanningLabel,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = if (done) doneLabel else "${(animatedProgress * 100f).roundToInt()}%",
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                if (done) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_lucide_check),
+                            contentDescription = doneLabel,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                } else {
+                    CircularProgressIndicator(
+                        progress = { animatedProgress },
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun languageFlag(language: AppLanguage): String = when (language) {
+    AppLanguage.Albanian -> AlbanianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Bosnian -> BosnianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Bulgarian -> BulgarianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Catalan -> CatalanTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Finnish -> FinnishTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Romanian -> RomanianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Slovenian -> SlovenianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Indonesian -> IndonesianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Punjabi -> PunjabiTranslations.settingsScreen_languageFlag_1
+    AppLanguage.ChineseSimplified -> ChineseSimplifiedTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Croatian -> CroatianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Czech -> CzechTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Danish -> DanishTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Dutch -> DutchTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Bengali -> BengaliTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Estonian -> EstonianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.French -> FrenchTranslations.settingsScreen_languageFlag_1
+    AppLanguage.German -> GermanTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Greek -> GreekTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Hindi -> HindiTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Hungarian -> HungarianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Italian -> ItalianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Japanese -> JapaneseTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Korean -> KoreanTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Latvian -> LatvianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Lithuanian -> LithuanianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Malay -> MalayTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Macedonian -> MacedonianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Norwegian -> NorwegianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Polish -> PolishTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Portuguese -> PortugueseTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Russian -> RussianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Slovak -> SlovakTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Serbian -> SerbianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Spanish -> SpanishTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Swedish -> SwedishTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Thai -> ThaiTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Ukrainian -> UkrainianTranslations.settingsScreen_languageFlag_1
+    AppLanguage.Urdu -> UrduTranslations.settingsScreen_languageFlag_1
+    AppLanguage.English -> EnglishTranslations.settingsScreen_languageFlag_1
+}
+
+@Composable
+private fun SettingsSectionHeader(
+    title: String,
+    iconResId: Int,
+) {
+    Row(
+        modifier = Modifier.padding(top = 6.dp, start = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            painter = painterResource(id = iconResId),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+        )
+    }
+}
+
+@Composable
+private fun TextSizeStepper(
+    selectedPreset: TextSizePreset,
+    onPresetSelected: (TextSizePreset) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val presets = TextSizePreset.entries
+    val selectedIndex = presets.indexOf(selectedPreset).coerceAtLeast(0)
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        SteppedSlider(
+            selectedIndex = selectedIndex,
+            stepCount = presets.size,
+            onSelectedIndexChanged = { index -> onPresetSelected(presets[index]) },
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_lucide_case_sensitive),
+                contentDescription = settingsAccessibilityCopy(LocalAppLanguage.current).smallerText,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(14.dp),
+            )
+            Icon(
+                painter = painterResource(id = R.drawable.ic_lucide_a_large_small),
+                contentDescription = settingsAccessibilityCopy(LocalAppLanguage.current).largerText,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(17.dp),
+            )
+        }
+    }
+}
+
+
+@Composable
+internal fun SettingToggleRow(
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    onEnabledChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+        }
+        Spacer(modifier = Modifier.width(18.dp))
+        SettingsToggle(
+            checked = enabled,
+            onCheckedChange = onEnabledChanged,
+        )
+    }
+}
+
+@Composable
+internal fun SettingActionRow(
+    title: String,
+    subtitle: String,
+    actionLabel: String,
+    @DrawableRes actionIconResId: Int? = null,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+        }
+        Spacer(modifier = Modifier.width(18.dp))
+        Surface(
+            modifier = Modifier.elovairePillActionMotion(
+                interactionSource = interactionSource,
+                pressedScale = 0.9f,
+                label = "${actionLabel}_setting_action_scale",
+            ),
+            shape = RoundedCornerShape(ElovaireRadii.pill),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.45f),
+            contentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = if (enabled) 1f else 0.65f),
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(ElovaireRadii.pill))
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            enabled = enabled,
+                            onClick = onAction,
+                    )
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                actionIconResId?.let { iconResId ->
+                    Icon(
+                        painter = painterResource(id = iconResId),
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                )
+            }
+        }
+    }
+}
+
+private fun crossfadeSummary(
+    durationMs: Long,
+    silenceThresholdDb: Float,
+    language: AppLanguage,
+): String {
+    val durationSeconds = durationMs.coerceIn(2_000L, 5_000L) / 1_000f
+    val formattedDuration = formatCrossfadeSeconds(durationSeconds, language)
+    val silence = silenceThresholdDb.toInt()
+    return when (language) {
+        AppLanguage.Albanian -> AlbanianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Bosnian -> BosnianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Bulgarian -> BulgarianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Catalan -> CatalanTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Finnish -> FinnishTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Romanian -> RomanianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Slovenian -> SlovenianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Indonesian -> IndonesianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Punjabi -> PunjabiTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Bengali -> BengaliTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.ChineseSimplified -> ChineseSimplifiedTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Croatian -> CroatianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Czech -> CzechTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Danish -> DanishTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Dutch -> DutchTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Estonian -> EstonianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.French -> FrenchTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.German -> GermanTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Greek -> GreekTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Hindi -> HindiTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Hungarian -> HungarianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Italian -> ItalianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Japanese -> JapaneseTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Korean -> KoreanTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Latvian -> LatvianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Lithuanian -> LithuanianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Macedonian -> MacedonianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Malay -> MalayTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Norwegian -> NorwegianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Polish -> PolishTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Portuguese -> PortugueseTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Russian -> RussianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Serbian -> SerbianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Slovak -> SlovakTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Spanish -> SpanishTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Swedish -> SwedishTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Thai -> ThaiTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Ukrainian -> UkrainianTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.Urdu -> UrduTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+        AppLanguage.English -> EnglishTranslations.settingsScreen_crossfadeSummary_dynamic_1(formattedDuration, silence)
+    }
+}
+
+@Suppress("CyclomaticComplexMethod")
+private fun updateActionLabel(state: AppUpdateUiState, language: AppLanguage): String = when {
+    state.isChecking -> updateActionCopy(language).checking
+    state.isDownloading -> updateActionCopy(language).downloading
+    state.isInstalling -> updateActionCopy(language).installing
+    state.installPermissionRequired -> updateActionCopy(language).allowInstall
+    state.availableRelease != null -> updateActionCopy(language).update
+    state.errorMessage != null -> updateActionCopy(language).retry
+    else -> when (language) {
+        AppLanguage.Albanian -> AlbanianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Bosnian -> BosnianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Bulgarian -> BulgarianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Catalan -> CatalanTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Finnish -> FinnishTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Romanian -> RomanianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Slovenian -> SlovenianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Indonesian -> IndonesianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Punjabi -> PunjabiTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Bengali -> BengaliTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.ChineseSimplified -> ChineseSimplifiedTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Croatian -> CroatianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Czech -> CzechTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Danish -> DanishTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Dutch -> DutchTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Estonian -> EstonianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.French -> FrenchTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.German -> GermanTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Greek -> GreekTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Hindi -> HindiTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Hungarian -> HungarianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Italian -> ItalianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Japanese -> JapaneseTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Korean -> KoreanTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Latvian -> LatvianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Lithuanian -> LithuanianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Macedonian -> MacedonianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Malay -> MalayTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Norwegian -> NorwegianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Polish -> PolishTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Portuguese -> PortugueseTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Russian -> RussianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Serbian -> SerbianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Slovak -> SlovakTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Spanish -> SpanishTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Swedish -> SwedishTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Thai -> ThaiTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Ukrainian -> UkrainianTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.Urdu -> UrduTranslations.settingsScreen_updateActionLabel_1
+        AppLanguage.English -> EnglishTranslations.settingsScreen_updateActionLabel_1
+    }
+}
+
+@Composable
+private fun SettingsToggle(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val motionSpecs = rememberMotionSpecs()
+    val knobColor by animateColorAsState(targetValue = if (checked) {
+        Color.White
+    } else if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+        InkText
+    } else {
+        Color.White
+    }, animationSpec = motionSpecs.tween(MotionDuration.Standard), label = "settings_toggle_thumb_color")
+    val trackColor by animateColorAsState(
+        targetValue = if (checked) {
+            ToggleEnabledGreen
+        } else {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) 0.16f else 0.2f)
+        },
+        animationSpec = motionSpecs.tween(MotionDuration.Standard),
+        label = "settings_toggle_track",
+    )
+    val thumbOffset by animateDpAsState(
+        targetValue = if (checked) 18.dp else 2.dp,
+        animationSpec = motionSpecs.spring(dampingRatio = 0.82f, stiffness = 420f),
+        label = "settings_toggle_thumb_offset",
+    )
+    Surface(
+        modifier = Modifier
+            .elovaireClickable(role = androidx.compose.ui.semantics.Role.Switch) { onCheckedChange(!checked) }
+            .semantics { toggleableState = androidx.compose.ui.state.ToggleableState(checked) },
+        shape = RoundedCornerShape(percent = 50),
+        color = trackColor,
+        contentColor = knobColor,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(40.dp)
+                .height(24.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(x = thumbOffset.roundToPx(), y = 2.dp.roundToPx()) }
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(knobColor),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun ThemeModeSegmentedPicker(
+    selectedMode: ThemeMode,
+    onModeSelected: (ThemeMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val motionSpecs = rememberMotionSpecs()
+    val language = LocalAppLanguage.current
+    val common = remember(language) { commonUiCopy(language) }
+    val options = listOf(ThemeMode.Light, ThemeMode.Dark, ThemeMode.System)
+    BoxWithConstraints(
+        modifier = modifier
+            .height(46.dp)
+            .horizontalGestureSafe()
+            .clip(RoundedCornerShape(percent = 50))
+            .background(
+                if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                },
+            )
+            .padding(5.dp),
+    ) {
+        val selectedIndex = options.indexOf(selectedMode).coerceAtLeast(0)
+        val segmentWidth = maxWidth / options.size
+        val indicatorOffset by animateDpAsState(
+            targetValue = segmentWidth * selectedIndex,
+            animationSpec = motionSpecs.spring(
+                dampingRatio = 0.82f,
+                stiffness = 420f,
+            ),
+            label = "theme_picker_offset",
+        )
+        val indicatorColor = MaterialTheme.colorScheme.primary
+
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(x = indicatorOffset.roundToPx(), y = 0) }
+                .width(segmentWidth)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(percent = 50))
+                .background(indicatorColor),
+        )
+
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            options.forEach { option ->
+                val selected = option == selectedMode
+                val contentTint by animateColorAsState(
+                    targetValue = if (selected) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+                    animationSpec = motionSpecs.tween(MotionDuration.Standard),
+                    label = "theme_picker_content_tint",
+                )
+                val iconResId = when (option) {
+                    ThemeMode.Light -> R.drawable.ic_lucide_sun
+                    ThemeMode.Dark -> R.drawable.ic_lucide_moon
+                    ThemeMode.System -> R.drawable.ic_lucide_smartphone
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(percent = 50))
+                        .elovaireClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            onClick = { onModeSelected(option) },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            painter = painterResource(id = iconResId),
+                            contentDescription = null,
+                            tint = contentTint,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Text(
+                            text = when (option) {
+                                ThemeMode.Light -> common.light
+                                ThemeMode.Dark -> common.dark
+                                ThemeMode.System -> common.system
+                            },
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                            color = contentTint,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

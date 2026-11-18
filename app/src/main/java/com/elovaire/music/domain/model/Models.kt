@@ -1,0 +1,227 @@
+package elovaire.music.droidbeauty.app.domain.model
+
+import android.net.Uri
+
+data class Song(
+    val id: Long,
+    val title: String,
+    val isExplicit: Boolean,
+    val artist: String,
+    val album: String,
+    val releaseYear: Int?,
+    val genre: String,
+    val audioFormat: String,
+    val audioQuality: String?,
+    val fileName: String,
+    val albumId: Long,
+    val durationMs: Long,
+    val trackNumber: Int,
+    val discNumber: Int,
+    val dateAddedSeconds: Long,
+    val dateModifiedSeconds: Long? = null,
+    val libraryPath: String? = null,
+    val uri: Uri,
+    val artUri: Uri?,
+    val metadataResolved: Boolean = false,
+    val albumArtist: String? = null,
+    val volumeNormalization: VolumeNormalizationMetadata? = null,
+    val mediaKind: AudioMediaKind = AudioMediaKind.Music,
+    val bookmarkMs: Long? = null,
+    val description: String? = null,
+)
+
+internal fun Iterable<Song>.sumDurationMs(): Long = fold(0L) { total, song ->
+    val duration = song.durationMs.coerceAtLeast(0L)
+    if (total > Long.MAX_VALUE - duration) Long.MAX_VALUE else total + duration
+}
+
+data class Album(
+    val id: Long,
+    val title: String,
+    val artist: String,
+    val artUri: Uri?,
+    val songCount: Int,
+    val durationMs: Long,
+    val songs: List<Song>,
+)
+
+data class LibrarySnapshot(
+    val songs: List<Song>,
+    val albums: List<Album>,
+    val audiobooks: List<Audiobook> = emptyList(),
+    val contentRevision: String = "",
+)
+
+data class Audiobook(
+    val stableKey: String,
+    val title: String,
+    val author: String,
+    val artUri: Uri?,
+    val durationMs: Long,
+    val parts: List<AudiobookPart>,
+    val description: String? = null,
+)
+
+data class AudiobookPart(
+    val song: Song,
+    val number: Int,
+    val titleOverride: String? = null,
+    val startMs: Long? = null,
+    val endMs: Long? = null,
+) {
+    val title: String get() = titleOverride ?: song.title
+    val durationMs: Long
+        get() = if (startMs != null && endMs != null && endMs > startMs) {
+            endMs - startMs
+        } else {
+            song.durationMs
+        }
+}
+
+data class AudiobookChapter(
+    val title: String,
+    val startMs: Long,
+    val endMs: Long,
+)
+
+data class Playlist(
+    val id: Long,
+    val name: String,
+    val songIds: List<Long> = emptyList(),
+    val isSystem: Boolean = false,
+)
+
+enum class ThemeMode {
+    System,
+    Light,
+    Dark,
+}
+
+enum class NowPlayingBarStyle {
+    Floating,
+    Compact,
+}
+
+enum class TextSizePreset(
+    val scaleFactor: Float,
+) {
+    Small(0.88f),
+    Compact(0.94f),
+    Default(1f),
+    Large(1.08f),
+    ExtraLarge(1.16f),
+}
+
+enum class AppLanguage(
+    val englishName: String,
+    val nativeName: String,
+) {
+    Albanian("Albanian", "Shqip"),
+    Bosnian("Bosnian", "Bosanski"),
+    Bulgarian("Bulgarian", "Български"),
+    Catalan("Catalan", "Català"),
+    Finnish("Finnish", "Suomi"),
+    Romanian("Romanian", "Română"),
+    Slovenian("Slovenian", "Slovenščina"),
+    Indonesian("Indonesian", "Bahasa Indonesia"),
+    Punjabi("Punjabi", "ਪੰਜਾਬੀ"),
+    English("English", "English"),
+    ChineseSimplified("Simplified Chinese", "简体中文"),
+    Croatian("Croatian", "Hrvatski"),
+    Czech("Czech", "Čeština"),
+    Danish("Danish", "Dansk"),
+    Dutch("Dutch", "Nederlands"),
+    Bengali("Bengali", "বাংলা"),
+    Estonian("Estonian", "Eesti"),
+    French("French", "Français"),
+    German("German", "Deutsch"),
+    Greek("Greek", "Ελληνικά"),
+    Hindi("Hindi", "हिन्दी"),
+    Hungarian("Hungarian", "Magyar"),
+    Italian("Italian", "Italiano"),
+    Japanese("Japanese", "日本語"),
+    Korean("Korean", "한국어"),
+    Latvian("Latvian", "Latviešu"),
+    Lithuanian("Lithuanian", "Lietuvių"),
+    Malay("Malay", "Bahasa Melayu"),
+    Macedonian("Macedonian", "Македонски"),
+    Norwegian("Norwegian", "Norsk"),
+    Polish("Polish", "Polski"),
+    Portuguese("Portuguese", "Português"),
+    Russian("Russian", "Русский"),
+    Slovak("Slovak", "Slovenčina"),
+    Serbian("Serbian", "Српски"),
+    Spanish("Spanish", "Español"),
+    Swedish("Swedish", "Svenska"),
+    Thai("Thai", "ไทย"),
+    Ukrainian("Ukrainian", "Українська"),
+    Urdu("Urdu", "اردو"),
+}
+
+enum class SearchHistoryKind {
+    Album,
+    Artist,
+}
+
+data class SearchHistoryEntry(
+    val key: String,
+    val kind: SearchHistoryKind,
+    val title: String,
+    val subtitle: String,
+    val artUri: Uri?,
+    val albumId: Long? = null,
+    val query: String? = null,
+)
+
+data class EqSettings(
+    val bands: List<Float> = List(18) { 0f },
+    val preampDb: Float = 0f,
+    val bass: Float = 0f,
+    val midrange: Float = 0f,
+    val treble: Float = 0f,
+    val spaciousness: Float = 0f,
+    val spaciousnessMode: SpaciousnessMode = SpaciousnessMode.StereoWidth,
+    val reverbDurationMs: Int = 0,
+    val reverbProfile: ReverbProfile = ReverbProfile.Dry,
+)
+
+data class EqCustomPreset(
+    val id: String,
+    val name: String,
+    val settings: EqSettings,
+) {
+    constructor(name: String, settings: EqSettings) : this(
+        id = stableEqPresetId(name),
+        name = name,
+        settings = settings,
+    )
+
+    companion object {
+        internal const val MAX_COUNT = 24
+        internal const val MAX_NAME_LENGTH = 40
+    }
+}
+
+internal fun normalizeEqPresetName(value: String): String = value.trim()
+
+internal fun stableEqPresetId(name: String): String {
+    val normalized = normalizeEqPresetName(name).lowercase(java.util.Locale.ROOT)
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(normalized.toByteArray(Charsets.UTF_8))
+    return "eq-" + digest.take(12).joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+}
+
+enum class SpaciousnessMode {
+    Off,
+    StereoWidth,
+    CrossfeedDepth,
+    EarlyReflectionRoom,
+    Philharmony,
+    HaasSpace,
+    HarmonicAir,
+}
+
+enum class ReverbProfile {
+    Dry,
+    Wet,
+}

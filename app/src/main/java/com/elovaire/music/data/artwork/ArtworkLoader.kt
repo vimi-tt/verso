@@ -1,0 +1,752 @@
+package elovaire.music.droidbeauty.app.data.artwork
+
+import android.content.ComponentCallbacks2
+import android.content.Context
+import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.util.LruCache
+import android.util.Size
+import elovaire.music.droidbeauty.app.core.MemoryPressure
+import elovaire.music.droidbeauty.app.core.memoryPressureForTrimLevel
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceKind
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceRegistry
+import elovaire.music.droidbeauty.app.core.backend.BackendResourceTracker
+import elovaire.music.droidbeauty.app.core.performance.ElovaireTrace
+import elovaire.music.droidbeauty.app.data.network.BoundedHttpTransport
+import elovaire.music.droidbeauty.app.data.audio.MediaMetadataRetrieverAdmission
+import java.io.ByteArrayOutputStream
+import java.io.Closeable
+import java.io.File
+import java.io.FileInputStream
+import java.io.InputStream
+import java.util.LinkedHashMap
+import java.util.Locale
+import java.util.TreeMap
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
+import java.util.concurrent.ExecutionException
+import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+
+internal data class ArtworkRequestKey(
+    val uri: Uri,
+    val targetPx: Int,
+    val purpose: ArtworkPurpose,
+) {
+    val cacheKey: String = "$uri|$targetPx|${artworkDecodeProfile(uri, purpose)}"
+}
+
+internal enum class ArtworkPurpose {
+    UiGrid,
+    UiLarge,
+    Notification,
+    PlaylistPreview,
+    TagEditorPreview,
+    AboutLogo,
+}
+
+internal data class ImageTargetSize(
+    val widthPx: Int,
+    val heightPx: Int,
+)
+
+internal fun artworkRequestKey(
+    uri: Uri?,
+    targetPx: Int,
+    purpose: ArtworkPurpose,
+): ArtworkRequestKey? {
+    val requestUri = uri?.takeIf { it.toString().isNotBlank() } ?: return null
+    return ArtworkRequestKey(
+        uri = requestUri,
+        targetPx = normalizeArtworkRequestSize(targetPx),
+        purpose = purpose,
+    )
+}
+
+internal fun normalizeArtworkRequestSize(size: Int): Int {
+    val requested = size.coerceAtLeast(1)
+    return when {
+        requested <= 96 -> 96
+        requested <= 160 -> 160
+        requested <= 256 -> 256
+        requested <= 384 -> 384
+        requested <= 512 -> 512
+        requested <= 768 -> 768
+        else -> 1024
+    }
+}
+
+internal fun isLikelyAudioMediaUri(uri: Uri): Boolean {
+    val path = uri.toString()
+        .substringBefore('?')
+        .substringBefore('#')
+        .lowercase(Locale.ROOT)
+    return path.contains("/audio/media/") || AUDIO_FILE_EXTENSIONS.any(path::endsWith)
+}
+
+internal fun shouldUseContentResolverThumbnail(
+    uri: Uri,
+    purpose: ArtworkPurpose,
+): Boolean {
+    return purpose != ArtworkPurpose.Notification && !isLikelyAudioMediaUri(uri)
+}
+
+private fun artworkDecodeProfile(uri: Uri, purpose: ArtworkPurpose): String {
+    val config = when (bitmapConfigForPurpose(purpose)) {
+        Bitmap.Config.RGB_565 -> "rgb565"
+        else -> "argb8888"
+    }
+    val source = if (shouldUseContentResolverThumbnail(uri, purpose)) "thumbnail" else "stream"
+    return "$config-$source"
+}
+
+internal fun loadArtworkBitmap(
+    context: Context,
+    uri: Uri?,
+    targetPx: Int,
+    purpose: ArtworkPurpose = if (targetPx <= 256) ArtworkPurpose.UiGrid else ArtworkPurpose.UiLarge,
+    resourceTracker: BackendResourceTracker = BackendResourceRegistry,
+    onAdmissionRejected: () -> Unit = {},
+): Bitmap? {
+    val requestUri = uri ?: return null
+    ArtworkBitmapCache.ensureRegistered(context.applicationContext, resourceTracker)
+    val size = normalizeArtworkRequestSize(targetPx)
+    val key = artworkRequestKey(requestUri, size, purpose)
+    val cached = key?.let {
+        cachedArtwork(it)
+    }
+    if (cached != null) return cached
+    val decode = artworkDecoder(context, requestUri, size, purpose, resourceTracker)
+    return if (key != null) ArtworkBitmapCache.getOrLoad(key.cacheKey, onAdmissionRejected, decode) else decode()
+}
+
+/** Visible requests suspend for admission; synchronous media callers still return immediately. */
+internal suspend fun loadArtworkBitmapAwaitingAdmission(
+    context: Context,
+    uri: Uri?,
+    targetPx: Int,
+    purpose: ArtworkPurpose = if (targetPx <= 256) ArtworkPurpose.UiGrid else ArtworkPurpose.UiLarge,
+    resourceTracker: BackendResourceTracker = BackendResourceRegistry,
+): Bitmap? = withContext(Dispatchers.IO) {
+    val requestUri = uri ?: return@withContext null
+    ArtworkBitmapCache.ensureRegistered(context.applicationContext, resourceTracker)
+    val size = normalizeArtworkRequestSize(targetPx)
+    val key = artworkRequestKey(requestUri, size, purpose)
+    key?.let(::cachedArtwork)?.let { return@withContext it }
+    val decode = artworkDecoder(context, requestUri, size, purpose, resourceTracker)
+    if (key == null) decode() else ArtworkBitmapCache.getOrLoadAwaiting(key.cacheKey, decode)
+}
+
+internal suspend fun loadArtworkBitmapAwaitingAdmission(
+    context: Context,
+    key: ArtworkRequestKey,
+    resourceTracker: BackendResourceTracker = BackendResourceRegistry,
+): Bitmap? = loadArtworkBitmapAwaitingAdmission(context, key.uri, key.targetPx, key.purpose, resourceTracker)
+
+internal fun loadArtworkBitmap(
+    context: Context,
+    key: ArtworkRequestKey,
+    resourceTracker: BackendResourceTracker = BackendResourceRegistry,
+): Bitmap? {
+    return loadArtworkBitmap(context, key.uri, key.targetPx, key.purpose, resourceTracker)
+}
+
+private fun cachedArtwork(key: ArtworkRequestKey): Bitmap? =
+    ArtworkBitmapCache[key.cacheKey]
+        ?: ArtworkBitmapCache.sameSizeForEquivalentPurpose(key.uri, key.targetPx, key.purpose)
+
+private fun artworkDecoder(
+    context: Context,
+    uri: Uri,
+    size: Int,
+    purpose: ArtworkPurpose,
+    resourceTracker: BackendResourceTracker,
+): () -> Bitmap? = {
+    val artworkResource = resourceTracker.acquire(BackendResourceKind.ActiveArtworkDecode)
+    try {
+        ElovaireTrace.section("artwork_decode") {
+            val targetSize = ImageTargetSize(size, size)
+            val bitmap = if (shouldUseContentResolverThumbnail(uri, purpose)) {
+                runCatching {
+                    context.contentResolver.loadThumbnail(uri, Size(size, size), null)
+                }.getOrNull()
+            } else {
+                null
+            }
+            bitmap
+                ?: if (isLikelyAudioMediaUri(uri)) {
+                    null
+                } else {
+                    decodeBitmapStream(context, uri, targetSize, purpose, resourceTracker)
+                }
+                ?: decodeEmbeddedArtwork(context, uri, targetSize, purpose, resourceTracker)
+        }
+    } finally {
+        artworkResource.close()
+    }
+}
+
+internal suspend fun <T> awaitArtworkLoad(future: CompletableFuture<T>): Result<T> =
+    suspendCancellableCoroutine { continuation ->
+        future.whenComplete { value, failure ->
+            if (failure == null) {
+                continuation.resume(Result.success(value))
+            } else {
+                continuation.resume(Result.failure(if (failure is CompletionException) failure.cause ?: failure else failure))
+            }
+        }
+    }
+
+internal fun decodeArtworkBytes(
+    bytes: ByteArray,
+    targetPx: Int,
+    purpose: ArtworkPurpose = ArtworkPurpose.TagEditorPreview,
+): Bitmap? {
+    if (bytes.isEmpty() || bytes.size > MAX_ENCODED_ARTWORK_BYTES) return null
+    val size = normalizeArtworkRequestSize(targetPx)
+    return runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val sampledOptions = artworkDecodeOptions(bounds, ImageTargetSize(size, size), purpose)
+            ?: return@runCatching null
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, sampledOptions)
+    }.getOrNull()
+}
+
+internal fun isArtworkFileDecodable(file: File): Boolean {
+    return runCatching {
+        FileInputStream(file).use { input ->
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeStream(input, null, bounds)
+            isArtworkBoundsSafe(bounds.outWidth, bounds.outHeight)
+        }
+    }.getOrDefault(false)
+}
+
+internal fun encodeArtworkForMediaSession(bitmap: Bitmap): ByteArray? {
+    fun encode(quality: Int): ByteArray? {
+        val output = ByteArrayOutputStream(
+            (bitmap.width * bitmap.height / 3).coerceAtLeast(16 * 1024),
+        )
+        if (!bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output)) return null
+        return output.toByteArray().takeIf { it.size <= MAX_MEDIA_SESSION_ARTWORK_BYTES }
+    }
+    return encode(94) ?: encode(84)
+}
+
+private fun decodeBitmapStream(
+    context: Context,
+    uri: Uri,
+    targetSize: ImageTargetSize,
+    purpose: ArtworkPurpose,
+    resourceTracker: BackendResourceTracker,
+): Bitmap? {
+    return runCatching {
+        if (uri.scheme == "https") {
+            return@runCatching loadOrFetchRemoteArtworkBytes(context, uri, resourceTracker)?.let { bytes ->
+                decodeArtworkBytes(bytes, targetSize.widthPx, purpose)
+            }
+        }
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        openArtworkInputStream(context, uri)?.use { inputStream ->
+            BitmapFactory.decodeStream(inputStream, null, options)
+        }
+        val sampledOptions = artworkDecodeOptions(options, targetSize, purpose)
+            ?: return@runCatching null
+        openArtworkInputStream(context, uri)?.use { inputStream ->
+            BitmapFactory.decodeStream(inputStream, null, sampledOptions)
+        }
+    }.getOrNull()
+}
+
+private fun loadOrFetchRemoteArtworkBytes(
+    context: Context,
+    uri: Uri,
+    resourceTracker: BackendResourceTracker,
+): ByteArray? {
+    val cacheFile = remoteArtworkCacheFile(context, uri)
+    if (cacheFile.isFile && cacheFile.length() > 0L) {
+        val cached = runCatching { cacheFile.readBytes() }.getOrNull()
+        if (cached != null && cached.isNotEmpty()) return cached
+    }
+    val downloaded = downloadRemoteArtwork(uri, resourceTracker) ?: return null
+    runCatching {
+        cacheFile.parentFile?.mkdirs()
+        val tempFile = File(cacheFile.parentFile, "${cacheFile.name}.tmp")
+        tempFile.writeBytes(downloaded)
+        if (!tempFile.renameTo(cacheFile)) {
+            tempFile.copyTo(cacheFile, overwrite = true)
+            tempFile.delete()
+        }
+    }
+    return downloaded
+}
+
+private fun remoteArtworkCacheFile(context: Context, uri: Uri): File {
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(uri.toString().toByteArray(Charsets.UTF_8))
+        .joinToString("") { byte -> "%02x".format(byte) }
+    return File(File(context.applicationContext.cacheDir, "remote_artwork"), digest)
+}
+
+private fun downloadRemoteArtwork(uri: Uri, resourceTracker: BackendResourceTracker): ByteArray? {
+    val response = ElovaireTrace.section("artwork_remote_fetch") {
+        runCatching {
+            BoundedHttpTransport(
+                connectTimeoutMs = REMOTE_ARTWORK_CONNECT_TIMEOUT_MS,
+                readTimeoutMs = REMOTE_ARTWORK_READ_TIMEOUT_MS,
+                resourceTracker = resourceTracker,
+            ).getBlocking(
+                rawUrl = uri.toString(),
+                headers = mapOf("Accept" to "image/*"),
+                maxBytes = MAX_REMOTE_ARTWORK_BYTES,
+            )
+        }.getOrNull()
+    } ?: return null
+    return response.body.takeIf { response.statusCode in 200..299 && it.isNotEmpty() }
+}
+
+private fun openArtworkInputStream(context: Context, uri: Uri): InputStream? {
+    return if (uri.scheme == "file") {
+        uri.path?.let(::FileInputStream)
+    } else {
+        context.contentResolver.openInputStream(uri)
+    }
+}
+
+private fun decodeEmbeddedArtwork(
+    context: Context,
+    uri: Uri,
+    targetSize: ImageTargetSize,
+    purpose: ArtworkPurpose,
+    resourceTracker: BackendResourceTracker,
+): Bitmap? {
+    return ArtworkBitmapCache.tryWithRetrieverPermit {
+        runCatching {
+            val retriever = MediaMetadataRetriever()
+            val resource = resourceTracker.acquire(BackendResourceKind.ActiveRetriever)
+            try {
+                retriever.setDataSource(context, uri)
+                val bytes = retriever.embeddedPicture ?: return@runCatching null
+                if (bytes.size > MAX_ENCODED_ARTWORK_BYTES) return@runCatching null
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                val sampledOptions = artworkDecodeOptions(bounds, targetSize, purpose)
+                    ?: return@runCatching null
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, sampledOptions)
+            } finally {
+                runCatching { retriever.release() }
+                resource.close()
+            }
+        }.getOrNull()
+    }
+}
+
+private const val MAX_ENCODED_ARTWORK_BYTES = 16 * 1024 * 1024
+private const val MAX_MEDIA_SESSION_ARTWORK_BYTES = 2 * 1024 * 1024
+private const val MAX_ARTWORK_DIMENSION = 8_192
+private const val MAX_ARTWORK_PIXELS = 40_000_000L
+private const val MAX_REMOTE_ARTWORK_BYTES = 2 * 1024 * 1024
+private const val REMOTE_ARTWORK_CONNECT_TIMEOUT_MS = 5_000
+private const val REMOTE_ARTWORK_READ_TIMEOUT_MS = 5_000
+private val AUDIO_FILE_EXTENSIONS = setOf(
+    ".aac",
+    ".flac",
+    ".m4a",
+    ".m4b",
+    ".mp3",
+    ".ogg",
+    ".oga",
+    ".opus",
+    ".wav",
+    ".webm",
+)
+
+internal fun isArtworkBoundsSafe(width: Int, height: Int): Boolean {
+    return width in 1..MAX_ARTWORK_DIMENSION &&
+        height in 1..MAX_ARTWORK_DIMENSION &&
+        width.toLong() * height <= MAX_ARTWORK_PIXELS
+}
+
+private fun artworkDecodeOptions(
+    bounds: BitmapFactory.Options,
+    targetSize: ImageTargetSize,
+    purpose: ArtworkPurpose,
+): BitmapFactory.Options? {
+    if (!isArtworkBoundsSafe(bounds.outWidth, bounds.outHeight)) return null
+    return BitmapFactory.Options().apply {
+        inPreferredConfig = bitmapConfigForPurpose(purpose)
+        inSampleSize = calculateInSampleSize(
+            outWidth = bounds.outWidth,
+            outHeight = bounds.outHeight,
+            targetSize = targetSize,
+        )
+    }
+}
+
+private fun calculateInSampleSize(
+    outWidth: Int,
+    outHeight: Int,
+    targetSize: ImageTargetSize,
+): Int {
+    if (outWidth <= 0 || outHeight <= 0 || targetSize.widthPx <= 0 || targetSize.heightPx <= 0) return 1
+    var sampleSize = 1
+    val halfWidth = outWidth / 2
+    val halfHeight = outHeight / 2
+    while (
+        halfWidth / sampleSize >= targetSize.widthPx &&
+        halfHeight / sampleSize >= targetSize.heightPx
+    ) {
+        sampleSize *= 2
+    }
+    return sampleSize.coerceAtLeast(1)
+}
+
+internal fun bitmapConfigForPurpose(purpose: ArtworkPurpose): Bitmap.Config {
+    return when (purpose) {
+        ArtworkPurpose.UiGrid,
+        ArtworkPurpose.PlaylistPreview,
+        -> Bitmap.Config.RGB_565
+
+        ArtworkPurpose.UiLarge,
+        ArtworkPurpose.Notification,
+        ArtworkPurpose.TagEditorPreview,
+        ArtworkPurpose.AboutLogo,
+        -> Bitmap.Config.ARGB_8888
+    }
+}
+
+/** One bounded decoded-bitmap cache shared by UI and notification artwork consumers. */
+internal object ArtworkBitmapCache {
+    private val maxCacheBytes = (Runtime.getRuntime().maxMemory() / 10L)
+        .coerceAtMost(24L * 1024L * 1024L)
+        .coerceAtLeast(4L * 1024L * 1024L)
+        .toInt()
+    private var callbacksRegistered = false
+    private var callbackResource: Closeable? = null
+    private val indexedBitmaps = mutableMapOf<String, TreeMap<Int, Bitmap>>()
+    private val cache = object : LruCache<String, Bitmap>(maxCacheBytes) {
+        override fun sizeOf(key: String, value: Bitmap): Int {
+            return value.allocationByteCount.coerceAtLeast(1)
+        }
+
+        override fun entryRemoved(
+            evicted: Boolean,
+            key: String,
+            oldValue: Bitmap,
+            newValue: Bitmap?,
+        ) {
+            val parsed = parseArtworkCacheKey(key) ?: return
+            val sizes = indexedBitmaps[parsed.first] ?: return
+            if (sizes[parsed.second] === oldValue) {
+                sizes.remove(parsed.second)
+                if (sizes.isEmpty()) indexedBitmaps.remove(parsed.first)
+            }
+        }
+    }
+    private class PendingArtworkLoad {
+        val future = CompletableFuture<Bitmap?>()
+        @Volatile
+        var invalidated = false
+    }
+
+    private val inFlight = mutableMapOf<String, PendingArtworkLoad>()
+    private val retrieverAdmission = MediaMetadataRetrieverAdmission()
+    private val _completedDecodes = MutableStateFlow(0L)
+    val completedDecodes = _completedDecodes.asStateFlow()
+    private const val MAX_IN_FLIGHT = 8
+
+    fun <T> tryWithRetrieverPermit(block: () -> T): T? = retrieverAdmission.tryWithPermit(block)
+
+    @Synchronized
+    fun ensureRegistered(
+        appContext: Context,
+        resourceTracker: BackendResourceTracker = BackendResourceRegistry,
+    ) {
+        if (callbacksRegistered) return
+        appContext.registerComponentCallbacks(object : ComponentCallbacks2 {
+            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+
+            @Deprecated("Deprecated Android callback")
+            override fun onLowMemory() = Unit
+
+            override fun onTrimMemory(level: Int) {
+                trim(level)
+            }
+        })
+        callbacksRegistered = true
+        callbackResource = resourceTracker.acquire(BackendResourceKind.ActiveRegisteredCallback)
+    }
+
+    @Synchronized
+    operator fun get(key: String): Bitmap? = cache.get(key)
+
+    @Synchronized
+    fun bestForUri(
+        uri: Uri,
+        requestedSize: Int,
+        purpose: ArtworkPurpose,
+    ): Bitmap? {
+        val sizes = indexedBitmaps["$uri|${artworkDecodeProfile(uri, purpose)}"] ?: return null
+        return sizes.ceilingEntry(requestedSize)?.value ?: sizes.lastEntry()?.value
+    }
+
+    @Synchronized
+    fun sameSizeForEquivalentPurpose(
+        uri: Uri,
+        requestedSize: Int,
+        purpose: ArtworkPurpose,
+    ): Bitmap? {
+        return indexedBitmaps["$uri|${artworkDecodeProfile(uri, purpose)}"]?.get(requestedSize)
+    }
+
+    fun put(key: String, bitmap: Bitmap) {
+        synchronized(this) {
+            cache.put(key, bitmap)
+            if (cache.get(key) !== bitmap) return
+            val parsed = parseArtworkCacheKey(key) ?: return
+            indexedBitmaps.getOrPut(parsed.first) { TreeMap() }[parsed.second] = bitmap
+        }
+    }
+
+    fun getOrLoad(
+        key: String,
+        onAdmissionRejected: () -> Unit = {},
+        decode: () -> Bitmap?,
+    ): Bitmap? {
+        while (true) {
+            var ownedLoad: PendingArtworkLoad? = null
+            val waitFor: PendingArtworkLoad?
+            synchronized(this) {
+                cache.get(key)?.let { return it }
+                val existing = inFlight[key]
+                if (existing != null) {
+                    waitFor = existing
+                } else if (inFlight.size < MAX_IN_FLIGHT) {
+                    ownedLoad = PendingArtworkLoad().also { inFlight[key] = it }
+                    waitFor = null
+                } else {
+                    // Synchronous callers do not park behind unrelated work. Suspending
+                    // UI callers retry on completion, without holding an IO thread.
+                    onAdmissionRejected()
+                    return null
+                }
+            }
+            if (ownedLoad == null) {
+                val completed = waitFor ?: continue
+                try {
+                    val loaded = completed.future.get()
+                    if (!completed.invalidated) return loaded
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return null
+                } catch (_: CancellationException) {
+                    // An independent owner was cancelled; retry for this caller.
+                } catch (failure: ExecutionException) {
+                    val cause = failure.cause ?: failure
+                    if (!completed.invalidated && cause !is CancellationException) throw cause
+                }
+            } else {
+                val pending = requireNotNull(ownedLoad)
+                val loaded = decodeAndComplete(key, pending, decode)
+                if (!pending.invalidated) return loaded
+            }
+        }
+    }
+
+    suspend fun getOrLoadAwaiting(key: String, decode: () -> Bitmap?): Bitmap? {
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val completedRevision = _completedDecodes.value
+            var cached: Bitmap? = null
+            var sharedLoad: PendingArtworkLoad? = null
+            var ownedLoad: PendingArtworkLoad? = null
+            var waitForAdmission = false
+            synchronized(this) {
+                cached = cache.get(key)
+                if (cached == null) {
+                    val existing = inFlight[key]
+                    if (existing != null) {
+                        sharedLoad = existing
+                    } else if (inFlight.size < MAX_IN_FLIGHT) {
+                        PendingArtworkLoad().also { pending ->
+                            inFlight[key] = pending
+                            ownedLoad = pending
+                        }
+                    } else {
+                        waitForAdmission = true
+                    }
+                }
+            }
+            cached?.let { return it }
+            sharedLoad?.let { pending ->
+                val result = awaitArtworkLoad(pending.future)
+                if (!pending.invalidated && result.exceptionOrNull() !is CancellationException) {
+                    return result.getOrThrow()
+                }
+                continue
+            }
+            if (waitForAdmission) {
+                _completedDecodes.first { it != completedRevision }
+                continue
+            }
+
+            val pending = requireNotNull(ownedLoad)
+            val loaded = decodeAndComplete(key, pending, decode)
+            if (!pending.invalidated) return loaded
+        }
+    }
+
+    private fun decodeAndComplete(key: String, pending: PendingArtworkLoad, decode: () -> Bitmap?): Bitmap? {
+        val outcome = runCatching {
+            val loaded = decode()
+            synchronized(this) {
+                if (pending.invalidated) null else loaded?.also { put(key, it) }
+            }
+        }
+        // Keep invalidated work admitted until its decoder finishes, and release its slot
+        // before waking waiters so they can request the updated cover without spinning.
+        synchronized(this) {
+            inFlight.remove(key)
+            _completedDecodes.value += 1L
+        }
+        outcome.fold(pending.future::complete, pending.future::completeExceptionally)
+        return outcome.getOrThrow()
+    }
+
+    @Synchronized
+    fun removeAllMatchingUris(uris: Collection<String>) {
+        if (uris.isEmpty()) return
+        val invalidatedUris = uris.toHashSet()
+        inFlight.forEach { (key, pending) ->
+            if (key in invalidatedUris || artworkCacheKeyUri(key) in invalidatedUris) {
+                pending.invalidated = true
+            }
+        }
+        cache.snapshot().keys.forEach { key ->
+            if (key in invalidatedUris || artworkCacheKeyUri(key) in invalidatedUris) {
+                cache.remove(key)
+            }
+        }
+    }
+
+    @Synchronized
+    private fun trim(level: Int) {
+        when (memoryPressureForTrimLevel(level)) {
+            MemoryPressure.Critical -> {
+                cache.evictAll()
+                ArtworkGradientCache.clear()
+            }
+            MemoryPressure.Moderate -> {
+                cache.trimToSize((maxCacheBytes / 2).coerceAtLeast(1))
+                ArtworkGradientCache.clear()
+            }
+            MemoryPressure.Normal -> Unit
+        }
+    }
+
+    private fun parseArtworkCacheKey(key: String): Pair<String, Int>? {
+        val purposeSeparator = key.lastIndexOf('|')
+        val sizeSeparator = key.lastIndexOf('|', purposeSeparator - 1)
+        if (purposeSeparator <= 0 || sizeSeparator <= 0) return null
+        val size = key.substring(sizeSeparator + 1, purposeSeparator).toIntOrNull() ?: return null
+        return "${key.substring(0, sizeSeparator)}|${key.substring(purposeSeparator + 1)}" to size
+    }
+}
+
+internal fun artworkCacheKeyUri(key: String): String? {
+    val purposeSeparator = key.lastIndexOf('|')
+    val sizeSeparator = key.lastIndexOf('|', purposeSeparator - 1)
+    return if (purposeSeparator <= 0 || sizeSeparator <= 0) null else key.substring(0, sizeSeparator)
+}
+
+internal fun invalidateArtworkBitmapCache(uris: Collection<String>) {
+    ArtworkBitmapCache.removeAllMatchingUris(uris)
+    ArtworkGradientCache.removeMatching(uris.toSet())
+}
+
+/** Presentation-independent artwork cache for colors derived from the same media artwork. */
+internal object ArtworkGradientCache {
+    private const val MAX_GRADIENTS = 160
+    private val _invalidationRevision = MutableStateFlow(0L)
+    val invalidationRevision = _invalidationRevision.asStateFlow()
+    private val gradients = object : LinkedHashMap<String, List<Int>>(MAX_GRADIENTS, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Int>>?): Boolean {
+            return size > MAX_GRADIENTS
+        }
+    }
+    private val accents = object : LinkedHashMap<String, Int>(MAX_GRADIENTS, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Int>?): Boolean {
+            return size > MAX_GRADIENTS
+        }
+    }
+
+    @Synchronized
+    fun gradient(key: String): List<Int>? = gradients[key]
+
+    @Synchronized
+    fun putGradient(
+        key: String,
+        gradient: List<Int>,
+        expectedInvalidationRevision: Long = _invalidationRevision.value,
+    ) {
+        if (expectedInvalidationRevision != _invalidationRevision.value) return
+        gradients[key] = gradient
+    }
+
+    @Synchronized
+    fun accent(key: String): Int? = accents[key]
+
+    @Synchronized
+    fun putAccent(
+        key: String,
+        color: Int,
+        expectedInvalidationRevision: Long = _invalidationRevision.value,
+    ) {
+        if (expectedInvalidationRevision != _invalidationRevision.value) return
+        accents[key] = color
+    }
+
+    @Synchronized
+    fun removeMatching(uriKeys: Set<String>) {
+        if (uriKeys.isEmpty()) return
+        fun matchesUri(key: String): Boolean {
+            var separator = key.indexOf('|')
+            while (separator >= 0) {
+                if (key.substring(0, separator) in uriKeys) return true
+                separator = key.indexOf('|', separator + 1)
+            }
+            return false
+        }
+        gradients.keys.removeAll(::matchesUri)
+        accents.keys.removeAll(::matchesUri)
+        _invalidationRevision.value += 1L
+    }
+
+    @Synchronized
+    fun clear() {
+        gradients.clear()
+        accents.clear()
+    }
+}
+
+internal fun invalidateArtworkCaches(uris: Collection<Uri?>) {
+    val keys = uris
+        .filterNotNull()
+        .map(Uri::toString)
+        .filter(String::isNotBlank)
+        .toSet()
+    if (keys.isEmpty()) return
+    invalidateArtworkBitmapCache(keys)
+}

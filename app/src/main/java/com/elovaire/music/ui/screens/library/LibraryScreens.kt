@@ -1,0 +1,4528 @@
+package elovaire.music.droidbeauty.app.ui.screens
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireCombinedClickable
+import elovaire.music.droidbeauty.app.ui.screens.common.MutedSectionHeader
+import elovaire.music.droidbeauty.app.ui.screens.common.ModuleCard
+import elovaire.music.droidbeauty.app.ui.screens.common.SectionTitleRow
+import elovaire.music.droidbeauty.app.ui.screens.common.SortOptionsPopup
+import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
+import elovaire.music.droidbeauty.app.ui.screens.common.secondaryBodyTextStyle
+import elovaire.music.droidbeauty.app.ui.screens.common.readableMutedIconColor
+import elovaire.music.droidbeauty.app.ui.screens.common.readableCardSurfaceColor
+import elovaire.music.droidbeauty.app.ui.screens.common.toggleSelection
+
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.util.Log
+import androidx.annotation.DrawableRes
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.MarqueeAnimationMode
+import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.scrollable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.overscroll
+import androidx.compose.foundation.rememberOverscrollEffect
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import elovaire.music.droidbeauty.app.BuildConfig
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import elovaire.music.droidbeauty.app.ui.motion.ElovaireCrossfade
+import elovaire.music.droidbeauty.app.ui.motion.elovaireContentChangeMotion
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.composed
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.zIndex
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.rememberNavController
+import dev.chrisbanes.haze.ExperimentalHazeApi
+import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazePerformanceMode
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.hazeBlur
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
+import elovaire.music.droidbeauty.app.R
+import elovaire.music.droidbeauty.app.data.library.LibraryContentState
+import elovaire.music.droidbeauty.app.data.library.LibraryFolderSelection
+import elovaire.music.droidbeauty.app.data.library.LibraryScanState
+import elovaire.music.droidbeauty.app.data.library.LibraryUiState
+import elovaire.music.droidbeauty.app.data.lyrics.LyricsLine
+import elovaire.music.droidbeauty.app.data.lyrics.LyricsPayload
+import elovaire.music.droidbeauty.app.data.lyrics.LyricsResult
+import elovaire.music.droidbeauty.app.data.lyrics.toEmbeddedLyricsText
+import elovaire.music.droidbeauty.app.data.artist.ArtistBackdropState
+import elovaire.music.droidbeauty.app.data.artist.ArtistDiscographyResult
+import elovaire.music.droidbeauty.app.data.artist.ArtistImageReader
+import elovaire.music.droidbeauty.app.data.playback.EqValuePolicy
+import elovaire.music.droidbeauty.app.data.playback.EqualizerDspConfig
+import elovaire.music.droidbeauty.app.data.playback.EqualizerDspModel
+import elovaire.music.droidbeauty.app.data.playback.PlaybackCollectionKind
+import elovaire.music.droidbeauty.app.data.playback.NowPlayingPlayback
+import elovaire.music.droidbeauty.app.data.settings.PlaylistMutationResult
+import elovaire.music.droidbeauty.app.data.playback.PlaybackNowPlayingState
+import elovaire.music.droidbeauty.app.data.playback.PlaybackProgressState
+import elovaire.music.droidbeauty.app.data.playback.PlaybackProgressConsumer
+import elovaire.music.droidbeauty.app.data.playback.PlaybackQueueState
+import elovaire.music.droidbeauty.app.data.playback.PlaybackTransportState
+import elovaire.music.droidbeauty.app.data.playback.PlaybackRepeatMode
+import elovaire.music.droidbeauty.app.data.playback.PlaybackUiState
+import elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeItem
+import elovaire.music.droidbeauty.app.data.playback.PlaybackVolumeState
+import elovaire.music.droidbeauty.app.data.playback.RecentPlaybackState
+import elovaire.music.droidbeauty.app.data.playback.SleepTimerOption
+import elovaire.music.droidbeauty.app.domain.model.Album
+import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
+import elovaire.music.droidbeauty.app.domain.model.AppLanguage
+import elovaire.music.droidbeauty.app.domain.model.EqSettings
+import elovaire.music.droidbeauty.app.domain.model.Playlist
+import elovaire.music.droidbeauty.app.domain.model.ReverbProfile
+import elovaire.music.droidbeauty.app.domain.model.SearchHistoryEntry
+import elovaire.music.droidbeauty.app.domain.model.SearchHistoryKind
+import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.domain.model.sumDurationMs
+import elovaire.music.droidbeauty.app.domain.model.SpaciousnessMode
+import elovaire.music.droidbeauty.app.domain.model.TextSizePreset
+import elovaire.music.droidbeauty.app.domain.model.ThemeMode
+import elovaire.music.droidbeauty.app.domain.search.NormalizedSearchQuery
+import elovaire.music.droidbeauty.app.domain.search.searchAlbumsForPicker
+import elovaire.music.droidbeauty.app.domain.search.searchArtistsForPicker
+import elovaire.music.droidbeauty.app.domain.search.searchPlaylists
+import elovaire.music.droidbeauty.app.domain.search.searchSongsForPicker
+import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
+import elovaire.music.droidbeauty.app.ui.components.invalidateArtworkCaches
+import elovaire.music.droidbeauty.app.ui.components.rememberArtworkBitmap
+import elovaire.music.droidbeauty.app.ui.components.rememberArtworkGradient
+import elovaire.music.droidbeauty.app.ui.components.rememberArtworkPaletteAccent
+import elovaire.music.droidbeauty.app.ui.interaction.CompactBarGestureActions
+import elovaire.music.droidbeauty.app.ui.interaction.compactBarGestures
+import elovaire.music.droidbeauty.app.ui.interaction.consumePointersWithoutSemantics
+import elovaire.music.droidbeauty.app.ui.interaction.elovaireActionBump
+import elovaire.music.droidbeauty.app.ui.interaction.elovairePillActionMotion
+import elovaire.music.droidbeauty.app.ui.interaction.elovairePressScale
+import elovaire.music.droidbeauty.app.ui.interaction.rememberElovaireInteractionSource
+import elovaire.music.droidbeauty.app.ui.motion.ElovaireAnimatedContent
+import elovaire.music.droidbeauty.app.ui.motion.ElovaireAnimatedVisibility
+import elovaire.music.droidbeauty.app.ui.motion.elovaireListReveal
+import elovaire.music.droidbeauty.app.ui.motion.LocalMotionRuntime
+import elovaire.music.droidbeauty.app.ui.motion.MotionDuration
+import elovaire.music.droidbeauty.app.ui.motion.MotionEasing
+import elovaire.music.droidbeauty.app.ui.motion.MotionTransitions
+import elovaire.music.droidbeauty.app.ui.motion.PopupCardMotionHost
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionTransitions
+import elovaire.music.droidbeauty.app.ui.motion.MotionRevealRegistry
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionRevealRegistry
+import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
+import elovaire.music.droidbeauty.app.ui.performance.PerformanceState
+import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.localizedArtistName
+import elovaire.music.droidbeauty.app.ui.i18n.localizedAlbumTitle
+import elovaire.music.droidbeauty.app.ui.i18n.shuffleAccessibilityCopy
+import elovaire.music.droidbeauty.app.ui.i18n.artistInfoCopy
+import elovaire.music.droidbeauty.app.ui.i18n.closeArtistInfoLabel
+import elovaire.music.droidbeauty.app.ui.i18n.MiscPhrase
+import elovaire.music.droidbeauty.app.ui.i18n.SettingsLanguageCopy
+import elovaire.music.droidbeauty.app.ui.i18n.UiPhrase
+import elovaire.music.droidbeauty.app.ui.i18n.commonUiCopy
+import elovaire.music.droidbeauty.app.ui.i18n.youtubeDownloadCopy
+import elovaire.music.droidbeauty.app.ui.i18n.discLabel
+import elovaire.music.droidbeauty.app.ui.i18n.availableReleasesLabel
+import elovaire.music.droidbeauty.app.ui.i18n.artistTopTracksSubtitle
+import elovaire.music.droidbeauty.app.ui.i18n.formatCountLabel
+import elovaire.music.droidbeauty.app.ui.i18n.homeCopy
+import elovaire.music.droidbeauty.app.ui.i18n.localizedAllSongsSource
+import elovaire.music.droidbeauty.app.ui.i18n.localizedCountLabel
+import elovaire.music.droidbeauty.app.ui.i18n.localizedSelectedCount
+import elovaire.music.droidbeauty.app.ui.i18n.libraryFoldersCopy
+import elovaire.music.droidbeauty.app.ui.i18n.miscPhrase
+import elovaire.music.droidbeauty.app.ui.i18n.playLabel
+import elovaire.music.droidbeauty.app.ui.i18n.playingFromPrefix
+import elovaire.music.droidbeauty.app.ui.i18n.queueTitle
+import elovaire.music.droidbeauty.app.ui.i18n.repeatModeLabel
+import elovaire.music.droidbeauty.app.ui.i18n.rootUiCopy
+import elovaire.music.droidbeauty.app.ui.i18n.localizedGenreName
+import elovaire.music.droidbeauty.app.ui.i18n.searchCopy
+import elovaire.music.droidbeauty.app.ui.i18n.searchSortModeLabel
+import elovaire.music.droidbeauty.app.ui.i18n.albumSortLabel
+import elovaire.music.droidbeauty.app.ui.i18n.songSortLabel
+import elovaire.music.droidbeauty.app.ui.i18n.settingsCopy
+import elovaire.music.droidbeauty.app.ui.i18n.sleepTimerCopy
+import elovaire.music.droidbeauty.app.ui.i18n.uiPhrase
+import elovaire.music.droidbeauty.app.ui.i18n.displayLabel
+import elovaire.music.droidbeauty.app.ui.screens.tags.AlbumTagEditorScreen
+import elovaire.music.droidbeauty.app.ui.screens.tags.AlbumTagEditorViewModel
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
+import elovaire.music.droidbeauty.app.ui.theme.AboutCardButtonAccent
+import elovaire.music.droidbeauty.app.ui.theme.DestructiveRed
+import elovaire.music.droidbeauty.app.ui.theme.ForceDarkColorScheme
+import elovaire.music.droidbeauty.app.ui.theme.elovaireResolvedColorScheme
+import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
+import elovaire.music.droidbeauty.app.ui.theme.rememberElovaireOverscrollFactory
+import elovaire.music.droidbeauty.app.ui.theme.InkText
+import elovaire.music.droidbeauty.app.ui.theme.RoseAccent
+import elovaire.music.droidbeauty.app.ui.theme.ToggleEnabledGreen
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.ceil
+import kotlin.math.ln
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.roundToInt
+import kotlin.math.pow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+
+
+
+@OptIn(ExperimentalHazeApi::class)
+
+@Composable
+internal fun HomeScreen(
+    lastPlayedAlbum: Album?,
+    lastPlayedPlaylist: Playlist?,
+    songsById: Map<Long, Song>,
+    recentlyAddedAlbums: List<Album>,
+    recentSongs: List<Song>,
+    favoriteAlbums: List<Album>,
+    playbackState: PlaybackUiState,
+    isLibraryLoading: Boolean,
+    isLibraryAuthoritative: Boolean,
+    libraryScanProgress: Float,
+    favoriteSongIds: Set<Long>,
+    topPadding: Dp,
+    bottomPadding: Dp,
+    scrollToTopRequestVersion: Long,
+    resetScrollOnColdStart: Boolean,
+    playInitialReveal: Boolean,
+    onInitialRevealFinished: () -> Unit,
+    onAlbumSelected: (Album, ExpandOrigin) -> Unit,
+    onPlaylistSelected: (Playlist) -> Unit,
+    onPlayAlbum: (Album) -> Unit,
+    onShuffleAlbum: (Album) -> Unit = {},
+    onPlayPlaylist: (Playlist, List<Song>) -> Unit,
+    onShufflePlaylist: (Playlist, List<Song>) -> Unit,
+    onOpenRecentlyAdded: () -> Unit,
+    onSongSelected: (Song) -> Unit,
+    onToggleFavorite: (Long) -> Unit,
+    albumOfDay: Album? = null,
+    homeLayout: List<HomeModule> = defaultHomeLayout,
+    youtubeHomeState: YouTubeHomeUiState = YouTubeHomeUiState(),
+    onSelectYouTubeMood: (YouTubeHomeItem.Mood?) -> Unit = {},
+    onYouTubeTrackSelected: (Song, List<Song>) -> Unit = { _, _ -> },
+    onYouTubeCollectionSelected: (YouTubeHomeItem.Collection) -> Unit = {},
+    onRetryYouTubeHome: () -> Unit = {},
+    onLoadMoreYouTubeHome: () -> Unit = {},
+    onYouTubeArtistSelected: (String) -> Unit = {},
+) {
+    val listState = rememberElovaireLazyListState("home_screen")
+    val language = LocalAppLanguage.current
+    val homeCopy = remember(language) { homeCopy(language) }
+    val motionRuntime = LocalMotionRuntime.current
+    val motionSpecs = rememberMotionSpecs()
+    val motionTransitions = rememberMotionTransitions()
+    val recentAlbumColumns = adaptiveGridColumnCount(2, LocalRootWindowSizeClass.current.width).coerceAtMost(4)
+    var revealModules by rememberSaveable(playInitialReveal) { mutableStateOf(!playInitialReveal) }
+    LaunchedEffect(resetScrollOnColdStart) {
+        if (resetScrollOnColdStart) {
+            lazyListPositionCache["home_screen"] = 0 to 0
+            listState.scrollToItem(0, 0)
+            withFrameNanos { }
+            listState.scrollToItem(0, 0)
+        }
+    }
+    LaunchedEffect(scrollToTopRequestVersion) {
+        if (scrollToTopRequestVersion > 0L && listState.firstVisibleItemIndex + listState.firstVisibleItemScrollOffset > 0) {
+            listState.animateScrollToItem(0)
+        }
+    }
+    LaunchedEffect(playInitialReveal) {
+        if (playInitialReveal) {
+            revealModules = false
+            delay(motionRuntime.duration(70L))
+            revealModules = true
+            delay(motionRuntime.duration(520L))
+            onInitialRevealFinished()
+        } else {
+            revealModules = true
+        }
+    }
+    val hasMusic = remember(songsById) {
+        songsById.values.any { it.mediaKind == AudioMediaKind.Music }
+    }
+    val showInitialLoadingState = isLibraryLoading &&
+        !hasMusic &&
+        recentlyAddedAlbums.isEmpty() &&
+        favoriteAlbums.isEmpty() &&
+        playbackState.recentSongIds.isEmpty()
+    val showEmptyLibraryState = !youtubeHomeState.hasContent &&
+        !youtubeHomeState.isLoading &&
+        !youtubeHomeState.hasError &&
+        shouldShowHomeEmptyLibraryState(
+            isLibraryLoading = isLibraryLoading,
+            isLibraryAuthoritative = isLibraryAuthoritative,
+            hasMusic = hasMusic,
+            hasHomeContent = recentlyAddedAlbums.isNotEmpty() ||
+                favoriteAlbums.isNotEmpty() ||
+                recentSongs.isNotEmpty(),
+        )
+    val lastPlayedPlaylistSongs = remember(lastPlayedPlaylist, songsById) {
+        lastPlayedPlaylist?.songIds
+            ?.mapNotNull(songsById::get)
+            ?.filter { it.mediaKind == AudioMediaKind.Music }
+            .orEmpty()
+    }
+    val activityMixCollection = remember(youtubeHomeState.shelves) {
+        youtubeHomeState.shelves
+            .flatMap { it.items }
+            .filterIsInstance<YouTubeHomeItem.Collection>()
+            .firstOrNull { !it.isAlbum }
+    }
+    val activityMixTracks = remember(youtubeHomeState.speedDialTracks, recentSongs) {
+        (youtubeHomeState.speedDialTracks + recentSongs).distinctBy { it.id }
+    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        ElovaireAnimatedContent(
+            targetState = when {
+                showInitialLoadingState -> HomeScreenState.Loading
+                showEmptyLibraryState -> HomeScreenState.Empty
+                else -> HomeScreenState.Content
+            },
+            transitionSpec = {
+                if (targetState == HomeScreenState.Loading) {
+                    fadeIn(animationSpec = motionSpecs.fadeIn()) togetherWith
+                        fadeOut(animationSpec = motionSpecs.fadeOut())
+                } else {
+                    (fadeIn(animationSpec = motionSpecs.fadeIn(MotionDuration.Spacious, delayMillis = 40)) +
+                        slideInVertically(
+                            animationSpec = motionSpecs.tween(
+                                durationMillis = MotionDuration.Screen,
+                                easing = MotionEasing.SoftOut,
+                            ),
+                            initialOffsetY = { -it / 14 },
+                        )) togetherWith fadeOut(animationSpec = motionSpecs.fadeOut())
+                }
+            },
+            label = "HomeLoadingTransition",
+        ) { state ->
+            when (state) {
+                HomeScreenState.Loading -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_lucide_disc_3),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = homeCopy.indexingTitle,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = homeCopy.indexingMessage,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(modifier = Modifier.height(18.dp))
+                    LinearProgressIndicator(
+                        progress = { libraryScanProgress.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth(0.58f)
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(ElovaireRadii.pill)),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
+                        drawStopIndicator = {},
+                    )
+                }
+                }
+
+                HomeScreenState.Empty -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_lucide_folder_x),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(30.dp),
+                            )
+                            Text(
+                                text = homeCopy.emptyLibraryTitle,
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                textAlign = TextAlign.Center,
+                            )
+                            Text(
+                                text = homeCopy.emptyLibraryMessage,
+                                style = secondaryBodyTextStyle(),
+                                color = readableSecondaryTextColor(),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(0.74f),
+                            )
+                        }
+                    }
+                }
+
+                HomeScreenState.Content -> {
+                ElovaireAnimatedVisibility(
+                    visible = revealModules,
+                    enter = fadeIn(animationSpec = motionSpecs.fadeIn(MotionDuration.Spacious)) +
+                        slideInVertically(
+                            animationSpec = motionSpecs.tween(
+                                durationMillis = MotionDuration.Standard,
+                                easing = MotionEasing.SoftOut,
+                            ),
+                            initialOffsetY = { -it / 18 },
+                        ),
+                    exit = fadeOut(animationSpec = motionSpecs.fadeOut()),
+                    label = "HomeFirstLaunchModulesReveal",
+                ) {
+                    LazyColumn(
+                        state = listState,
+                        overscrollEffect = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .ensureSingleItemRubberBand(listState),
+                        contentPadding = PaddingValues(
+                            start = 20.dp,
+                            top = topPadding + 8.dp,
+                            end = 20.dp,
+                            bottom = bottomPadding + 12.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
+                        if (youtubeHomeState.moods.isNotEmpty()) {
+                            item(
+                                key = "yt_home_moods",
+                                contentType = "yt_home_moods",
+                            ) {
+                                YouTubeMoodChipsRow(
+                                    moods = youtubeHomeState.moods,
+                                    selectedMoodKey = youtubeHomeState.selectedMoodKey,
+                                    onSelectMood = onSelectYouTubeMood,
+                                )
+                            }
+                        }
+
+                        if (youtubeHomeState.isLoading || youtubeHomeState.hasError) {
+                            item(
+                                key = "yt_home_status",
+                                contentType = "yt_home_status",
+                            ) {
+                                YouTubeHomeStatusBanner(
+                                    isLoading = youtubeHomeState.isLoading,
+                                    hasError = youtubeHomeState.hasError,
+                                    onRetry = onRetryYouTubeHome,
+                                )
+                            }
+                        }
+
+                        if (youtubeHomeState.selectedMoodKey == null && youtubeHomeState.speedDialTracks.isNotEmpty()) {
+                            item(
+                                key = "yt_home_speed_dial",
+                                contentType = "yt_home_speed_dial",
+                            ) {
+                                YouTubeSpeedDialSection(
+                                    tracks = youtubeHomeState.speedDialTracks,
+                                    onTrackClick = onYouTubeTrackSelected,
+                                )
+                            }
+                        }
+
+                        youtubeHomeState.shelves.forEachIndexed { index, shelf ->
+                            item(
+                                key = "yt_home_shelf_${index}_${shelf.title}",
+                                contentType = "yt_home_shelf",
+                            ) {
+                                YouTubeHomeShelfSection(
+                                    shelf = shelf,
+                                    favoriteSongIds = favoriteSongIds,
+                                    onTrackClick = onYouTubeTrackSelected,
+                                    onCollectionClick = onYouTubeCollectionSelected,
+                                    onArtistClick = onYouTubeArtistSelected,
+                                    onToggleFavorite = onToggleFavorite,
+                                )
+                            }
+                        }
+
+                        if (youtubeHomeState.continuation != null) {
+                            item(
+                                key = "yt_home_load_more",
+                                contentType = "yt_home_load_more",
+                            ) {
+                                YouTubeHomeLoadMorePill(
+                                    isLoadingMore = youtubeHomeState.isLoadingMore,
+                                    onLoadMore = onLoadMoreYouTubeHome,
+                                )
+                            }
+                        }
+
+                        homeLayout.forEach { module ->
+                        when (module) {
+                        HomeModule.LastPlayed -> {
+                        when {
+                            lastPlayedPlaylist != null && lastPlayedPlaylistSongs.isNotEmpty() -> item(
+                                key = "home_last_played_playlist_${lastPlayedPlaylist.id}",
+                            ) {
+                                LastPlayedPlaylistModule(
+                                    playlist = lastPlayedPlaylist,
+                                    songs = lastPlayedPlaylistSongs,
+                                    onOpen = { onPlaylistSelected(lastPlayedPlaylist) },
+                                    onPlay = { onPlayPlaylist(lastPlayedPlaylist, lastPlayedPlaylistSongs) },
+                                    onShuffle = { onShufflePlaylist(lastPlayedPlaylist, lastPlayedPlaylistSongs) },
+                                )
+                            }
+                            lastPlayedAlbum != null -> item(
+                                key = "home_last_played_album_${lastPlayedAlbum.id}",
+                            ) {
+                                val album = lastPlayedAlbum
+                                LastPlayedAlbumModule(
+                                    album = album,
+                                    onOpen = { origin -> onAlbumSelected(album, origin) },
+                                    onPlay = { onPlayAlbum(album) },
+                                )
+                            }
+                        }
+
+                        }
+                        HomeModule.RecentlyAdded,
+                        HomeModule.FavoriteAlbums -> Unit
+                        HomeModule.RecentlyPlayed -> {
+                    item(key = "home_recently_played") {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_lucide_circle_play),
+                                    contentDescription = null,
+                                    tint = readableMutedIconColor(),
+                                    modifier = Modifier.size(15.dp),
+                                )
+                                Text(
+                                    text = homeCopy.recentlyPlayedSongsTitle,
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            if (recentSongs.isEmpty()) {
+                                Text(
+                                    text = homeCopy.recentlyPlayedSongsEmpty,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = readableSecondaryTextColor(),
+                                )
+                            } else {
+                                Column {
+                                    recentSongs.forEachIndexed { index, song ->
+                                        HomeRecentSongRow(
+                                            song = song,
+                                            isFavorite = song.id in favoriteSongIds,
+                                            onClick = { onSongSelected(song) },
+                                            onToggleFavorite = { onToggleFavorite(song.id) },
+                                            showDivider = index != recentSongs.lastIndex,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    }
+                    HomeModule.AlbumOfDay -> {
+                        if (activityMixCollection != null || activityMixTracks.isNotEmpty()) {
+                            item(key = "home_activity_mix") {
+                                YouTubeActivityMixModule(
+                                    collection = activityMixCollection,
+                                    tracks = activityMixTracks,
+                                    onOpenCollection = {
+                                        if (activityMixCollection != null) {
+                                            onYouTubeCollectionSelected(activityMixCollection)
+                                        } else if (activityMixTracks.isNotEmpty()) {
+                                            onYouTubeTrackSelected(activityMixTracks.first(), activityMixTracks)
+                                        }
+                                    },
+                                    onPlay = {
+                                        if (activityMixTracks.isNotEmpty()) {
+                                            onYouTubeTrackSelected(activityMixTracks.first(), activityMixTracks)
+                                        } else if (activityMixCollection != null) {
+                                            onYouTubeCollectionSelected(activityMixCollection)
+                                        }
+                                    },
+                                    onShuffle = {
+                                        if (activityMixTracks.isNotEmpty()) {
+                                            val shuffled = activityMixTracks.shuffled()
+                                            onYouTubeTrackSelected(shuffled.first(), shuffled)
+                                        } else if (activityMixCollection != null) {
+                                            onYouTubeCollectionSelected(activityMixCollection)
+                                        }
+                                    },
+                                    modifier = Modifier.animateItem(placementSpec = motionSpecs.listPlacement()),
+                                )
+                            }
+                        }
+                    }
+                    }
+                    }
+                    }
+                }
+            }
+        }
+    }
+}
+}
+
+
+@Composable
+private fun LastPlayedAlbumModule(
+    album: Album,
+    onOpen: (ExpandOrigin) -> Unit,
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ForceDarkColorScheme {
+        val screenSizePx = screenContainerSizePx()
+        val screenWidthPx = screenSizePx.width.toFloat()
+        val screenHeightPx = screenSizePx.height.toFloat()
+        var bounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        val sharedSourceToken = remember { AlbumSharedTransitionToken.next() }
+        val sharedTransitionController = LocalAlbumSharedTransitionController.current
+        val artwork = rememberArtworkBitmap(album.artUri, size = 512)
+        val artworkMotion = rememberLastPlayedHeroArtworkMotion()
+        val density = LocalDensity.current
+        val year = remember(album.songs) { album.songs.firstNotNullOfOrNull { it.releaseYear } }
+        val genre = remember(album.songs) {
+            album.songs.firstOrNull { it.genre.isNotBlank() && it.genre != "Unknown Genre" }?.genre
+        }
+        val gradient = rememberArtworkGradient(album.artUri).value
+        val metaItems = remember(year, genre) {
+            buildList {
+                year?.toString()?.let(::add)
+                genre?.let(::add)
+            }
+        }
+        val playBackground = rememberArtworkPaletteAccent(album.artUri).value ?: MaterialTheme.colorScheme.primary
+        val playTint = if (playBackground.luminance() > 0.56f) InkText else Color.White
+        val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val baseTint = if (darkTheme) Color(0xFF141414).copy(alpha = 0.82f) else Color.White.copy(alpha = 0.82f)
+        val albumTint = gradient.first().copy(alpha = 0.46f)
+        val controlBaseTint = if (darkTheme) {
+            gradient.last().copy(alpha = 0.28f).compositeOver(Color.Black.copy(alpha = 0.16f))
+        } else {
+            gradient.last().copy(alpha = 0.22f).compositeOver(Color.White.copy(alpha = 0.16f))
+        }
+        val contentColor = if (controlBaseTint.luminance() > 0.42f) InkText else Color.White
+        val secondaryContentColor = contentColor.copy(alpha = 0.72f)
+
+        Box(
+            modifier = modifier
+                .onGloballyPositioned { bounds = it.boundsInWindow() }
+                .elovaireClickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = {
+                        sharedTransitionController?.select(album.id, sharedSourceToken)
+                        onOpen(bounds.toExpandOrigin(screenWidthPx, screenHeightPx))
+                    },
+                )
+                .clip(RoundedCornerShape(ElovaireRadii.module))
+                .background(baseTint)
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = if (darkTheme) 0.05f else 0.04f),
+                    shape = RoundedCornerShape(ElovaireRadii.module),
+                ),
+        ) {
+            artwork.value?.let { artworkBitmap ->
+                Image(
+                    bitmap = artworkBitmap,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .matchParentSize()
+                        .graphicsLayer {
+                            scaleX = artworkMotion.scale
+                            scaleY = artworkMotion.scale
+                            translationX = artworkMotion.translationX * density.density
+                            translationY = artworkMotion.translationY * density.density
+                        }
+                        .blur(40.dp),
+                    alpha = 0.88f,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(albumTint),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ArtworkImage(
+                    uri = album.artUri,
+                    title = localizedAlbumTitle(album.title, LocalAppLanguage.current),
+                    modifier = Modifier
+                        .size(88.dp)
+                        .albumSharedArtwork(
+                            albumId = album.id,
+                            sourceToken = sharedSourceToken,
+                        ),
+                    cornerRadius = ElovaireRadii.artwork,
+                    showArtworkGlow = true,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+                ) {
+                    Text(
+                        text = localizedAlbumTitle(album.title, LocalAppLanguage.current),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = contentColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = localizedArtistName(album.artist, LocalAppLanguage.current),
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                        color = secondaryContentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (metaItems.isNotEmpty()) {
+                        Text(
+                            text = metaItems.joinToString("  •  "),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                            color = secondaryContentColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                val playInteractionSource = rememberElovaireInteractionSource()
+                Surface(
+                    modifier = Modifier.elovaireActionBump(
+                        interactionSource = playInteractionSource,
+                        label = "album_header_play_bump",
+                    ),
+                    onClick = onPlay,
+                    interactionSource = playInteractionSource,
+                    shape = CircleShape,
+                    color = playBackground,
+                    contentColor = playTint,
+                ) {
+                    Box(
+                        modifier = Modifier.size(46.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_lucide_play),
+                            contentDescription = rootUiCopy(LocalAppLanguage.current).playAlbum,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LastPlayedPlaylistModule(
+    playlist: Playlist,
+    songs: List<Song>,
+    onOpen: () -> Unit,
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ForceDarkColorScheme {
+        val artworkSong = songs.firstOrNull()
+        val artwork = rememberArtworkBitmap(artworkSong?.artUri, size = 512)
+        val artworkMotion = rememberLastPlayedHeroArtworkMotion()
+        val density = LocalDensity.current
+        val gradient = rememberArtworkGradient(artworkSong?.artUri).value
+        val totalDurationMs = remember(songs) { songs.sumDurationMs() }
+        val language = LocalAppLanguage.current
+        val metaItems = remember(songs, totalDurationMs, language) {
+            listOf(
+                localizedCountLabel(songs.size, "track", language),
+                formatPlaylistDuration(totalDurationMs, language),
+            )
+        }
+        val playBackground = rememberArtworkPaletteAccent(artworkSong?.artUri).value ?: MaterialTheme.colorScheme.primary
+        val playTint = if (playBackground.luminance() > 0.56f) InkText else Color.White
+        val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val baseTint = if (darkTheme) Color(0xFF141414).copy(alpha = 0.82f) else Color.White.copy(alpha = 0.82f)
+        val playlistTint = gradient.first().copy(alpha = 0.46f)
+        val controlBaseTint = if (darkTheme) {
+            gradient.last().copy(alpha = 0.28f).compositeOver(Color.Black.copy(alpha = 0.16f))
+        } else {
+            gradient.last().copy(alpha = 0.22f).compositeOver(Color.White.copy(alpha = 0.16f))
+        }
+        val contentColor = if (controlBaseTint.luminance() > 0.42f) InkText else Color.White
+        val secondaryContentColor = contentColor.copy(alpha = 0.72f)
+
+        Box(
+            modifier = modifier
+                .clip(RoundedCornerShape(ElovaireRadii.module))
+                .elovaireClickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = onOpen,
+                )
+                .background(baseTint)
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = if (darkTheme) 0.05f else 0.04f),
+                    shape = RoundedCornerShape(ElovaireRadii.module),
+                ),
+        ) {
+            artwork.value?.let { artworkBitmap ->
+                Image(
+                    bitmap = artworkBitmap,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .matchParentSize()
+                        .graphicsLayer {
+                            scaleX = artworkMotion.scale
+                            scaleY = artworkMotion.scale
+                            translationX = artworkMotion.translationX * density.density
+                            translationY = artworkMotion.translationY * density.density
+                        }
+                        .blur(40.dp),
+                    alpha = 0.88f,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(playlistTint),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PlaylistArtworkPreview(
+                    songs = songs,
+                    title = playlist.name,
+                    modifier = Modifier.size(88.dp),
+                    cornerRadius = ElovaireRadii.artwork,
+                    placeholderIconSize = 20.dp,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+                ) {
+                    Text(
+                        text = playlist.name,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = contentColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = artworkSong?.artist?.let { localizedArtistName(it, LocalAppLanguage.current) }.orEmpty(),
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                        color = secondaryContentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = metaItems.joinToString("  •  "),
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                        color = secondaryContentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Surface(
+                    modifier = Modifier
+                        .width(46.dp)
+                        .height(92.dp),
+                    shape = RoundedCornerShape(ElovaireRadii.pill),
+                    color = playBackground,
+                    contentColor = playTint,
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        val shuffleInteractionSource = rememberElovaireInteractionSource()
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .elovaireActionBump(
+                                    interactionSource = shuffleInteractionSource,
+                                    label = "playlist_header_shuffle_bump",
+                                )
+                                .clickable(
+                                    interactionSource = shuffleInteractionSource,
+                                    indication = null,
+                                    onClick = onShuffle,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_lucide_shuffle),
+                                contentDescription = shuffleAccessibilityCopy(LocalAppLanguage.current).playlist,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        val playInteractionSource = rememberElovaireInteractionSource()
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .elovaireActionBump(
+                                    interactionSource = playInteractionSource,
+                                    label = "playlist_header_play_bump",
+                                )
+                                .clickable(
+                                    interactionSource = playInteractionSource,
+                                    indication = null,
+                                    onClick = onPlay,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_lucide_play),
+                                contentDescription = playLabel(language),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class LastPlayedHeroArtworkMotion(
+    val translationX: Float,
+    val translationY: Float,
+    val scale: Float,
+)
+
+@Composable
+private fun rememberLastPlayedHeroArtworkMotion(): LastPlayedHeroArtworkMotion {
+    if (LocalMotionRuntime.current.reduceMotion) {
+        return LastPlayedHeroArtworkMotion(
+            translationX = 0f,
+            translationY = 0f,
+            scale = 1.08f,
+        )
+    }
+    val motionSpecs = rememberMotionSpecs()
+    val infiniteTransition = rememberInfiniteTransition(label = "last_played_hero_artwork_motion")
+    val translationX by infiniteTransition.animateFloat(
+        initialValue = -7f,
+        targetValue = 7f,
+        animationSpec = infiniteRepeatable(
+            animation = motionSpecs.tween(
+                durationMillis = 11_000,
+                easing = LinearEasing,
+            ),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "last_played_hero_artwork_translation_x",
+    )
+    val translationY by infiniteTransition.animateFloat(
+        initialValue = 5f,
+        targetValue = -6f,
+        animationSpec = infiniteRepeatable(
+            animation = motionSpecs.tween(
+                durationMillis = 8_600,
+                easing = LinearEasing,
+            ),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "last_played_hero_artwork_translation_y",
+    )
+    return LastPlayedHeroArtworkMotion(
+        translationX = translationX,
+        translationY = translationY,
+        scale = 1.08f,
+    )
+}
+
+@Composable
+internal fun Modifier.libraryRemovalAnimation(isRemoving: Boolean): Modifier {
+    val motionSpecs = rememberMotionSpecs()
+    val alpha by animateFloatAsState(
+        targetValue = if (isRemoving) 0f else 1f,
+        animationSpec = motionSpecs.tween(if (isRemoving) MotionDuration.Standard else MotionDuration.Fast),
+        label = "library_item_removal_alpha",
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (isRemoving) 0.96f else 1f,
+        animationSpec = motionSpecs.tween(if (isRemoving) MotionDuration.Standard else MotionDuration.Fast),
+        label = "library_item_removal_scale",
+    )
+    return graphicsLayer {
+        this.alpha = alpha
+        scaleX = scale
+        scaleY = scale
+    }
+}
+
+@Composable
+private fun AlbumCollectionContent(
+    albums: List<Album>,
+    removingAlbumIds: Set<Long> = emptySet(),
+    playlists: List<Playlist>,
+    layoutMode: AlbumLayoutMode,
+    sortMode: AlbumSortMode,
+    topPadding: Dp,
+    bottomPadding: Dp,
+    title: String = rootUiCopy(AppLanguage.English).allAlbumsTitle,
+    subtitle: String = rootUiCopy(AppLanguage.English).allAlbumsSubtitle,
+    onLayoutModeChanged: (AlbumLayoutMode) -> Unit,
+    onSortModeChanged: (AlbumSortMode) -> Unit,
+    onAlbumSelected: (Album, ExpandOrigin) -> Unit,
+    onAddAlbumToQueue: (Album) -> Unit,
+    onAddAlbumToPlaylist: (Long, Album) -> PlaylistMutationRequest,
+    onCreatePlaylist: PlaylistCreateAction,
+    playlistSongsById: Map<Long, Song>,
+    favoriteSongIds: Set<Long>,
+    onSetAlbumFavorite: (List<Long>, Boolean) -> Unit,
+    onDeleteAlbumFromDevice: (Album) -> Unit,
+) {
+    val revealRegistry = rememberMotionRevealRegistry()
+    val motionTransitions = rememberMotionTransitions()
+    val motionSpecs = rememberMotionSpecs()
+    val widthClass = LocalRootWindowSizeClass.current.width
+    val albumGridColumns = adaptiveGridColumnCount(2, widthClass)
+    val denseAlbumGridColumns = adaptiveGridColumnCount(3, widthClass)
+    var showSortOptions by rememberSaveable { mutableStateOf(false) }
+    var selectedAlbumIds by rememberSaveable { mutableStateOf(setOf<Long>()) }
+    var showPlaylistPicker by rememberSaveable { mutableStateOf(false) }
+    val listState = rememberElovaireLazyListState(title, "album_collection_list")
+    val gridState = rememberElovaireLazyGridState(title, "album_collection_grid")
+    val selectionHazeState = rememberHazeState()
+    val selectionModeActive = selectedAlbumIds.isNotEmpty()
+    val albumSortEntries = remember(albums) { albumCollectionSortEntries(albums) }
+    val sortedAlbums = remember(albumSortEntries, sortMode) {
+        sortAlbumCollection(albumSortEntries, sortMode)
+    }
+    val selectedAlbums = remember(sortedAlbums, selectedAlbumIds) {
+        sortedAlbums.filter { it.id in selectedAlbumIds }
+    }
+    val selectedAlbumSongs = remember(selectedAlbums) {
+        selectedAlbums.flatMap { it.songs }.distinctBy { it.id }
+    }
+    val selectionTopInset by animateDpAsState(
+        targetValue = if (selectionModeActive) 50.dp else 0.dp,
+        animationSpec = motionSpecs.contentSize(),
+        label = "album_selection_top_inset",
+    )
+    BackHandler(enabled = selectionModeActive) {
+        selectedAlbumIds = emptySet()
+        showPlaylistPicker = false
+    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .hazeSource(selectionHazeState, zIndex = -1f)
+                .background(MaterialTheme.colorScheme.background)
+                .elovaireContentChangeMotion(layoutMode),
+        ) {
+        when (layoutMode) {
+            AlbumLayoutMode.Grid -> {
+                LazyVerticalGrid(
+                    state = gridState,
+                    overscrollEffect = null,
+                    columns = GridCells.Fixed(albumGridColumns),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .ensureSingleItemRubberBand(gridState),
+                    contentPadding = PaddingValues(
+                        start = 20.dp,
+                        top = topPadding + selectionTopInset + 8.dp,
+                        end = 20.dp,
+                        bottom = bottomPadding + 12.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    item(span = { GridItemSpan(albumGridColumns) }) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AlbumSortControl(
+                                selected = sortMode,
+                                expanded = showSortOptions,
+                                onToggleExpanded = { showSortOptions = !showSortOptions },
+                                onSelect = { selectedMode ->
+                                    onSortModeChanged(selectedMode)
+                                    showSortOptions = false
+                                },
+                            )
+                            Spacer(modifier = Modifier.width(11.dp))
+                            LibraryModeToggle(
+                                layoutMode = layoutMode,
+                                onLayoutModeChanged = onLayoutModeChanged,
+                            )
+                        }
+                    }
+
+                    itemsIndexed(
+                        items = sortedAlbums,
+                        key = { _, album -> album.id },
+                        contentType = { _, _ -> "album_grid_card" },
+                    ) { index, album ->
+                        AlbumGridCard(
+                            album = album,
+                            modifier = Modifier
+                                .animateItem(
+                                    placementSpec = motionSpecs.listPlacement(),
+                                )
+                                .elovaireListReveal(
+                                    itemKey = album.id,
+                                    index = index,
+                                    registry = revealRegistry,
+                                )
+                                .libraryRemovalAnimation(album.id in removingAlbumIds),
+                            selectionMode = selectionModeActive,
+                            selected = album.id in selectedAlbumIds,
+                            enableSharedTransition = !selectionModeActive,
+                            onOpen = { origin ->
+                                if (selectionModeActive) {
+                                    selectedAlbumIds = selectedAlbumIds.toggleSelection(album.id)
+                                } else {
+                                    onAlbumSelected(album, origin)
+                                }
+                            },
+                            onLongPress = {
+                                showSortOptions = false
+                                selectedAlbumIds = selectedAlbumIds + album.id
+                            },
+                        )
+                    }
+                }
+                FastScrollbar(
+                    state = gridState,
+                    topInset = topPadding + selectionTopInset + 16.dp,
+                    bottomInset = bottomPadding + 16.dp,
+                )
+            }
+
+            AlbumLayoutMode.DenseGrid -> {
+                LazyVerticalGrid(
+                    state = gridState,
+                    overscrollEffect = null,
+                    columns = GridCells.Fixed(denseAlbumGridColumns),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .ensureSingleItemRubberBand(gridState),
+                    contentPadding = PaddingValues(
+                        start = 6.dp,
+                        top = topPadding + selectionTopInset + 8.dp,
+                        end = 6.dp,
+                        bottom = bottomPadding + 12.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    item(span = { GridItemSpan(denseAlbumGridColumns) }) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AlbumSortControl(
+                                selected = sortMode,
+                                expanded = showSortOptions,
+                                onToggleExpanded = { showSortOptions = !showSortOptions },
+                                onSelect = { selectedMode ->
+                                    onSortModeChanged(selectedMode)
+                                    showSortOptions = false
+                                },
+                            )
+                            Spacer(modifier = Modifier.width(11.dp))
+                            LibraryModeToggle(
+                                layoutMode = layoutMode,
+                                onLayoutModeChanged = onLayoutModeChanged,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                    }
+
+                    itemsIndexed(
+                        items = sortedAlbums,
+                        key = { _, album -> album.id },
+                        contentType = { _, _ -> "album_grid_card" },
+                    ) { index, album ->
+                        AlbumGridCard(
+                            album = album,
+                            modifier = Modifier
+                                .animateItem(
+                                    placementSpec = motionSpecs.listPlacement(),
+                                )
+                                .elovaireListReveal(
+                                    itemKey = album.id,
+                                    index = index,
+                                    registry = revealRegistry,
+                                )
+                                .libraryRemovalAnimation(album.id in removingAlbumIds),
+                            selectionMode = selectionModeActive,
+                            selected = album.id in selectedAlbumIds,
+                            showText = false,
+                            artworkCornerRadius = 0.dp,
+                            showArtworkGlow = false,
+                            enableSharedTransition = !selectionModeActive,
+                            onOpen = { origin ->
+                                if (selectionModeActive) {
+                                    selectedAlbumIds = selectedAlbumIds.toggleSelection(album.id)
+                                } else {
+                                    onAlbumSelected(album, origin)
+                                }
+                            },
+                            onLongPress = {
+                                showSortOptions = false
+                                selectedAlbumIds = selectedAlbumIds + album.id
+                            },
+                        )
+                    }
+                }
+                FastScrollbar(
+                    state = gridState,
+                    topInset = topPadding + selectionTopInset + 16.dp,
+                    bottomInset = bottomPadding + 16.dp,
+                )
+            }
+
+            AlbumLayoutMode.Compact -> {
+                LazyColumn(
+                    state = listState,
+                    overscrollEffect = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .ensureSingleItemRubberBand(listState),
+                    contentPadding = PaddingValues(
+                        start = 20.dp,
+                        top = topPadding + selectionTopInset + 8.dp,
+                        end = 20.dp,
+                        bottom = bottomPadding + 12.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                ) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AlbumSortControl(
+                                selected = sortMode,
+                                expanded = showSortOptions,
+                                onToggleExpanded = { showSortOptions = !showSortOptions },
+                                onSelect = { selectedMode ->
+                                    onSortModeChanged(selectedMode)
+                                    showSortOptions = false
+                                },
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            LibraryModeToggle(
+                                layoutMode = layoutMode,
+                                onLayoutModeChanged = onLayoutModeChanged,
+                            )
+                        }
+                    }
+
+                    itemsIndexed(
+                        items = sortedAlbums,
+                        key = { _, album -> album.id },
+                        contentType = { _, _ -> "album_compact_row" },
+                    ) { index, album ->
+                        Box(
+                            modifier = Modifier
+                                .animateItem(
+                                    placementSpec = motionSpecs.listPlacement(),
+                                )
+                                .elovaireListReveal(
+                                    itemKey = album.id,
+                                    index = index,
+                                    registry = revealRegistry,
+                                )
+                                .libraryRemovalAnimation(album.id in removingAlbumIds),
+                        ) {
+                            CompactAlbumRow(
+                                album = album,
+                                selectionMode = selectionModeActive,
+                                selected = album.id in selectedAlbumIds,
+                                isFavorite = album.songs.isNotEmpty() && album.songs.all { it.id in favoriteSongIds },
+                                showFavoriteButton = true,
+                                playlists = playlists,
+                                playlistSongsById = playlistSongsById,
+                                onOpen = { origin ->
+                                    if (selectionModeActive) {
+                                        selectedAlbumIds = selectedAlbumIds.toggleSelection(album.id)
+                                    } else {
+                                        onAlbumSelected(album, origin)
+                                    }
+                                },
+                                onToggleFavorite = {
+                                    onSetAlbumFavorite(
+                                        album.songs.map(Song::id),
+                                        album.songs.any { it.id !in favoriteSongIds },
+                                    )
+                                },
+                                onAddToQueue = { onAddAlbumToQueue(album) },
+                                onAddToPlaylist = { playlistId -> onAddAlbumToPlaylist(playlistId, album) },
+                                onCreatePlaylist = onCreatePlaylist,
+                                onDeleteAlbum = { onDeleteAlbumFromDevice(album) },
+                                onLongPress = {
+                                    showSortOptions = false
+                                    selectedAlbumIds = selectedAlbumIds + album.id
+                                },
+                            )
+                        }
+                        if (index != sortedAlbums.lastIndex) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                DividerLine(
+                                    modifier = Modifier.fillMaxWidth(0.9f),
+                                )
+                            }
+                        }
+                    }
+                }
+                FastScrollbar(
+                    state = listState,
+                    topInset = topPadding + selectionTopInset + 16.dp,
+                    bottomInset = bottomPadding + 16.dp,
+                )
+            }
+
+        }
+        }
+        AnimatedVisibility(
+            visible = selectionModeActive,
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .zIndex(3f),
+            enter = motionTransitions.verticalRevealEnter(),
+            exit = motionTransitions.verticalRevealExit(),
+        ) {
+            TopBarSelectionMenu(
+                topBarHeight = topPadding,
+                hazeState = selectionHazeState,
+                onAddToPlaylist = { showPlaylistPicker = true },
+                onDelete = {
+                    onDeleteAlbumFromDevice(
+                        Album(
+                            id = -1L,
+                            title = "",
+                            artist = "",
+                            artUri = null,
+                            songCount = selectedAlbumSongs.size,
+                            durationMs = selectedAlbumSongs.sumDurationMs(),
+                            songs = selectedAlbumSongs,
+                        ),
+                    )
+                    selectedAlbumIds = emptySet()
+                },
+            )
+        }
+    }
+    val language = LocalAppLanguage.current
+    PlaylistSelectionDialog(
+        visible = showPlaylistPicker && selectionModeActive,
+        title = uiPhrase(language, UiPhrase.AddToPlaylist),
+        subtitle = when (selectedAlbums.size) {
+            1 -> localizedAlbumTitle(selectedAlbums.first().title, language)
+            else -> "${localizedSelectedCount(selectedAlbums.size, "album", language)} • ${localizedCountLabel(selectedAlbumSongs.size, "song", language)}"
+        },
+        playlists = playlists.filterNot { it.isSystem },
+        playlistSongsById = playlistSongsById,
+        onDismiss = { showPlaylistPicker = false },
+        onPlaylistSelected = { playlistId ->
+            val songs = selectedAlbums.flatMap(Album::songs).distinctBy(Song::id)
+            val combinedAlbum = Album(
+                id = -1L,
+                title = "",
+                artist = "",
+                artUri = null,
+                songCount = songs.size,
+                durationMs = songs.sumDurationMs(),
+                songs = songs,
+            )
+            val result = onAddAlbumToPlaylist(playlistId, combinedAlbum).await()
+            if (result is PlaylistMutationResult.Success) {
+                showPlaylistPicker = false
+                selectedAlbumIds = emptySet()
+            }
+            result
+        },
+        onCreatePlaylist = onCreatePlaylist,
+    )
+}
+
+@Composable
+internal fun TopBarSelectionMenu(
+    topBarHeight: Dp,
+    hazeState: HazeState,
+    onAddToPlaylist: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val language = LocalAppLanguage.current
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(topBarHeight + 50.dp),
+    ) {
+        FrostedTopBarBackground(
+            darkTheme = darkTheme,
+            modifier = Modifier.matchParentSize(),
+            hazeState = hazeState,
+        )
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(50.dp)
+                .padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AlbumCollectionActionButton(
+                iconResId = R.drawable.ic_lucide_list_plus,
+                label = uiPhrase(language, UiPhrase.AddToPlaylist),
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                onClick = onAddToPlaylist,
+            )
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 8.dp)
+                    .width(1.dp)
+                    .height(20.dp)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)),
+            )
+            AlbumCollectionActionButton(
+                iconResId = R.drawable.ic_lucide_trash_2,
+                label = uiPhrase(language, UiPhrase.Delete),
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.weight(1f),
+                onClick = onDelete,
+            )
+        }
+    }
+}
+
+internal data class TopBarMenuAction(
+    @DrawableRes val iconResId: Int,
+    val label: String,
+    val tint: Color,
+    val enabled: Boolean = true,
+    val onClick: () -> Unit,
+)
+
+@Composable
+internal fun TopBarDualActionMenu(
+    topBarHeight: Dp,
+    leadingAction: TopBarMenuAction,
+    trailingAction: TopBarMenuAction,
+    modifier: Modifier = Modifier,
+) {
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(topBarHeight + 50.dp),
+    ) {
+        FrostedTopBarBackground(
+            darkTheme = darkTheme,
+            modifier = Modifier.matchParentSize(),
+        )
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(50.dp)
+                .padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AlbumCollectionActionButton(
+                iconResId = leadingAction.iconResId,
+                label = leadingAction.label,
+                tint = leadingAction.tint,
+                enabled = leadingAction.enabled,
+                modifier = Modifier.weight(1f),
+                onClick = leadingAction.onClick,
+            )
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 8.dp)
+                    .width(1.dp)
+                    .height(20.dp)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)),
+            )
+            AlbumCollectionActionButton(
+                iconResId = trailingAction.iconResId,
+                label = trailingAction.label,
+                tint = trailingAction.tint,
+                enabled = trailingAction.enabled,
+                modifier = Modifier.weight(1f),
+                onClick = trailingAction.onClick,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlbumCollectionActionButton(
+    @DrawableRes iconResId: Int,
+    label: String,
+    tint: Color,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = rememberElovaireInteractionSource()
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(ElovaireRadii.pill))
+            .elovaireActionBump(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                label = "${label}_album_collection_action_bump",
+            )
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(id = iconResId),
+                contentDescription = null,
+                tint = tint.copy(alpha = if (enabled) 1f else 0.5f),
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = tint.copy(alpha = if (enabled) 1f else 0.5f),
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlbumSortControl(
+    selected: AlbumSortMode,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onSelect: (AlbumSortMode) -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    val motionSpecs = rememberMotionSpecs()
+    val chevronRotation = animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = motionSpecs.mediaRelease(),
+        label = "album_sort_chevron",
+    )
+    val interactionSource = rememberElovaireInteractionSource()
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box {
+            Surface(
+                modifier = Modifier.elovaireActionBump(
+                    interactionSource = interactionSource,
+                    label = "album_sort_bump",
+                ),
+                onClick = onToggleExpanded,
+                interactionSource = interactionSource,
+                shape = RoundedCornerShape(ElovaireRadii.pill),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_lucide_arrow_down_up),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text(
+                        text = albumSortLabel(language, selected),
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    )
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_lucide_chevron_down),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(16.dp)
+                            .graphicsLayer { rotationZ = chevronRotation.value },
+                    )
+                }
+            }
+
+            SortOptionsPopup(
+                expanded = expanded,
+                onDismissRequest = { if (expanded) onToggleExpanded() },
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(ElovaireRadii.card),
+                    color = Color.Transparent,
+                ) {
+                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                    AlbumSortMode.entries.forEachIndexed { index, mode ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .elovaireClickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    onClick = { onSelect(mode) },
+                                )
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = albumSortLabel(language, mode),
+                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                                color = if (mode == selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                            )
+                            if (mode == selected) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_lucide_check),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                        if (index != AlbumSortMode.entries.lastIndex) {
+                            DividerLine()
+                        }
+                    }
+                }
+            }
+        }
+        }
+    }
+}
+
+@Composable
+internal fun LibraryHubScreen(
+    libraryState: LibraryUiState,
+    audiobookProgressByKey: Map<String, elovaire.music.droidbeauty.app.data.playback.AudiobookProgress> = emptyMap(),
+    currentSongId: Long? = null,
+    topPadding: Dp,
+    bottomPadding: Dp,
+    scrollToTopRequestVersion: Long,
+    onOpenCollection: (LibraryCollectionKind) -> Unit,
+    onOpenRecentlyAdded: () -> Unit,
+    onOpenAudiobooks: () -> Unit,
+    onAudiobookSelected: (elovaire.music.droidbeauty.app.domain.model.Audiobook) -> Unit,
+    onAlbumSelected: (Album, ExpandOrigin) -> Unit,
+    downloadedSongsCount: Int = 0,
+    activeDownloadsCount: Int = 0,
+    onOpenDownloads: () -> Unit = {},
+    favoritesCount: Int = 0,
+    onOpenFavorites: () -> Unit = {},
+    youTubeSongsCount: Int = 0,
+    youTubeAlbumsCount: Int = 0,
+    youTubeArtistsCount: Int = 0,
+    onOpenStats: () -> Unit = {},
+    onOpenLocalCollection: (LibraryCollectionKind) -> Unit = onOpenCollection,
+) {
+    val language = LocalAppLanguage.current
+    val common = remember(language) { commonUiCopy(language) }
+    val recentAlbumColumns = adaptiveGridColumnCount(2, LocalRootWindowSizeClass.current.width).coerceAtMost(4)
+    val musicSongs = remember(libraryState.songs) {
+        libraryState.songs.filter { it.mediaKind == AudioMediaKind.Music }
+    }
+    val totalSongs = musicSongs.size
+    val totalAlbums = libraryState.albums.size
+    val recentlyAddedAlbums = remember(libraryState.albums) {
+        recentlyAddedAlbumsFor(libraryState, limit = 4)
+    }
+    val totalArtists = remember(musicSongs) {
+        distinctMusicArtistCount(musicSongs)
+    }
+    val totalGenres = remember(musicSongs) {
+        distinctMusicGenreCount(musicSongs)
+    }
+
+    val listState = rememberElovaireLazyListState("library_hub")
+    LaunchedEffect(scrollToTopRequestVersion) {
+        if (scrollToTopRequestVersion > 0L) {
+            listState.animateScrollToItem(0)
+        }
+    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            overscrollEffect = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .ensureSingleItemRubberBand(listState),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                top = topPadding,
+                end = 20.dp,
+                bottom = bottomPadding + 12.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            item {
+                Column(modifier = Modifier.padding(horizontal = 18.dp)) {
+                    LibraryHubRow(
+                        iconResId = R.drawable.ic_lucide_music,
+                        title = common.songs,
+                        detail = localizedCountLabel(youTubeSongsCount, "song", language),
+                        onClick = { onOpenCollection(LibraryCollectionKind.Songs) },
+                    )
+                    DividerLine()
+                    LibraryHubRow(
+                        iconResId = R.drawable.ic_lucide_disc_album,
+                        title = common.albums,
+                        detail = localizedCountLabel(youTubeAlbumsCount, "album", language),
+                        onClick = { onOpenCollection(LibraryCollectionKind.Albums) },
+                    )
+                    DividerLine()
+                    LibraryHubRow(
+                        iconResId = R.drawable.ic_lucide_mic_vocal,
+                        title = common.artists,
+                        detail = localizedCountLabel(youTubeArtistsCount, "artist", language),
+                        onClick = { onOpenCollection(LibraryCollectionKind.Artists) },
+                    )
+                    DividerLine()
+                    val dlCopy = remember(language) { youtubeDownloadCopy(language) }
+                    LibraryHubRow(
+                        iconResId = R.drawable.ic_lucide_download,
+                        title = dlCopy.downloadsTitle,
+                        detail = if (activeDownloadsCount > 0) {
+                            "${localizedCountLabel(downloadedSongsCount, "song", language)} • $activeDownloadsCount"
+                        } else {
+                            localizedCountLabel(downloadedSongsCount, "song", language)
+                        },
+                        onClick = onOpenDownloads,
+                    )
+                    DividerLine()
+                    val accountCopy = remember(language) { elovaire.music.droidbeauty.app.ui.i18n.youtubeAccountCopy(language) }
+                    LibraryHubRow(
+                        iconResId = R.drawable.ic_lucide_star_filled,
+                        title = accountCopy.favoritesTitle,
+                        detail = localizedCountLabel(favoritesCount, "song", language),
+                        onClick = onOpenFavorites,
+                    )
+                    DividerLine()
+                    val statsCopy = remember(language) { statsUiCopy(language) }
+                    LibraryHubRow(
+                        iconResId = R.drawable.ic_lucide_bar_chart_2,
+                        title = statsCopy.title,
+                        detail = statsCopy.recapTitle,
+                        onClick = onOpenStats,
+                    )
+                }
+            }
+
+            item {
+                ModuleCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MutedSectionHeader(
+                            title = elovaire.music.droidbeauty.app.ui.i18n.localMusicTitle(language),
+                            iconResId = R.drawable.ic_lucide_smartphone,
+                        )
+                        LibraryHubRow(
+                            iconResId = R.drawable.ic_lucide_music,
+                            title = common.songs,
+                            detail = "${localizedCountLabel(totalSongs, "song", language)} ${common.inYourLibrary}",
+                            onClick = { onOpenLocalCollection(LibraryCollectionKind.Songs) },
+                        )
+                        DividerLine()
+                        LibraryHubRow(
+                            iconResId = R.drawable.ic_lucide_disc_album,
+                            title = common.albums,
+                            detail = localizedCountLabel(totalAlbums, "album", language),
+                            onClick = { onOpenLocalCollection(LibraryCollectionKind.Albums) },
+                        )
+                        DividerLine()
+                        LibraryHubRow(
+                            iconResId = R.drawable.ic_lucide_mic_vocal,
+                            title = common.artists,
+                            detail = localizedCountLabel(totalArtists, "artist", language),
+                            onClick = { onOpenLocalCollection(LibraryCollectionKind.Artists) },
+                        )
+                    }
+                }
+            }
+
+            if (recentlyAddedAlbums.isNotEmpty()) {
+                item {
+                    ModuleCard {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            MutedSectionHeader(
+                                title = miscPhrase(LocalAppLanguage.current, MiscPhrase.RecentlyAdded),
+                                iconResId = R.drawable.ic_lucide_gallery_vertical_end,
+                                onClick = onOpenRecentlyAdded,
+                            )
+                            recentlyAddedAlbums.chunked(recentAlbumColumns).take(4).forEach { rowAlbums ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    rowAlbums.forEach { album ->
+                                        AlbumGridCard(
+                                            album = album,
+                                            modifier = Modifier.weight(1f),
+                                            onOpen = { origin -> onAlbumSelected(album, origin) },
+                                        )
+                                    }
+                                    repeat((recentAlbumColumns - rowAlbums.size).coerceAtLeast(0)) {
+                                        SpacerTile(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (libraryState.audiobooks.isNotEmpty()) {
+                item(key = "library_audiobooks") {
+                    AudiobookMiniGallery(
+                        books = libraryState.audiobooks,
+                        progressByBookKey = audiobookProgressByKey,
+                        currentSongId = currentSongId,
+                        onOpenCollection = onOpenAudiobooks,
+                        onBookSelected = onAudiobookSelected,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryHubRow(
+    iconResId: Int,
+    title: String,
+    detail: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .elovaireClickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 12.5.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(id = iconResId),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f),
+            modifier = Modifier.size(20.dp),
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = readableSecondaryTextColor(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            painter = painterResource(id = R.drawable.ic_lucide_chevron_left),
+            contentDescription = null,
+            tint = readableMutedIconColor().copy(alpha = 0.5f),
+            modifier = Modifier
+                .size(18.dp)
+                .rotate(180f),
+        )
+    }
+}
+
+@Composable
+internal fun LibraryCollectionScreen(
+    kind: LibraryCollectionKind,
+    libraryState: LibraryUiState,
+    artistImageRepository: ArtistImageReader,
+    playlists: List<Playlist>,
+    songPlayCounts: Map<Long, Int>,
+    favoriteSongIds: Set<Long>,
+    albumCollectionLayoutMode: AlbumLayoutMode,
+    songCollectionLayoutMode: AlbumLayoutMode,
+    albumSortMode: AlbumSortMode,
+    songSortMode: SongSortMode,
+    currentSongId: Long?,
+    isCurrentSongPlaying: Boolean,
+    bottomPadding: Dp,
+    onBack: () -> Unit,
+    onAlbumSelected: (Album, ExpandOrigin) -> Unit,
+    onAddAlbumToQueue: (Album) -> Unit,
+    onSongSelected: (Song, List<Song>) -> Unit,
+    onToggleFavorite: (Long) -> Unit,
+    onAddAlbumToPlaylist: (Long, Album) -> PlaylistMutationRequest,
+    onCreatePlaylist: PlaylistCreateAction,
+    playlistSongsById: Map<Long, Song>,
+    onSetAlbumFavorite: (List<Long>, Boolean) -> Unit,
+    onDeleteAlbumFromDevice: (Album) -> Unit,
+    onAlbumCollectionLayoutModeChanged: (AlbumLayoutMode) -> Unit,
+    onSongCollectionLayoutModeChanged: (AlbumLayoutMode) -> Unit,
+    onAlbumSortModeChanged: (AlbumSortMode) -> Unit,
+    onSongSortModeChanged: (SongSortMode) -> Unit,
+    onGenreSelected: (String) -> Unit,
+    onArtistSelected: (String) -> Unit,
+    localOnly: Boolean = false,
+    youTubeSongs: List<Song> = emptyList(),
+    youTubeAlbums: List<elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary> = emptyList(),
+    youTubeArtists: List<elovaire.music.droidbeauty.app.data.youtube.YouTubeArtistSummary> = emptyList(),
+    onOpenYouTubeAlbum: (elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary) -> Unit = {},
+    onOpenYouTubeArtist: (elovaire.music.droidbeauty.app.data.youtube.YouTubeArtistSummary) -> Unit = {},
+) {
+    val language = LocalAppLanguage.current
+    val common = remember(language) { commonUiCopy(language) }
+    val musicSongs = remember(libraryState.songs) {
+        libraryState.songs.filter { it.mediaKind == AudioMediaKind.Music }
+    }
+    val displayedSongs = if (localOnly) musicSongs else youTubeSongs
+    when (kind) {
+        LibraryCollectionKind.Songs -> SongCollectionScreen(
+            songs = displayedSongs,
+            removingSongIds = libraryState.removingSongIds,
+            favoriteSongIds = favoriteSongIds,
+            sortMode = songSortMode,
+            currentSongId = currentSongId,
+            isCurrentSongPlaying = isCurrentSongPlaying,
+            bottomPadding = bottomPadding,
+            onBack = onBack,
+            onSortModeChanged = onSongSortModeChanged,
+            onSongSelected = onSongSelected,
+            onToggleFavorite = onToggleFavorite,
+        )
+
+        LibraryCollectionKind.Albums -> {
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (!localOnly) {
+                    val columns = adaptiveGridColumnCount(2, LocalRootWindowSizeClass.current.width).coerceAtMost(4)
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(columns),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 20.dp,
+                            top = detailTopBarOccupiedHeight() + 12.dp,
+                            end = 20.dp,
+                            bottom = bottomPadding + 16.dp,
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        items(youTubeAlbums, key = { "yt_lib_album_${it.id}" }) { ytAlbum ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(ElovaireRadii.card))
+                                    .elovaireClickable(
+                                        interactionSource = rememberElovaireInteractionSource(),
+                                        onClick = { onOpenYouTubeAlbum(ytAlbum) },
+                                    ),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                ArtworkImage(
+                                    uri = ytAlbum.thumbnailUri,
+                                    title = ytAlbum.title,
+                                    placeholderIconResId = R.drawable.ic_lucide_disc_album,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f),
+                                    cornerRadius = ElovaireRadii.card,
+                                )
+                                Text(
+                                    text = ytAlbum.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (ytAlbum.subtitle.isNotBlank()) {
+                                    Text(
+                                        text = ytAlbum.subtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    AlbumCollectionContent(
+                        albums = libraryState.albums,
+                        removingAlbumIds = libraryState.removingAlbumIds,
+                        playlists = playlists,
+                        layoutMode = albumCollectionLayoutMode,
+                        sortMode = albumSortMode,
+                        topPadding = detailTopBarOccupiedHeight(),
+                        bottomPadding = bottomPadding,
+                        title = common.albums,
+                        subtitle = rootUiCopy(language).allAlbumsSubtitle,
+                        onLayoutModeChanged = onAlbumCollectionLayoutModeChanged,
+                        onSortModeChanged = onAlbumSortModeChanged,
+                        onAlbumSelected = onAlbumSelected,
+                        onAddAlbumToQueue = onAddAlbumToQueue,
+                        onAddAlbumToPlaylist = onAddAlbumToPlaylist,
+                        onCreatePlaylist = onCreatePlaylist,
+                        playlistSongsById = playlistSongsById,
+                        favoriteSongIds = favoriteSongIds,
+                        onSetAlbumFavorite = onSetAlbumFavorite,
+                        onDeleteAlbumFromDevice = onDeleteAlbumFromDevice,
+                    )
+                }
+                DetailListTopBar(
+                    title = common.albums,
+                    subtitle = localizedCountLabel(if (localOnly) libraryState.albums.size else youTubeAlbums.size, "album", language),
+                    onBack = onBack,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            }
+        }
+
+        LibraryCollectionKind.Artists -> if (localOnly) {
+            ArtistCollectionScreen(
+                songs = musicSongs,
+                artistImageRepository = artistImageRepository,
+                bottomPadding = bottomPadding,
+                onBack = onBack,
+                onArtistSelected = onArtistSelected,
+            )
+        } else {
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 20.dp,
+                        top = detailTopBarOccupiedHeight() + 12.dp,
+                        end = 20.dp,
+                        bottom = bottomPadding + 16.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(youTubeArtists, key = { "yt_sub_artist_${it.id}" }) { ytArtist ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(ElovaireRadii.card))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f))
+                                .elovaireClickable(
+                                    interactionSource = rememberElovaireInteractionSource(),
+                                    onClick = { onOpenYouTubeArtist(ytArtist) },
+                                )
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ArtworkImage(
+                                uri = ytArtist.thumbnailUri,
+                                title = ytArtist.name,
+                                placeholderIconResId = R.drawable.ic_lucide_mic_vocal,
+                                modifier = Modifier.size(48.dp),
+                                cornerRadius = ElovaireRadii.pill,
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = ytArtist.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                ytArtist.subscriberCount?.takeIf { it.isNotBlank() }?.let { sub ->
+                                    Text(
+                                        text = sub,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                DetailListTopBar(
+                    title = common.artists,
+                    subtitle = localizedCountLabel(youTubeArtists.size, "artist", language),
+                    onBack = onBack,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            }
+        }
+
+        LibraryCollectionKind.Genres -> GenreCollectionScreen(
+            songs = musicSongs,
+            bottomPadding = bottomPadding,
+            onBack = onBack,
+            onGenreSelected = onGenreSelected,
+        )
+    }
+}
+
+@Composable
+private fun SongCollectionScreen(
+    songs: List<Song>,
+    removingSongIds: Set<Long>,
+    favoriteSongIds: Set<Long>,
+    sortMode: SongSortMode,
+    currentSongId: Long?,
+    isCurrentSongPlaying: Boolean,
+    bottomPadding: Dp,
+    onBack: () -> Unit,
+    onSortModeChanged: (SongSortMode) -> Unit,
+    onSongSelected: (Song, List<Song>) -> Unit,
+    onToggleFavorite: (Long) -> Unit,
+) {
+    val revealRegistry = rememberMotionRevealRegistry()
+    val motionSpecs = rememberMotionSpecs()
+    val language = LocalAppLanguage.current
+    val common = remember(language) { commonUiCopy(language) }
+    var showSortOptions by rememberSaveable { mutableStateOf(false) }
+    val listState = rememberElovaireLazyListState("song_collection_list")
+    val songSortEntries = remember(songs) { songCollectionSortEntries(songs) }
+    val sortedSongs = remember(songSortEntries, sortMode) {
+        sortSongCollection(songSortEntries, sortMode)
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            overscrollEffect = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .ensureSingleItemRubberBand(listState),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                top = detailTopBarOccupiedHeight() + ElovaireSpacing.detailListTopGap,
+                end = 20.dp,
+                bottom = bottomPadding,
+            ),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+        ) {
+            item {
+                SongSortControl(
+                    selected = sortMode,
+                    expanded = showSortOptions,
+                    onToggleExpanded = { showSortOptions = !showSortOptions },
+                    onSelect = { selectedMode ->
+                        onSortModeChanged(selectedMode)
+                        showSortOptions = false
+                    },
+                )
+            }
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            itemsIndexed(
+                items = sortedSongs,
+                key = { _, song -> song.id },
+                contentType = { _, _ -> "song_row" },
+            ) { index, song ->
+                HomeRecentSongRow(
+                    song = song,
+                    isFavorite = song.id in favoriteSongIds,
+                    isCurrentSong = song.id == currentSongId,
+                    isPlaybackActive = isCurrentSongPlaying,
+                    onClick = { onSongSelected(song, sortedSongs) },
+                    onToggleFavorite = { onToggleFavorite(song.id) },
+                    showDivider = index != sortedSongs.lastIndex,
+                    modifier = Modifier
+                        .animateItem(
+                            placementSpec = motionSpecs.listPlacement(),
+                        )
+                        .elovaireListReveal(
+                            itemKey = song.id,
+                            index = index,
+                            registry = revealRegistry,
+                        )
+                        .libraryRemovalAnimation(song.id in removingSongIds),
+                )
+            }
+        }
+
+        DetailListTopBar(
+            title = common.songs,
+            subtitle = localizedCountLabel(sortedSongs.size, "song", language),
+            onBack = onBack,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+        FastScrollbar(
+            state = listState,
+            topInset = detailTopBarOccupiedHeight() + ElovaireSpacing.detailCompactTopGap,
+            bottomInset = bottomPadding + 16.dp,
+        )
+    }
+}
+
+@Composable
+private fun SongSortControl(
+    selected: SongSortMode,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onSelect: (SongSortMode) -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    val motionSpecs = rememberMotionSpecs()
+    val chevronRotation = animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = motionSpecs.mediaRelease(),
+        label = "song_sort_chevron",
+    )
+    val interactionSource = rememberElovaireInteractionSource()
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box {
+            Surface(
+                modifier = Modifier.elovaireActionBump(
+                    interactionSource = interactionSource,
+                    label = "song_sort_bump",
+                ),
+                onClick = onToggleExpanded,
+                interactionSource = interactionSource,
+                shape = RoundedCornerShape(ElovaireRadii.pill),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_lucide_arrow_down_up),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text(
+                        text = songSortLabel(language, selected),
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    )
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_lucide_chevron_down),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(16.dp)
+                            .graphicsLayer { rotationZ = chevronRotation.value },
+                    )
+                }
+            }
+
+            SortOptionsPopup(
+                expanded = expanded,
+                onDismissRequest = { if (expanded) onToggleExpanded() },
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(ElovaireRadii.card),
+                    color = Color.Transparent,
+                ) {
+                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                    SongSortMode.entries.forEachIndexed { index, mode ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .elovaireClickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    onClick = { onSelect(mode) },
+                                )
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = songSortLabel(language, mode),
+                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                                color = if (mode == selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                            )
+                            if (mode == selected) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_lucide_check),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                        if (index != SongSortMode.entries.lastIndex) {
+                            DividerLine()
+                        }
+                    }
+                }
+            }
+        }
+        }
+    }
+}
+
+@Composable
+private fun ArtistCollectionScreen(
+    songs: List<Song>,
+    artistImageRepository: ArtistImageReader,
+    bottomPadding: Dp,
+    onBack: () -> Unit,
+    onArtistSelected: (String) -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    val common = remember(language) { commonUiCopy(language) }
+    val listState = rememberElovaireLazyListState("artist_collection")
+    val artists = remember(songs) { artistEntriesFor(songs) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            overscrollEffect = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .ensureSingleItemRubberBand(listState),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                top = detailTopBarOccupiedHeight() + ElovaireSpacing.detailListTopGap,
+                end = 20.dp,
+                bottom = bottomPadding,
+            ),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+        ) {
+            itemsIndexed(
+                items = artists,
+                key = { _, artist -> artist.name },
+                contentType = { _, _ -> "artist-row" },
+            ) { index, artist ->
+                ArtistRow(
+                    artist = artist,
+                    artistImageRepository = artistImageRepository,
+                    onClick = { onArtistSelected(artist.name) },
+                )
+                if (index != artists.lastIndex) DividerLine()
+            }
+        }
+        FastScrollbar(
+            state = listState,
+            topInset = detailTopBarOccupiedHeight() + ElovaireSpacing.detailCompactTopGap,
+            bottomInset = bottomPadding + 16.dp,
+        )
+
+        DetailListTopBar(
+            title = common.artists,
+            subtitle = localizedCountLabel(artists.size, "artist", language),
+            onBack = onBack,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+    }
+}
+
+@Composable
+private fun GenreCollectionScreen(
+    songs: List<Song>,
+    bottomPadding: Dp,
+    onBack: () -> Unit,
+    onGenreSelected: (String) -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    val common = remember(language) { commonUiCopy(language) }
+    val listState = rememberElovaireLazyListState("genre_collection_list")
+    val genres = remember(songs) { genreEntriesFor(songs) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            overscrollEffect = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .ensureSingleItemRubberBand(listState),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                top = detailTopBarOccupiedHeight() + ElovaireSpacing.detailSectionTopGap,
+                end = 20.dp,
+                bottom = bottomPadding,
+            ),
+        ) {
+            itemsIndexed(
+                items = genres,
+                key = { _, genre -> genre.name },
+                contentType = { _, _ -> "genre_row" },
+            ) { index, genre ->
+                GenreRow(
+                    genre = genre,
+                    onClick = { onGenreSelected(genre.name) },
+                )
+                if (index != genres.lastIndex) {
+                    DividerLine()
+                }
+            }
+        }
+        FastScrollbar(
+            state = listState,
+            topInset = detailTopBarOccupiedHeight() + ElovaireSpacing.detailCompactTopGap,
+            bottomInset = bottomPadding + 16.dp,
+        )
+
+        DetailListTopBar(
+            title = common.genres,
+            subtitle = localizedCountLabel(genres.size, "genre", language),
+            onBack = onBack,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+    }
+}
+
+@Composable
+internal fun GenreAlbumsScreen(
+    genre: String,
+    libraryState: LibraryUiState,
+    playlists: List<Playlist>,
+    layoutMode: AlbumLayoutMode,
+    sortMode: AlbumSortMode,
+    bottomPadding: Dp,
+    onBack: () -> Unit,
+    onLayoutModeChanged: (AlbumLayoutMode) -> Unit,
+    onSortModeChanged: (AlbumSortMode) -> Unit,
+    onAlbumSelected: (Album, ExpandOrigin) -> Unit,
+    onAddAlbumToQueue: (Album) -> Unit,
+    onAddAlbumToPlaylist: (Long, Album) -> PlaylistMutationRequest,
+    onCreatePlaylist: PlaylistCreateAction,
+    playlistSongsById: Map<Long, Song>,
+    favoriteSongIds: Set<Long>,
+    onSetAlbumFavorite: (List<Long>, Boolean) -> Unit,
+    onDeleteAlbumFromDevice: (Album) -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    val filteredAlbums = remember(genre, libraryState.albums) {
+        libraryState.albums.filter { album ->
+            album.songs.any { song ->
+                song.genre.equals(genre, ignoreCase = true)
+            }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        AlbumCollectionContent(
+            albums = filteredAlbums,
+            removingAlbumIds = libraryState.removingAlbumIds,
+            playlists = playlists,
+            layoutMode = layoutMode,
+            sortMode = sortMode,
+            topPadding = detailTopBarOccupiedHeight(),
+            bottomPadding = bottomPadding,
+            title = localizedGenreName(genre, language),
+            subtitle = localizedCountLabel(filteredAlbums.size, "album", language),
+            onLayoutModeChanged = onLayoutModeChanged,
+            onSortModeChanged = onSortModeChanged,
+            onAlbumSelected = onAlbumSelected,
+            onAddAlbumToQueue = onAddAlbumToQueue,
+            onAddAlbumToPlaylist = onAddAlbumToPlaylist,
+            onCreatePlaylist = onCreatePlaylist,
+            playlistSongsById = playlistSongsById,
+            favoriteSongIds = favoriteSongIds,
+            onSetAlbumFavorite = onSetAlbumFavorite,
+            onDeleteAlbumFromDevice = onDeleteAlbumFromDevice,
+        )
+        DetailListTopBar(
+            title = localizedGenreName(genre, language),
+            subtitle = localizedCountLabel(filteredAlbums.size, "album", LocalAppLanguage.current),
+            onBack = onBack,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+    }
+}
+
+@Composable
+internal fun ArtistDetailScreen(
+    artistName: String,
+    artistSongs: List<Song>,
+    artistAlbums: List<Album>,
+    artistBackdropState: ArtistBackdropState,
+    onOpenArtistInfo: (String) -> Unit,
+    songPlayCounts: Map<Long, Int>,
+    favoriteSongIds: Set<Long>,
+    currentSongId: Long?,
+    isCurrentSongPlaying: Boolean,
+    bottomPadding: Dp,
+    onBack: () -> Unit,
+    onSongSelected: (Song, List<Song>) -> Unit,
+    onPlayArtist: (List<Song>) -> Unit,
+    onShuffleArtist: (List<Song>) -> Unit,
+    onAlbumSelected: (Album, ExpandOrigin) -> Unit,
+    onToggleFavorite: (Long) -> Unit,
+) {
+    val normalizedArtist = artistName.ifBlank { "Unknown Artist" }
+    val language = LocalAppLanguage.current
+    val artistInfoCopy = artistInfoCopy(language)
+    val topSongs = remember(artistSongs, songPlayCounts) {
+        topArtistSongs(artistSongs, songPlayCounts)
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        val listState = rememberElovaireLazyListState(normalizedArtist, "artist_detail")
+        LazyColumn(
+            state = listState,
+            overscrollEffect = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .ensureSingleItemRubberBand(listState),
+            contentPadding = PaddingValues(
+                top = 0.dp,
+                bottom = bottomPadding,
+            ),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            item("artist_hero") {
+                ArtistHeroHeader(
+                    artistName = normalizedArtist,
+                    subtitle = buildArtistScreenSubtitle(
+                        songCount = artistSongs.size,
+                        albumCount = artistAlbums.size,
+                        language = LocalAppLanguage.current,
+                    ),
+                    backdropState = artistBackdropState,
+                    localArtworkUri = artistAlbums.firstOrNull { it.artUri != null }?.artUri
+                        ?: artistSongs.firstOrNull { it.artUri != null }?.artUri,
+                    enabled = artistSongs.isNotEmpty(),
+                    onPlay = { onPlayArtist(artistSongs) },
+                    onShuffle = { onShuffleArtist(artistSongs) },
+                )
+            }
+            if (topSongs.isNotEmpty()) {
+                item {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        ArtistSectionTitleRow(
+                            title = rootUiCopy(LocalAppLanguage.current).mostPlayedSongs,
+                            subtitle = artistTopTracksSubtitle(topSongs.size, LocalAppLanguage.current),
+                            iconResId = R.drawable.ic_lucide_music,
+                        )
+                        Column {
+                            topSongs.forEachIndexed { index, song ->
+                                HomeRecentSongRow(
+                                    song = song,
+                                    isFavorite = song.id in favoriteSongIds,
+                                    isCurrentSong = song.id == currentSongId,
+                                    isPlaybackActive = isCurrentSongPlaying,
+                                    onClick = { onSongSelected(song, artistSongs) },
+                                    onToggleFavorite = { onToggleFavorite(song.id) },
+                                    showDivider = index != topSongs.lastIndex,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (artistAlbums.isNotEmpty()) {
+                item {
+                    Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                        ModuleCard(
+                            contentPadding = PaddingValues(start = 18.dp, top = 18.dp, end = 18.dp, bottom = 2.dp),
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                ArtistSectionTitleRow(
+                                    title = commonUiCopy(LocalAppLanguage.current).albums,
+                                    subtitle = availableReleasesLabel(artistAlbums.size, LocalAppLanguage.current),
+                                    iconResId = R.drawable.ic_lucide_disc_album,
+                                )
+                                ArtistAlbumGallery(
+                                    albums = artistAlbums,
+                                    onAlbumSelected = onAlbumSelected,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        DetailListTopBar(
+            title = commonUiCopy(language).artists,
+            subtitle = null,
+            onBack = onBack,
+            actions = listOf(
+                TopBarActionSpec(
+                    iconResId = R.drawable.ic_lucide_info,
+                    contentDescription = artistInfoCopy.buttonDescription,
+                    onClick = { onOpenArtistInfo(normalizedArtist) },
+                ),
+            ),
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+    }
+}
+
+@Composable
+internal fun ArtistDiscographyPopup(
+    artistName: String,
+    reader: elovaire.music.droidbeauty.app.data.artist.ArtistDiscographyReader,
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BackHandler(enabled = visible, onBack = onDismiss)
+    val copy = artistInfoCopy(LocalAppLanguage.current)
+    val commonCopy = commonUiCopy(LocalAppLanguage.current)
+    val transitions = rememberMotionTransitions()
+    val listState = rememberLazyListState()
+    val uriHandler = LocalUriHandler.current
+    var result by remember(artistName) { mutableStateOf<ArtistDiscographyResult?>(null) }
+    var discographyExpanded by remember(artistName) { mutableStateOf(false) }
+    val motionSpecs = rememberMotionSpecs()
+    val chevronRotation = animateFloatAsState(
+        targetValue = if (discographyExpanded) 180f else 0f,
+        animationSpec = motionSpecs.mediaRelease(),
+        label = "artist_discography_chevron",
+    )
+    LaunchedEffect(visible, artistName, reader) {
+        if (!visible) return@LaunchedEffect
+        result = null
+        result = reader.discography(artistName)
+    }
+    ElovaireAnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = transitions.overlayFadeEnter(initialAlpha = 0.86f),
+        exit = transitions.overlayFadeExit(targetAlpha = 0.94f),
+        label = "artist_discography_overlay",
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color.Black.copy(alpha = 0.46f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+            )
+            PopupCardMotionHost(
+                surfaceId = "artist.discography",
+                visible = visible,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.72f),
+            ) {
+                DynamicBackdropSurface(
+                    modifier = Modifier.fillMaxSize(),
+                    shape = RoundedCornerShape(topStart = ElovaireRadii.card, topEnd = ElovaireRadii.card),
+                    overlayAlpha = 0.6f,
+                    borderColor = null,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(
+                                start = 20.dp,
+                                top = 18.dp,
+                                end = 16.dp,
+                                bottom = navigationBarInsetDp() + 20.dp,
+                            ),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f).padding(end = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+                            ) {
+                                Text(
+                                    text = copy.buttonDescription,
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = localizedArtistName(artistName, LocalAppLanguage.current),
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                    color = readableSecondaryTextColor(),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                                    .elovaireClickable(onClick = onDismiss),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_lucide_x),
+                                    contentDescription = closeArtistInfoLabel(LocalAppLanguage.current),
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                        DividerLine(modifier = Modifier.padding(horizontal = 0.dp))
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        ) {
+                            when (val discography = result) {
+                                is ArtistDiscographyResult.Found -> {
+                                    LazyColumn(
+                                        state = listState,
+                                        overscrollEffect = null,
+                                        modifier = Modifier.fillMaxSize().ensureSingleItemRubberBand(listState),
+                                        verticalArrangement = Arrangement.spacedBy(0.dp),
+                                    ) {
+                                        if (discography.description != null) {
+                                            item(key = "artist_description") {
+                                                Text(
+                                                    text = discography.description,
+                                                    modifier = Modifier.padding(bottom = 18.dp),
+                                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                                                )
+                                            }
+                                        }
+                                        if (discography.genres.isNotEmpty()) {
+                                            item(key = "artist_genres") {
+                                                Column(
+                                                    modifier = Modifier.padding(bottom = 18.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                                ) {
+                                                    Text(
+                                                        text = commonCopy.genres,
+                                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                                        color = readableSecondaryTextColor(),
+                                                    )
+                                                    Text(
+                                                        text = discography.genres.joinToString(" · "),
+                                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        item(key = "artist_discography_toggle") {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(ElovaireRadii.module))
+                                                    .elovaireClickable(
+                                                        interactionSource = remember { MutableInteractionSource() },
+                                                        onClick = { discographyExpanded = !discographyExpanded },
+                                                    )
+                                                    .padding(vertical = 14.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Text(
+                                                    text = copy.discography,
+                                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                )
+                                                Icon(
+                                                    painter = painterResource(
+                                                        id = R.drawable.ic_lucide_chevron_down,
+                                                    ),
+                                                    contentDescription = null,
+                                                    tint = readableMutedIconColor(),
+                                                    modifier = Modifier
+                                                        .size(18.dp)
+                                                        .graphicsLayer { rotationZ = chevronRotation.value },
+                                                )
+                                            }
+                                        }
+                                        if (discographyExpanded && discography.albums.isEmpty()) {
+                                            item(key = "artist_discography_unavailable") {
+                                                Text(
+                                                    text = copy.unavailable,
+                                                    modifier = Modifier.padding(vertical = 14.dp),
+                                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                                    color = readableSecondaryTextColor(),
+                                                )
+                                            }
+                                        }
+                                        if (discographyExpanded) itemsIndexed(
+                                            items = discography.albums,
+                                            key = { index, album -> "${album.title}_${album.firstReleaseDate}_$index" },
+                                            contentType = { _, _ -> "artist_discography_album" },
+                                        ) { index, album ->
+                                            Column(modifier = Modifier.animateItem(
+                                                fadeInSpec = motionSpecs.fadeIn(),
+                                                placementSpec = motionSpecs.listPlacement(),
+                                                fadeOutSpec = motionSpecs.fadeOut(),
+                                            )) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(vertical = 14.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Text(
+                                                        text = localizedAlbumTitle(album.title, LocalAppLanguage.current),
+                                                        modifier = Modifier.weight(1f),
+                                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                    )
+                                                    Column(
+                                                        horizontalAlignment = Alignment.End,
+                                                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                                                    ) {
+                                                        Text(
+                                                            text = copy.releaseDate,
+                                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                                            color = readableSecondaryTextColor(),
+                                                        )
+                                                        Text(
+                                                            text = album.firstReleaseDate ?: "—",
+                                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                                            color = MaterialTheme.colorScheme.onSurface,
+                                                        )
+                                                    }
+                                                }
+                                                if (index != discography.albums.lastIndex) DividerLine()
+                                            }
+                                        }
+                                    }
+                                    FastScrollbar(
+                                        state = listState,
+                                        topInset = 0.dp,
+                                        bottomInset = 0.dp,
+                                        trackGesturesEnabled = false,
+                                    )
+                                }
+
+                                ArtistDiscographyResult.NotFound,
+                                ArtistDiscographyResult.Unavailable -> Text(
+                                    text = copy.unavailable,
+                                    modifier = Modifier.align(Alignment.Center),
+                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                                    color = readableSecondaryTextColor(),
+                                    textAlign = TextAlign.Center,
+                                )
+
+                                null -> Column(
+                                    modifier = Modifier.align(Alignment.Center),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Text(
+                                        text = copy.loading,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                        color = readableSecondaryTextColor(),
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = when {
+                                (result as? ArtistDiscographyResult.Found)?.descriptionSourceUrl != null -> "Wikipedia · MusicBrainz"
+                                else -> "MusicBrainz"
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .elovaireClickable(
+                                    enabled = (result as? ArtistDiscographyResult.Found)?.descriptionSourceUrl != null,
+                                    interactionSource = remember { MutableInteractionSource() },
+                                ) {
+                                    (result as? ArtistDiscographyResult.Found)?.descriptionSourceUrl?.let(uriHandler::openUri)
+                                },
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                            color = readableSecondaryTextColor(),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun topArtistSongs(
+    songs: List<Song>,
+    playCounts: Map<Long, Int>,
+): List<Song> {
+    val comparator = compareByDescending<Song> { playCounts[it.id] ?: 0 }
+        .thenBy { it.title.lowercase() }
+    if (songs.size <= ARTIST_TOP_SONG_LIMIT) return songs.sortedWith(comparator)
+
+    val topSongs = ArrayList<Song>(ARTIST_TOP_SONG_LIMIT)
+    songs.forEach { candidate ->
+        val insertionIndex = topSongs.indexOfFirst { comparator.compare(candidate, it) < 0 }
+        if (insertionIndex >= 0) {
+            topSongs.add(insertionIndex, candidate)
+            if (topSongs.size > ARTIST_TOP_SONG_LIMIT) topSongs.removeAt(topSongs.lastIndex)
+        } else if (topSongs.size < ARTIST_TOP_SONG_LIMIT) {
+            topSongs += candidate
+        }
+    }
+    return topSongs
+}
+
+private const val ARTIST_TOP_SONG_LIMIT = 5
+
+@Composable
+private fun ArtistHeroHeader(
+    artistName: String,
+    subtitle: String,
+    backdropState: ArtistBackdropState,
+    localArtworkUri: Uri?,
+    enabled: Boolean,
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+) {
+    val sourceUri = when (backdropState) {
+        is ArtistBackdropState.Fallback -> backdropState.artworkUri
+        ArtistBackdropState.Loading -> localArtworkUri
+    } ?: localArtworkUri
+    val backdropImage = rememberArtworkBitmap(sourceUri, size = 1024).value
+    val gradient = rememberArtworkGradient(sourceUri).value
+    val paletteAccent = rememberAnimatedArtistPaletteAccent(sourceUri)
+    val heroHazeState = rememberHazeState()
+    var displayedBackdropImage by remember { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(artistName, backdropImage, sourceUri) {
+        when {
+            backdropImage != null -> displayedBackdropImage = backdropImage
+            sourceUri == null -> displayedBackdropImage = null
+        }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(356.dp)
+            .clip(
+                RoundedCornerShape(
+                    bottomStart = ElovaireRadii.dialog,
+                    bottomEnd = ElovaireRadii.dialog,
+                ),
+            )
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .hazeSource(heroHazeState, zIndex = -1f),
+        ) {
+            ArtistHeroBackdrop(
+                image = displayedBackdropImage,
+                gradient = gradient,
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.48f),
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.84f),
+                            ),
+                        ),
+                    ),
+            )
+            ArtistHeroAccentGradient(accent = paletteAccent)
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = localizedArtistName(artistName, LocalAppLanguage.current),
+                style = MaterialTheme.typography.displayLarge.copy(
+                    fontSize = elovaireScaledSp(34f),
+                    lineHeight = MaterialTheme.typography.displayLarge.lineHeight * 0.88f,
+                ),
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AlbumHeaderPlayButton(
+                    tint = Color.White,
+                    backgroundColor = RoseAccent,
+                    onClick = onPlay,
+                )
+                ArtistShuffleButton(
+                    enabled = enabled,
+                    hazeState = heroHazeState,
+                    onClick = onShuffle,
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                    color = Color.White.copy(alpha = 0.78f),
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArtistHeroBackdrop(
+    image: ImageBitmap?,
+    gradient: List<Color>,
+) {
+    val motionSpecs = rememberMotionSpecs()
+    AnimatedContent(
+        targetState = image,
+        transitionSpec = {
+            fadeIn(animationSpec = motionSpecs.fadeIn()) togetherWith
+                fadeOut(animationSpec = motionSpecs.fadeOut())
+        },
+        label = "artist_splash_artwork",
+    ) { backdrop ->
+        if (backdrop != null) {
+            Image(
+                bitmap = backdrop,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                alpha = 0.92f,
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                gradient.first().copy(alpha = 0.96f),
+                                MaterialTheme.colorScheme.background,
+                                gradient.last().copy(alpha = 0.84f),
+                            ),
+                        ),
+                    ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun rememberAnimatedArtistPaletteAccent(uri: Uri?): Color {
+    val paletteAccent = rememberArtworkPaletteAccent(uri).value ?: MaterialTheme.colorScheme.primary
+    val motionSpecs = rememberMotionSpecs()
+    return animateColorAsState(
+        targetValue = paletteAccent,
+        animationSpec = motionSpecs.tween(
+            durationMillis = MotionDuration.Fast,
+            easing = MotionEasing.SoftOut,
+        ),
+        label = "artist_splash_palette_accent",
+    ).value
+}
+
+@Composable
+internal fun BoxScope.ArtistHeroAccentGradient(accent: Color) {
+    Box(
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .fillMaxWidth()
+            .height(100.dp)
+            .background(
+                Brush.verticalGradient(
+                    colorStops = arrayOf(
+                        0f to Color.Transparent,
+                        0.56f to accent.copy(alpha = 0.18f),
+                        1f to accent.copy(alpha = 0.8f),
+                    ),
+                ),
+            ),
+    )
+}
+
+@OptIn(ExperimentalHazeApi::class)
+@Composable
+private fun ArtistShuffleButton(
+    enabled: Boolean,
+    hazeState: HazeState,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape),
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .hazeBlur(
+                        input = HazeInput.Sources(hazeState),
+                        style = HazeBlurStyle {
+                            blurRadius(20.dp)
+                        },
+                        performanceMode = HazePerformanceMode.Quality,
+                    ),
+            )
+        }
+        AlbumHeaderActionButton(
+            iconResId = R.drawable.ic_lucide_shuffle,
+            contentDescription = shuffleAccessibilityCopy(LocalAppLanguage.current).artist,
+            tint = Color.White,
+            backgroundColor = Color.White.copy(alpha = if (enabled) 0.18f else 0.08f),
+            iconSize = 18.dp,
+            onClick = onClick,
+        )
+    }
+}
+
+@Composable
+private fun ArtistSectionTitleRow(
+    title: String,
+    subtitle: String,
+    @DrawableRes iconResId: Int,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(id = iconResId),
+            contentDescription = null,
+            tint = readableMutedIconColor(),
+            modifier = Modifier.size(18.dp),
+        )
+        SectionTitleRow(
+            title = title,
+            subtitle = subtitle,
+            compact = true,
+        )
+    }
+}
+
+private fun buildArtistScreenSubtitle(
+    songCount: Int,
+    albumCount: Int,
+    language: AppLanguage,
+): String {
+    return "${localizedCountLabel(albumCount, "album", language)} • ${localizedCountLabel(songCount, "song", language)}"
+}
+
+internal fun Song.libraryArtistName(): String {
+    return albumArtist?.takeIf { it.isNotBlank() } ?: artist.ifBlank { "Unknown Artist" }
+}
+
+@Composable
+internal fun ArtistAlbumGallery(
+    albums: List<Album>,
+    onAlbumSelected: (Album, ExpandOrigin) -> Unit,
+) {
+    val scrollState = rememberScrollState()
+    val itemWidth = 158.dp
+    val itemGap = 14.dp
+    val contentWidth = remember(albums.size) {
+        if (albums.isEmpty()) {
+            0.dp
+        } else {
+            (itemWidth * albums.size) + (itemGap * (albums.size - 1).coerceAtLeast(0))
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalGestureSafe()
+                .ensureHorizontalRubberBand(scrollState)
+                .horizontalScroll(scrollState, overscrollEffect = null),
+            horizontalArrangement = Arrangement.spacedBy(itemGap),
+        ) {
+            albums.forEach { album ->
+                AlbumGridCard(
+                    album = album,
+                    modifier = Modifier.width(itemWidth),
+                    onOpen = { origin -> onAlbumSelected(album, origin) },
+                )
+            }
+        }
+        EqHorizontalScrollbar(
+            scrollState = scrollState,
+            contentWidth = contentWidth,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .height(26.dp),
+        )
+    }
+}
+
+@Composable
+internal fun FavoriteAlbumsModule(
+    albums: List<Album>,
+    title: String,
+    subtitle: String,
+    iconResId: Int = R.drawable.ic_lucide_star,
+    onAlbumSelected: (Album, ExpandOrigin) -> Unit,
+) {
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val backgroundColor = if (darkTheme) {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f)
+    } else {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+    }
+    val borderColor = if (darkTheme) {
+        Color.White.copy(alpha = 0.07f)
+    } else {
+        InkText.copy(alpha = 0.08f)
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(ElovaireRadii.module))
+            .background(backgroundColor)
+            .border(
+                width = 1.dp,
+                color = borderColor,
+                shape = RoundedCornerShape(ElovaireRadii.module),
+            )
+            .padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 14.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        painter = painterResource(id = iconResId),
+                        contentDescription = null,
+                        tint = readableMutedIconColor(),
+                        modifier = Modifier
+                            .size(18.dp),
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                            color = readableSecondaryTextColor(),
+                        )
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                )
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                albums.chunked(2).take(3).forEach { rowAlbums ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        rowAlbums.forEach { album ->
+                            FavoriteAlbumCompactCell(
+                                album = album,
+                                modifier = Modifier.weight(1f),
+                                onOpen = { origin -> onAlbumSelected(album, origin) },
+                            )
+                        }
+                        repeat((2 - rowAlbums.size).coerceAtLeast(0)) {
+                            SpacerTile(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FavoriteAlbumCompactCell(
+    album: Album,
+    modifier: Modifier = Modifier,
+    onOpen: (ExpandOrigin) -> Unit,
+) {
+    val screenSizePx = screenContainerSizePx()
+    val screenWidthPx = screenSizePx.width.toFloat()
+    val screenHeightPx = screenSizePx.height.toFloat()
+    val language = LocalAppLanguage.current
+    var bounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val cellColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+    val sharedSourceToken = remember { AlbumSharedTransitionToken.next() }
+    val sharedTransitionController = LocalAlbumSharedTransitionController.current
+
+    Surface(
+        modifier = modifier
+            .onGloballyPositioned { bounds = it.boundsInWindow() },
+        shape = RoundedCornerShape(6.dp),
+        color = cellColor,
+        onClick = {
+            sharedTransitionController?.select(album.id, sharedSourceToken)
+            onOpen(bounds.toExpandOrigin(screenWidthPx, screenHeightPx))
+        },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ArtworkImage(
+                uri = album.artUri,
+                title = localizedAlbumTitle(album.title, LocalAppLanguage.current),
+                modifier = Modifier
+                    .size(48.dp)
+                    .albumSharedArtwork(
+                        albumId = album.id,
+                        sourceToken = sharedSourceToken,
+                    ),
+                cornerRadius = ElovaireRadii.artworkSmall,
+                showArtworkGlow = true,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+            ) {
+                Text(
+                    text = localizedAlbumTitle(album.title, LocalAppLanguage.current),
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 0.72f,
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = localizedArtistName(album.artist, LocalAppLanguage.current),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactSongTile(
+    song: Song,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        onClick = onClick,
+        color = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
+        },
+        shape = RoundedCornerShape(ElovaireRadii.tile),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ArtworkImage(
+                uri = song.artUri,
+                title = localizedAlbumTitle(song.album, LocalAppLanguage.current),
+                modifier = Modifier.size(48.dp),
+                cornerRadius = ElovaireRadii.artworkSmall,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+            ) {
+                Text(
+                    text = song.title,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                )
+                Text(
+                    text = localizedArtistName(song.artist, LocalAppLanguage.current),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = readableSecondaryTextColor(),
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SongGridCard(
+    song: Song,
+    isFavorite: Boolean,
+    onClick: () -> Unit,
+    onToggleFavorite: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.elovaireClickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ArtworkImage(
+            uri = song.artUri,
+            title = localizedAlbumTitle(song.album, LocalAppLanguage.current),
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f),
+            cornerRadius = ElovaireRadii.artwork,
+            showArtworkGlow = true,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+            ) {
+                Text(
+                    text = song.title,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = localizedArtistName(song.artist, LocalAppLanguage.current),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = readableSecondaryTextColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            InlineFavoriteSongButton(
+                isFavorite = isFavorite,
+                tint = MaterialTheme.colorScheme.onSurface,
+                onClick = onToggleFavorite,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ArtistGridCard(
+    artist: ArtistEntry,
+    onClick: () -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    Column(
+        modifier = Modifier.elovaireClickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ArtworkImage(
+            uri = artist.artUri,
+            title = localizedArtistName(artist.name, language),
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f),
+            cornerRadius = ElovaireRadii.pill,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap)) {
+            Text(
+                text = localizedArtistName(artist.name, LocalAppLanguage.current),
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${localizedCountLabel(artist.albumCount, "album", language)}  •  ${localizedCountLabel(artist.songCount, "song", language)}",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = readableSecondaryTextColor(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun ArtistRow(
+    artist: ArtistEntry,
+    artistImageRepository: ArtistImageReader? = null,
+    onClick: () -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    val resolvedArtworkUri = rememberArtistArtworkUri(artist, artistImageRepository)
+    val resolvedArtworkLoaded = rememberArtworkBitmap(resolvedArtworkUri, size = 256).value != null
+    val artworkUri = if (resolvedArtworkLoaded) resolvedArtworkUri else artist.artUri
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .elovaireClickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AnimatedContent(
+            targetState = artworkUri,
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label = "artist_artwork",
+        ) { uri ->
+            ArtworkImage(
+                uri = uri,
+                title = localizedArtistName(artist.name, language),
+                modifier = Modifier.size(50.dp),
+                cornerRadius = ElovaireRadii.pill,
+                requestedSizePx = 256,
+            )
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+        ) {
+            Text(
+                text = localizedArtistName(artist.name, LocalAppLanguage.current),
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${localizedCountLabel(artist.albumCount, "album", language)}  •  ${localizedCountLabel(artist.songCount, "song", language)}",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = readableSecondaryTextColor(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            painter = painterResource(id = R.drawable.ic_lucide_chevron_left),
+            contentDescription = null,
+            tint = readableMutedIconColor().copy(alpha = 0.5f),
+            modifier = Modifier
+                .size(18.dp)
+                .rotate(180f),
+        )
+    }
+}
+
+@Composable
+private fun rememberArtistArtworkUri(
+    artist: ArtistEntry,
+    artistImageRepository: ArtistImageReader?,
+): Uri? {
+    if (artistImageRepository == null) return artist.artUri
+    val state by remember(artist.name, artist.artUri, artistImageRepository) {
+        artistImageRepository.imageState(artist.name, artist.artUri)
+    }.collectAsStateWithLifecycle(
+        initialValue = ArtistBackdropState.Fallback(
+            localArtworkUri = artist.artUri,
+            artistKey = artist.name,
+        ),
+    )
+    return (state as? ArtistBackdropState.Fallback)?.artworkUri ?: artist.artUri
+}
+
+@Composable
+private fun GenreRow(
+    genre: GenreEntry,
+    onClick: () -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .elovaireClickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f)
+            },
+            modifier = Modifier.size(44.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_lucide_gallery_vertical_end),
+                    contentDescription = null,
+                    tint = readableMutedIconColor().copy(alpha = 0.9f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+        ) {
+            Text(
+                text = localizedGenreName(genre.name, language),
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = localizedCountLabel(genre.albumCount, "album", language),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = readableSecondaryTextColor(),
+                maxLines = 1,
+            )
+        }
+        Icon(
+            painter = painterResource(id = R.drawable.ic_lucide_chevron_left),
+            contentDescription = null,
+            tint = readableMutedIconColor().copy(alpha = 0.5f),
+            modifier = Modifier
+                .size(18.dp)
+                .rotate(180f),
+        )
+    }
+}
+
+@Composable
+private fun SpacerTile(
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier)
+}
+
+@Composable
+private fun AlbumPosterGrid(
+    albums: List<Album>,
+    onAlbumSelected: (Album, ExpandOrigin) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        albums.chunked(2).forEach { rowAlbums ->
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                rowAlbums.forEach { album ->
+                    AlbumGridCard(
+                        album = album,
+                        modifier = Modifier.weight(1f),
+                        onOpen = { origin -> onAlbumSelected(album, origin) },
+                    )
+                }
+                repeat((2 - rowAlbums.size).coerceAtLeast(0)) {
+                    SpacerTile(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentSongRow(
+    song: Song,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        color = readableCardSurfaceColor(),
+        shape = RoundedCornerShape(ElovaireRadii.card),
+        shadowElevation = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) 6.dp else 2.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ArtworkImage(
+                uri = song.artUri,
+                title = localizedAlbumTitle(song.album, LocalAppLanguage.current),
+                modifier = Modifier.size(52.dp),
+                cornerRadius = ElovaireRadii.artwork,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+            ) {
+                Text(
+                    text = song.title,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                )
+                Text(
+                    text = localizedArtistName(song.artist, LocalAppLanguage.current),
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                    color = readableSecondaryTextColor(),
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun ExplicitTitleText(
+    title: String,
+    isExplicit: Boolean,
+    style: TextStyle,
+    color: Color,
+    modifier: Modifier = Modifier,
+    maxLines: Int = 1,
+    overflow: TextOverflow = TextOverflow.Ellipsis,
+) {
+    val badgeFontSize = remember(style.fontSize) {
+        if (style.fontSize == androidx.compose.ui.unit.TextUnit.Unspecified) 10.sp else (style.fontSize.value * 0.56f).sp
+    }
+    val titleText = remember(title, isExplicit) {
+        buildAnnotatedString {
+            append(title)
+            if (isExplicit) {
+                append(" ")
+                pushStyle(
+                    SpanStyle(
+                        fontSize = badgeFontSize,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                )
+                append("🅴")
+                pop()
+            }
+        }
+    }
+    Text(
+        text = titleText,
+        style = style,
+        color = color,
+        maxLines = maxLines,
+        overflow = overflow,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun SearchSongRow(
+    song: Song,
+    onClick: () -> Unit,
+    showDivider: Boolean,
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .elovaireClickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ExplicitTitleText(
+                        title = song.title,
+                        isExplicit = song.isExplicit,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Text(
+                    text = localizedArtistName(song.artist, LocalAppLanguage.current),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Row(
+                modifier = Modifier.width(78.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = formatDuration(song.durationMs),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                    maxLines = 1,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.weight(1f),
+                )
+                SongOverflowMenuButton(
+                    song = song,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        if (showDivider) {
+            DividerLine()
+        }
+    }
+}
+
+@Composable
+internal fun HomeRecentSongRow(
+    song: Song,
+    isFavorite: Boolean,
+    isCurrentSong: Boolean = false,
+    isPlaybackActive: Boolean = false,
+    onClick: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    showDivider: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val motionSpecs = rememberMotionSpecs()
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .elovaireClickable(onClick = onClick)
+                .padding(horizontal = 2.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier.size(44.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                ArtworkImage(
+                    uri = song.artUri,
+                    title = song.title,
+                    modifier = Modifier.matchParentSize(),
+                    cornerRadius = ElovaireRadii.artworkSmall,
+                    showArtworkGlow = true,
+                )
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = isCurrentSong && isPlaybackActive,
+                    enter = fadeIn(animationSpec = motionSpecs.tween(60)),
+                    exit = fadeOut(animationSpec = motionSpecs.tween(60)),
+                ) {
+                    PlaybackActiveArtworkOverlay(
+                        modifier = Modifier.matchParentSize(),
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ExplicitTitleText(
+                        title = song.title,
+                        isExplicit = song.isExplicit,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Text(
+                    text = localizedArtistName(song.artist, LocalAppLanguage.current),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (song.durationMs > 0L) {
+                    Text(
+                        text = formatDuration(song.durationMs),
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                        maxLines = 1,
+                        textAlign = TextAlign.End,
+                    )
+                }
+                InlineFavoriteSongButton(
+                    isFavorite = isFavorite,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    onClick = onToggleFavorite,
+                )
+                SongOverflowMenuButton(
+                    song = song,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        if (showDivider) {
+            DividerLine()
+        }
+    }
+}
+
+@Composable
+private fun RecentAlbumGrid(
+    albums: List<Album>,
+    onAlbumSelected: (Album, ExpandOrigin) -> Unit,
+) {
+    val gridState = rememberLazyGridState()
+    LazyHorizontalGrid(
+        state = gridState,
+        rows = GridCells.Fixed(2),
+        overscrollEffect = null,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(378.dp)
+            .ensureHorizontalRubberBand(gridState),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        items(
+            items = albums,
+            key = { it.id },
+            contentType = { "album-grid-card" },
+        ) { album ->
+            AlbumGridCard(
+                album = album,
+                modifier = Modifier.width(164.dp),
+                onOpen = { origin -> onAlbumSelected(album, origin) },
+            )
+        }
+    }
+}
+
+@Composable
+internal fun SelectionIndicatorIcon(
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val tint = MaterialTheme.colorScheme.onSurface
+    ElovaireCrossfade(
+        targetState = selected,
+        modifier = modifier.size(20.dp),
+        label = "selection_indicator",
+    ) { checked ->
+        if (checked) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(tint),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_lucide_check),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.background,
+                    modifier = Modifier.size(12.dp),
+                )
+            }
+        } else {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_lucide_circle),
+                contentDescription = null,
+                tint = tint.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlbumGridCard(
+    album: Album,
+    modifier: Modifier = Modifier,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    showText: Boolean = true,
+    artworkCornerRadius: Dp = ElovaireRadii.artwork,
+    showArtworkGlow: Boolean = true,
+    enableSharedTransition: Boolean = true,
+    onOpen: (ExpandOrigin) -> Unit,
+    onLongPress: (() -> Unit)? = null,
+) {
+    val screenSizePx = screenContainerSizePx()
+    val screenWidthPx = screenSizePx.width.toFloat()
+    val screenHeightPx = screenSizePx.height.toFloat()
+    val language = LocalAppLanguage.current
+    var bounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val sharedSourceToken = remember { AlbumSharedTransitionToken.next() }
+    val sharedTransitionController = LocalAlbumSharedTransitionController.current
+
+    Column(
+        modifier = modifier
+            .onGloballyPositioned { bounds = it.boundsInWindow() }
+            .elovaireCombinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = {
+                    if (enableSharedTransition) {
+                        sharedTransitionController?.select(album.id, sharedSourceToken)
+                    }
+                    onOpen(bounds.toExpandOrigin(screenWidthPx, screenHeightPx))
+                },
+                onLongClick = { onLongPress?.invoke() },
+            ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f),
+        ) {
+            ArtworkImage(
+                uri = album.artUri,
+                title = localizedAlbumTitle(album.title, LocalAppLanguage.current),
+                modifier = Modifier
+                    .matchParentSize()
+                    .albumSharedArtwork(
+                        albumId = album.id,
+                        sourceToken = sharedSourceToken,
+                        enabled = enableSharedTransition,
+                    ),
+                cornerRadius = artworkCornerRadius,
+                showArtworkGlow = showArtworkGlow,
+            )
+            if (selectionMode) {
+                SelectionIndicatorIcon(
+                    selected = selected,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                )
+            }
+        }
+        if (showText) {
+            Column(
+                modifier = Modifier.padding(horizontal = 2.dp),
+                verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+            ) {
+                Text(
+                    text = localizedAlbumTitle(album.title, LocalAppLanguage.current),
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = localizedArtistName(album.artist, LocalAppLanguage.current),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = readableSecondaryTextColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+@Suppress("LongMethod")
+internal fun CompactAlbumRow(
+    album: Album,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    isFavorite: Boolean = false,
+    showFavoriteButton: Boolean = false,
+    playlists: List<Playlist> = emptyList(),
+    playlistSongsById: Map<Long, Song> = emptyMap(),
+    onOpen: (ExpandOrigin) -> Unit,
+    onToggleFavorite: (() -> Unit)? = null,
+    onAddToQueue: (() -> Unit)? = null,
+    onAddToPlaylist: ((Long) -> PlaylistMutationRequest)? = null,
+    onCreatePlaylist: PlaylistCreateAction? = null,
+    onDeleteAlbum: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
+) {
+    val screenSizePx = screenContainerSizePx()
+    val motionSpecs = rememberMotionSpecs()
+    var bounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val sharedSourceToken = remember { AlbumSharedTransitionToken.next() }
+    val sharedTransitionController = LocalAlbumSharedTransitionController.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { bounds = it.boundsInWindow() }
+            .elovaireCombinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = {
+                    sharedTransitionController?.takeIf { !selectionMode }?.select(album.id, sharedSourceToken)
+                    onOpen(bounds.toExpandOrigin(screenSizePx.width.toFloat(), screenSizePx.height.toFloat()))
+                },
+                onLongClick = { onLongPress?.invoke() },
+            ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.Center)
+                .padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ArtworkImage(
+                uri = album.artUri,
+                title = localizedAlbumTitle(album.title, LocalAppLanguage.current),
+                modifier = Modifier
+                    .size(62.dp)
+                    .albumSharedArtwork(
+                        albumId = album.id,
+                        sourceToken = sharedSourceToken,
+                    ),
+                cornerRadius = ElovaireRadii.artworkSmall,
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
+            ) {
+                Text(
+                    text = localizedAlbumTitle(album.title, LocalAppLanguage.current),
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = localizedArtistName(album.artist, LocalAppLanguage.current),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = readableSecondaryTextColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = buildAnnotatedString {
+                        withStyle(
+                            SpanStyle(
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 1f),
+                            ),
+                        ) {
+                            append(localizedCountLabel(album.songCount, "track", LocalAppLanguage.current))
+                        }
+                        append("  •  ")
+                        withStyle(
+                            SpanStyle(
+                                color = readableSecondaryTextColor().copy(alpha = 0.7f),
+                                fontWeight = FontWeight.Medium,
+                            ),
+                        ) {
+                            append(formatDuration(album.durationMs))
+                        }
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+            if (selectionMode) {
+                Box(
+                    modifier = Modifier.padding(end = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    SelectionIndicatorIcon(selected = selected)
+                }
+            } else if (showFavoriteButton && onToggleFavorite != null) {
+                AnimatedVisibility(
+                    visible = !selectionMode,
+                    enter = fadeIn(animationSpec = motionSpecs.fadeIn()),
+                    exit = fadeOut(animationSpec = motionSpecs.fadeOut()),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(end = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        InlineFavoriteSongButton(
+                            isFavorite = isFavorite,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            onClick = onToggleFavorite,
+                        )
+                        if (onAddToQueue != null && onAddToPlaylist != null && onDeleteAlbum != null) {
+                            AlbumOverflowMenuButton(
+                                album = album,
+                                playlists = playlists,
+                                playlistSongsById = playlistSongsById,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                onAddToQueue = onAddToQueue,
+                                onAddToPlaylist = onAddToPlaylist,
+                                onCreatePlaylist = onCreatePlaylist,
+                                onDeleteAlbum = onDeleteAlbum,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyStateCard(
+    title: String,
+    message: String,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(ElovaireRadii.card),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleLarge)
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = readableSecondaryTextColor(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistLaneCard(
+    title: String,
+    detail: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        onClick = onClick,
+        shape = RoundedCornerShape(ElovaireRadii.module),
+        color = readableCardSurfaceColor(),
+        shadowElevation = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) 8.dp else 8.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(ElovaireRadii.artworkSmall))
+                    .background(
+                        if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_lucide_play),
+                    contentDescription = null,
+                    tint = readableMutedIconColor(),
+                )
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodyLarge,
+                color = readableSecondaryTextColor(),
+            )
+        }
+    }
+}

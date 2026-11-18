@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<about-screen>
+    <!--
+      ENTRY
+      - title: visible title shown in the About screen.
+      - description: visible supporting copy shown under the title.
+      - logoUrl: optional image link for the first header row.
+        Use @drawable/your_logo for bundled app artwork, or a content://,
+        file://, or android.resource:// image link.
+
+      LINK
+      - label: visible button text.
+      - url: destination opened when the pill is tapped.
+      Icon is chosen automatically from the domain:
+      instagram -> Instagram icon
+      x.com / twitter.com -> X icon
+      ko-fi.com / kofi.com -> Ko-fi icon
+      anything else -> globe icon
+    -->
+    <entry
+        title="Droid Beauty"
+        description="Beautifully designed Android widgets and themes to make your home screen stand out. I also created the music player you’re using right now"
+        logoUrl="@drawable/droid_beauty_logo"
+        >
+        <link
+            label="Instagram"
+            url="https://instagram.com/droidbeauty" />
+        <link
+            label="Twitter"
+            url="https://x.com/droidbeauty" />
+        <link
+            label="Gumroad"
+            url="https://droidbeauty.gumroad.com/" />
+        <link
+            label="Play Store"
+            url="https://play.google.com/store/apps/dev?id=7791472155222642322" />
+        <link
+            label="Ko-fi"
+            url="https://ko-fi.com/droidbeauty" />
+    </entry>
+
+    <section
+        title="Resources"
+        description="Verso uses Apache-2.0, MIT, ISC, OFL-1.1, LGPL, and GPL-3.0 open-source components. Full license texts are bundled with the app">
+        <entry
+            title="Elovaire ❤️"
+            description="Base project for the entire app"
+            logoUrl="@drawable/droid_beauty_logo">
+            <link
+                label="Website"
+                url="https://github.com/droidbeauty/elovaire-music" />
+        </entry>
+        <entry
+            title="Android Developer"
+            logoUrl="https://github.com/android.png?size=256">
+            <link
+                label="Website"
+                url="https://developer.android.com" />
+        </entry>
+        <entry
+            title="OkHttp (Apache-2.0)"
+            logoUrl="https://github.com/square.png?size=256">
+            <link
+                label="Website"
+                url="https://square.github.io/okhttp" />
+        </entry>
+        <entry
+            title="NewPipe Extractor (GPL-3.0)"
+            logoUrl="https://github.com/TeamNewPipe.png?size=256">
+            <link
+                label="Website"
+                url="https://github.com/TeamNewPipe/NewPipeExtractor" />
+        </entry>
+        <entry
+            title="BetterLyrics (GPL-3.0)"
+            logoUrl="https://better-lyrics.boidu.dev/favicon.ico">
+            <link
+                label="Website"
+                url="https://better-lyrics.boidu.dev" />
+        </entry>
+        <entry
+            title="LRCLIB (MIT)"
+            logoUrl="https://lrclib.net/favicon.ico">
+            <link
+                label="Website"
+                url="https://lrclib.net" />
+        </entry>
+        <entry
+            title="Last.fm API"
+            logoUrl="https://www.last.fm/static/images/lastfm_avatar_twitter.52a5d69a85ac.png">
+            <link
+                label="Website"
+                url="https://www.last.fm/api" />
+        </entry>
+        <entry
+            title="jaudiotagger (LGPL)"
+            logoUrl="https://bitbucket.org/ijabz/jaudiotagger/avatar/64/">
+            <link
+                label="Website"
+                url="https://bitbucket.org/ijabz/jaudiotagger" />
+        </entry>
+        <entry
+            title="Lucide icons (ISC / MIT)"
+            logoUrl="https://github.com/lucide-icons.png?size=256">
+            <link
+                label="Website"
+                url="https://lucide.dev/" />
+        </entry>
+        <entry
+            title="Geist font (OFL-1.1)"
+            logoUrl="https://github.com/vercel.png?size=256">
+            <link
+                label="Website"
+                url="https://github.com/vercel/geist-font" />
+        </entry>
+    </section>
+
+</about-screen>
