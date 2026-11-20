@@ -26,16 +26,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -48,10 +55,12 @@ import androidx.compose.ui.unit.dp
 import elovaire.music.droidbeauty.app.R
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeItem
 import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
 import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
 import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
+import elovaire.music.droidbeauty.app.ui.theme.InkText
 
 internal const val EDITORIAL_RESUME_LIMIT = 6
 internal const val EDITORIAL_CAROUSEL_LIMIT = 10
@@ -75,6 +84,9 @@ internal fun EditorialHomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberElovaireLazyListState("home_screen")
+    val resumeItems = remember(recentSongs) {
+        recentSongs.distinctBy { it.id }.take(EDITORIAL_RESUME_LIMIT)
+    }
 
     LaunchedEffect(resetScrollOnColdStart) {
         if (resetScrollOnColdStart) {
@@ -126,10 +138,20 @@ internal fun EditorialHomeScreen(
                         onRetry = { onRetrySection(EditorialSectionId.Featured) },
                     )
                     is EditorialSectionState.Content -> {
-                        // Preenchido na Etapa 2
-                        EditorialHeroSkeleton(
-                            modifier = Modifier.padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
-                        )
+                        val hero = section.items.firstOrNull()
+                        if (hero != null) {
+                            EditorialHeroCard(
+                                item = hero,
+                                isPlayingLoading = editorialState.playingHeroId == hero.id,
+                                onOpen = { onOpenCollection(hero.collection) },
+                                onPlay = { onPlayHero(hero) },
+                                modifier = Modifier.padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
+                            )
+                        } else {
+                            EditorialSectionEmptyState(
+                                message = stringResource(R.string.editorial_section_featured_empty),
+                            )
+                        }
                     }
                 }
             }
@@ -143,16 +165,18 @@ internal fun EditorialHomeScreen(
             EditorialSectionBlock(
                 title = stringResource(R.string.editorial_section_resume_title),
                 subtitle = stringResource(R.string.editorial_section_resume_subtitle),
-                showSeeAll = recentSongs.isNotEmpty(),
+                showSeeAll = resumeItems.isNotEmpty(),
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Resume) },
             ) {
-                if (recentSongs.isEmpty()) {
+                if (resumeItems.isEmpty()) {
                     EditorialSectionEmptyState(
                         message = stringResource(R.string.editorial_section_resume_empty),
                     )
                 } else {
-                    // Preenchido na Etapa 2
-                    EditorialCarouselSkeleton(cardSize = 144.dp, count = 4)
+                    EditorialResumeRow(
+                        songs = resumeItems,
+                        onSongClick = onSelectRecentSong,
+                    )
                 }
             }
         }
@@ -262,6 +286,186 @@ internal fun EditorialHomeScreen(
                         EditorialMoodsSkeleton()
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun EditorialHeroCard(
+    item: EditorialCollectionItem,
+    isPlayingLoading: Boolean,
+    onOpen: () -> Unit,
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val openCd = stringResource(R.string.editorial_section_featured_cd, item.title)
+    val playLabel = if (isPlayingLoading) {
+        stringResource(R.string.editorial_home_loading_play)
+    } else {
+        stringResource(R.string.editorial_home_play)
+    }
+    val playCd = stringResource(R.string.editorial_home_play_cd, item.title)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(1.06f)
+            .clip(RoundedCornerShape(ElovaireRadii.card))
+            .semantics {
+                role = Role.Button
+                contentDescription = openCd
+            }
+            .elovaireClickable(onClick = onOpen),
+    ) {
+        ArtworkImage(
+            uri = item.artUri,
+            title = item.title,
+            modifier = Modifier.fillMaxSize(),
+            cornerRadius = ElovaireRadii.card,
+            requestedSizePx = 640,
+            showArtworkGlow = false,
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        0.0f to Color.Transparent,
+                        0.38f to Color.Black.copy(alpha = 0.56f),
+                        1.0f to Color.Black.copy(alpha = 0.88f),
+                    ),
+                )
+                .padding(horizontal = 20.dp, vertical = 20.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (item.subtitle.isNotBlank()) {
+                        Text(
+                            text = item.subtitle,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = Color.White.copy(alpha = 0.86f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(ElovaireRadii.pill))
+                        .background(Color.White)
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = playCd
+                        }
+                        .elovaireClickable(enabled = !isPlayingLoading, onClick = onPlay)
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (isPlayingLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = InkText,
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_lucide_play),
+                            contentDescription = null,
+                            tint = InkText,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                    Text(
+                        text = playLabel,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = InkText,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun EditorialResumeRow(
+    songs: List<Song>,
+    onSongClick: (Song) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyRow(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = ElovaireSpacing.screenHorizontalPadding),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        items(
+            items = songs,
+            key = { song -> "resume_${song.id}" },
+            contentType = { "editorial_resume_card" },
+        ) { song ->
+            EditorialResumeCard(
+                song = song,
+                onClick = { onSongClick(song) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun EditorialResumeCard(
+    song: Song,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(144.dp)
+            .clip(RoundedCornerShape(ElovaireRadii.artwork))
+            .semantics(mergeDescendants = true) { role = Role.Button }
+            .elovaireClickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ArtworkImage(
+            uri = song.artUri,
+            title = song.title,
+            modifier = Modifier.size(144.dp),
+            cornerRadius = ElovaireRadii.artwork,
+            requestedSizePx = 320,
+            showArtworkGlow = false,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = song.title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (song.artist.isNotBlank()) {
+                Text(
+                    text = song.artist,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = readableSecondaryTextColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
