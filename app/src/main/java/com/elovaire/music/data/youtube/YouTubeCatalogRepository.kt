@@ -288,6 +288,65 @@ internal class YouTubeCatalogRepository(
         streamClient.catalog.getRelatedSongs(videoId, limit).map { it.toElovaireSong() }
     }
 
+    /**
+     * Builds a musically coherent queue for a seed song:
+     * 1. Uses the familiar YouTube Music radio (/next RDAMVM) filtered against long non-music tracks & duplicates.
+     * 2. Excludes the seed track itself (by id and normalized title+artist).
+     * 3. Supplements with tracks by the same artist if the radio returns fewer than 6 usable songs.
+     */
+    suspend fun getSmartRelatedSongs(seed: Song, limit: Int = 20): List<Song> = withContext(ioDispatcher) {
+        val videoId = YouTubeUri.videoId(seed.uri) ?: return@withContext emptyList()
+        val seedSig = "${seed.title.trim().lowercase()}|${seed.artist.trim().lowercase()}"
+        val seenIds = HashSet<Long>().apply { add(seed.id) }
+        val seenSigs = HashSet<String>().apply { add(seedSig) }
+
+        val radio = runCatching { getRelatedSongs(videoId, limit = limit + 10) }.getOrDefault(emptyList())
+        val result = ArrayList<Song>(limit)
+
+        fun accept(song: Song): Boolean {
+            if (song.durationMs > 12 * 60_000L) return false
+            if (!seenIds.add(song.id)) return false
+            val sig = "${song.title.trim().lowercase()}|${song.artist.trim().lowercase()}"
+            if (!seenSigs.add(sig)) return false
+            return true
+        }
+
+        // Preserve radio relevance order while avoiding long runs of identical artists (>2 in a row)
+        var lastArtist = seed.artist.trim().lowercase()
+        var consecutiveSameArtist = 1
+        val deferred = mutableListOf<Song>()
+        for (candidate in radio) {
+            if (!accept(candidate)) continue
+            val artistKey = candidate.artist.trim().lowercase()
+            if (artistKey.isNotEmpty() && artistKey == lastArtist && consecutiveSameArtist >= 2) {
+                deferred.add(candidate)
+            } else {
+                result.add(candidate)
+                if (artistKey == lastArtist) {
+                    consecutiveSameArtist += 1
+                } else {
+                    lastArtist = artistKey
+                    consecutiveSameArtist = 1
+                }
+            }
+            if (result.size >= limit) break
+        }
+        for (candidate in deferred) {
+            if (result.size >= limit) break
+            result.add(candidate)
+        }
+
+        // If radio returned too few items, supplement with tracks from the same artist
+        if (result.size < 6 && seed.artist.isNotBlank()) {
+            val artistTracks = runCatching { searchSongs(seed.artist) }.getOrDefault(emptyList())
+            for (candidate in artistTracks) {
+                if (result.size >= limit) break
+                if (accept(candidate)) result.add(candidate)
+            }
+        }
+        result
+    }
+
     suspend fun getPlaylistSongs(playlistId: String): List<Song> = withContext(ioDispatcher) {
         streamClient.catalog.getPlaylist(playlistId).map { it.toElovaireSong() }
     }

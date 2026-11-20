@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeItem
+import elovaire.music.droidbeauty.app.data.youtube.YouTubeUri
 import elovaire.music.droidbeauty.app.domain.model.Song
 
 @Composable
@@ -32,6 +33,23 @@ internal fun HomeRouteHost(
         }
     }
 
+    val onSelectRecentSong = remember(routeActions, youtubeHomeViewModel) {
+        { song: Song ->
+            if (YouTubeUri.isYouTubeUri(song.uri)) {
+                routeActions.playback.playSongQueue(
+                    song = song,
+                    queue = listOf(song),
+                    sourceLabel = song.artist.ifBlank { "Verso" },
+                )
+                youtubeHomeViewModel.loadSmartRelatedForQueue(song) { related ->
+                    routeActions.playback.enqueueSongs(related)
+                }
+            } else {
+                routeActions.playback.playSongFromAlbumOrSingle(song)
+            }
+        }
+    }
+
     val onPlayHero = remember(youtubeHomeViewModel, onSelectTrendingTrack, onYouTubeCollectionSelected) {
         { item: EditorialCollectionItem ->
             youtubeHomeViewModel.playHeroCollection(
@@ -49,9 +67,10 @@ internal fun HomeRouteHost(
         bottomPadding = padding.bottomContent,
         scrollToTopRequestVersion = navState.homeScrollRequestVersion,
         resetScrollOnColdStart = state.resetHomeScrollOnColdStart,
+        onRefresh = youtubeHomeViewModel::refreshEditorialHome,
         onPlayHero = onPlayHero,
         onOpenCollection = onYouTubeCollectionSelected,
-        onSelectRecentSong = routeActions.playback::playSongFromAlbumOrSingle,
+        onSelectRecentSong = onSelectRecentSong,
         onSelectTrendingTrack = onSelectTrendingTrack,
         onOpenSeeAll = onOpenEditorialSeeAll,
         onOpenExploreMood = onOpenExploreMood,

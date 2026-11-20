@@ -67,4 +67,5 @@ internal data class EditorialHomeUiState(
     val trending: EditorialSectionState<EditorialChartTrack> = EditorialSectionState.Loading,
     val moods: EditorialSectionState<EditorialMoodItem> = EditorialSectionState.Loading,
     val playingHeroId: String? = null,
+    val isRefreshing: Boolean = false,
 )

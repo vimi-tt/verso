@@ -29,9 +29,13 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,6 +70,7 @@ internal const val EDITORIAL_RESUME_LIMIT = 6
 internal const val EDITORIAL_CAROUSEL_LIMIT = 10
 internal const val EDITORIAL_TRENDING_LIMIT = 10
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun EditorialHomeScreen(
     editorialState: EditorialHomeUiState,
@@ -74,6 +79,7 @@ internal fun EditorialHomeScreen(
     bottomPadding: Dp,
     scrollToTopRequestVersion: Long,
     resetScrollOnColdStart: Boolean,
+    onRefresh: () -> Unit,
     onPlayHero: (EditorialCollectionItem) -> Unit,
     onOpenCollection: (YouTubeHomeItem.Collection) -> Unit,
     onSelectRecentSong: (Song) -> Unit,
@@ -84,6 +90,7 @@ internal fun EditorialHomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberElovaireLazyListState("home_screen")
+    val pullToRefreshState = rememberPullToRefreshState()
     val resumeItems = remember(recentSongs) {
         recentSongs.distinctBy { it.id }.take(EDITORIAL_RESUME_LIMIT)
     }
@@ -104,10 +111,27 @@ internal fun EditorialHomeScreen(
         }
     }
 
+    PullToRefreshBox(
+        isRefreshing = editorialState.isRefreshing,
+        onRefresh = onRefresh,
+        state = pullToRefreshState,
+        modifier = modifier.fillMaxSize(),
+        indicator = {
+            PullToRefreshDefaults.Indicator(
+                state = pullToRefreshState,
+                isRefreshing = editorialState.isRefreshing,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = topPadding),
+                containerColor = MaterialTheme.colorScheme.surface,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        },
+    ) {
     LazyColumn(
         state = listState,
         overscrollEffect = null,
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .ensureSingleItemRubberBand(listState),
         contentPadding = PaddingValues(
@@ -309,6 +333,7 @@ internal fun EditorialHomeScreen(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -475,18 +500,18 @@ private fun EditorialResumeCard(
                 text = song.title,
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                 color = MaterialTheme.colorScheme.onSurface,
+                minLines = 1,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (song.artist.isNotBlank()) {
-                Text(
-                    text = song.artist,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = readableSecondaryTextColor(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                text = song.artist.ifBlank { " " },
+                style = MaterialTheme.typography.labelLarge,
+                color = readableSecondaryTextColor(),
+                minLines = 1,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -547,18 +572,18 @@ internal fun EditorialCollectionCard(
                 text = item.title,
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                 color = MaterialTheme.colorScheme.onSurface,
+                minLines = 2,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (item.subtitle.isNotBlank()) {
-                Text(
-                    text = item.subtitle,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = readableSecondaryTextColor(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                text = item.subtitle.ifBlank { " " },
+                style = MaterialTheme.typography.labelLarge,
+                color = readableSecondaryTextColor(),
+                minLines = 1,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

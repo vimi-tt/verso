@@ -87,7 +87,7 @@ internal fun rememberRootSongMenuActions(
                     val videoId = YouTubeUri.videoId(song.uri)
                     if (videoId != null) {
                         scope.launch {
-                            val related = runCatching { catalog.getRelatedSongs(videoId) }.getOrDefault(emptyList())
+                            val related = runCatching { catalog.getSmartRelatedSongs(song) }.getOrDefault(emptyList())
                             val queue = listOf(song) + related.filterNot { it.id == song.id }
                             playbackManager.playSong(
                                 song = song,

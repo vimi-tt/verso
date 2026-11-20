@@ -55,8 +55,18 @@ class MusicBrowse(
      */
     suspend fun getRecommendations(): List<Song> = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) {
-            KLog.d(YOUTUBE_TAG, "Not logged in, falling back to popular search")
-            return@withContext musicSearch.search("trending music 2026", FILTER_SONGS)
+            KLog.d(YOUTUBE_TAG, "Not logged in, fetching public home/charts tracks")
+            val homeTracks = getMusicShelves("FEmusic_home")?.shelves.orEmpty()
+                .flatMap { it.items }
+                .filterIsInstance<MusicShelfItem.Track>()
+                .map { it.song }
+            if (homeTracks.size >= 5) return@withContext homeTracks.distinctBy { it.id }
+            val chartTracks = getMusicShelves("FEmusic_charts")?.shelves.orEmpty()
+                .flatMap { it.items }
+                .filterIsInstance<MusicShelfItem.Track>()
+                .map { it.song }
+            if (chartTracks.isNotEmpty()) return@withContext (homeTracks + chartTracks).distinctBy { it.id }
+            return@withContext musicSearch.search("top hits", FILTER_SONGS)
         }
 
         try {
@@ -420,8 +430,16 @@ class MusicBrowse(
      */
     suspend fun getRelatedSongs(videoId: String, limit: Int = 25): List<Song> = withContext(Dispatchers.IO) {
         try {
+            val seenSignatures = HashSet<String>()
             radioPanelSongs(videoId)
-                .filter { it.id != videoId } // first radio item is the seed itself
+                .filter { song ->
+                    song.id != videoId &&
+                        (song.duration <= 0L || song.duration <= MAX_RADIO_TRACK_DURATION_MS)
+                }
+                .filter { song ->
+                    val sig = "${song.title.trim().lowercase()}|${song.artist.trim().lowercase()}"
+                    seenSignatures.add(sig)
+                }
                 .distinctBy { it.id }
                 .take(limit)
         } catch (e: Exception) {
@@ -476,7 +494,8 @@ class MusicBrowse(
                 "videoId": "$videoId",
                 "playlistId": "RDAMVM$videoId",
                 "isAudioOnly": true,
-                "tunerSettingValue": "AUTOMIX_SETTING_NORMAL"
+                "enablePersistentPlaylistPanel": true,
+                "tunerSettingValue": "AUTOMIX_SETTING_FAMILIAR"
             }
         """.trimIndent()
 
@@ -511,5 +530,6 @@ class MusicBrowse(
     private companion object {
         const val RADIO_PANEL_TTL_MS = 3 * 60_000L
         const val MAX_RADIO_CACHE_ENTRIES = 64
+        const val MAX_RADIO_TRACK_DURATION_MS = 12 * 60_000L
     }
 }

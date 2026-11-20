@@ -38,6 +38,11 @@ internal fun parseMusicShelves(root: JSONObject): MusicShelfPage {
         val items = parseShelfItems(shelf.optJSONArray("contents"))
         if (items.isNotEmpty()) shelves += MusicShelf(title, items)
     }
+    for (shelf in MusicMetadata.objects(root, "musicShelfRenderer")) {
+        val title = runsText(shelf.optJSONObject("title"))
+        val items = parseShelfItems(shelf.optJSONArray("contents"))
+        if (items.isNotEmpty()) shelves += MusicShelf(title, items)
+    }
     for (grid in MusicMetadata.objects(root, "gridRenderer")) {
         val title = runsText(
             grid.optJSONObject("header")?.optJSONObject("gridHeaderRenderer")?.optJSONObject("title")

@@ -122,6 +122,10 @@ internal class RootPlaybackActions internal constructor(
         album.songs.forEach(playbackManager::enqueueSong)
     }
 
+    fun enqueueSongs(songs: List<Song>) {
+        songs.forEach(playbackManager::enqueueSong)
+    }
+
     fun playAudiobook(
         book: Audiobook,
         part: AudiobookPart? = null,

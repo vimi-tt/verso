@@ -347,6 +347,7 @@ internal fun RootRouteGraph(
                     routeActions = routeActions,
                     padding = padding,
                     searchViewModel = searchViewModel,
+                    youtubeHomeViewModel = youtubeHomeViewModel,
                     onYouTubeArtistSelected = { artistId ->
                         navState.navigateTo(Routes.youtubeArtist(artistId))
                     },
@@ -854,6 +855,7 @@ private fun SearchRouteHost(
     routeActions: RootRouteActions,
     padding: RootRoutePadding,
     searchViewModel: SearchViewModel,
+    youtubeHomeViewModel: YouTubeHomeViewModel,
     onYouTubeArtistSelected: (String) -> Unit = {},
     onYouTubeCollectionSelected: (YouTubeCollectionSummary, Boolean) -> Unit = { _, _ -> },
 ) {
@@ -867,11 +869,22 @@ private fun SearchRouteHost(
         scrollToTopRequestVersion = navState.searchScrollRequestVersion,
         onSearchActiveChanged = routeActions.onSearchActiveChanged,
         onPlaySong = { song, queue ->
-            routeActions.playback.playSongQueue(
-                song = song,
-                queue = queue,
-                sourceLabel = searchViewModel.playbackSourceLabelFor(queue, song.album),
-            )
+            if (elovaire.music.droidbeauty.app.data.youtube.YouTubeUri.isYouTubeUri(song.uri)) {
+                routeActions.playback.playSongQueue(
+                    song = song,
+                    queue = listOf(song),
+                    sourceLabel = song.artist.ifBlank { "Verso" },
+                )
+                youtubeHomeViewModel.loadSmartRelatedForQueue(song) { related ->
+                    routeActions.playback.enqueueSongs(related)
+                }
+            } else {
+                routeActions.playback.playSongQueue(
+                    song = song,
+                    queue = queue,
+                    sourceLabel = searchViewModel.playbackSourceLabelFor(queue, song.album),
+                )
+            }
         },
         onAlbumSelected = { album, origin ->
             routeActions.openAlbum(album, origin, AlbumOpenSource.SearchResults)
