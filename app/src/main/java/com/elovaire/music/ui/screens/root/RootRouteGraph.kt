@@ -61,6 +61,22 @@ internal fun RootRouteGraph(
                     )
                 }
             }
+            val onOpenEditorialSeeAll = androidx.compose.runtime.remember(navState) {
+                { sectionId: EditorialSectionId ->
+                    navState.navigateTo(Routes.editorialSection(sectionId))
+                }
+            }
+            val onOpenExploreMood = androidx.compose.runtime.remember(navState) {
+                { mood: elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeItem.Mood ->
+                    navState.navigateTo(
+                        Routes.exploreMood(
+                            browseId = mood.browseId,
+                            params = mood.params,
+                            title = mood.title,
+                        ),
+                    )
+                }
+            }
             AlbumTransitionContent(this) {
                 HomeRouteHost(
                     navState = navState,
@@ -70,6 +86,8 @@ internal fun RootRouteGraph(
                     youtubeHomeViewModel = youtubeHomeViewModel,
                     onYouTubeArtistSelected = onYouTubeArtistSelected,
                     onYouTubeCollectionSelected = onYouTubeCollectionSelected,
+                    onOpenEditorialSeeAll = onOpenEditorialSeeAll,
+                    onOpenExploreMood = onOpenExploreMood,
                 )
             }
         }
@@ -532,6 +550,114 @@ internal fun RootRouteGraph(
                 },
                 onDownloadCollection = youTubeDownloadManager::enqueueCollection,
                 onToggleFavorite = routeActions.playlists::toggleFavorite,
+            )
+        }
+        composable(
+            route = RootRouteRegistry.EDITORIAL_SECTION,
+            arguments = listOf(
+                navArgument("sectionId") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val sectionId = EditorialSectionId.fromRouteKey(
+                backStackEntry.arguments?.getString("sectionId"),
+            )
+            val editorialState by youtubeHomeViewModel.editorialState.collectAsStateWithLifecycle()
+            val onOpenCollection = remember(navState) {
+                { collection: elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeItem.Collection ->
+                    navState.navigateTo(
+                        Routes.youtubeCollection(
+                            collectionId = collection.summary.id,
+                            isAlbum = collection.isAlbum,
+                            title = collection.summary.title,
+                            subtitle = collection.summary.subtitle,
+                            artUri = collection.summary.thumbnailUri?.toString(),
+                        ),
+                    )
+                }
+            }
+            val onOpenExploreMood = remember(navState) {
+                { mood: elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeItem.Mood ->
+                    navState.navigateTo(
+                        Routes.exploreMood(
+                            browseId = mood.browseId,
+                            params = mood.params,
+                            title = mood.title,
+                        ),
+                    )
+                }
+            }
+            val onSelectTrendingTrack = remember(routeActions) {
+                { song: elovaire.music.droidbeauty.app.domain.model.Song,
+                  queue: List<elovaire.music.droidbeauty.app.domain.model.Song> ->
+                    routeActions.playback.playSongQueue(
+                        song = song,
+                        queue = queue,
+                        sourceLabel = song.artist.ifBlank { "Verso" },
+                    )
+                }
+            }
+            EditorialSectionDetailScreen(
+                sectionId = sectionId,
+                editorialState = editorialState,
+                recentSongs = routeState.recentSongs,
+                bottomPadding = padding.bottomContent,
+                onBack = { navState.navController.popBackStack() },
+                onOpenCollection = onOpenCollection,
+                onSelectRecentSong = routeActions.playback::playSongFromAlbumOrSingle,
+                onSelectTrendingTrack = onSelectTrendingTrack,
+                onOpenExploreMood = onOpenExploreMood,
+                onRetrySection = youtubeHomeViewModel::retryEditorialSection,
+            )
+        }
+        composable(
+            route = RootRouteRegistry.EXPLORE_MOOD,
+            arguments = listOf(
+                navArgument("browseId") { type = NavType.StringType; defaultValue = "" },
+                navArgument("params") { type = NavType.StringType; defaultValue = "" },
+                navArgument("title") { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) { backStackEntry ->
+            val args = backStackEntry.arguments
+            val browseId = android.net.Uri.decode(args?.getString("browseId").orEmpty())
+            val params = android.net.Uri.decode(args?.getString("params").orEmpty()).takeIf(String::isNotBlank)
+            val title = android.net.Uri.decode(args?.getString("title").orEmpty())
+            val editorialState by youtubeHomeViewModel.editorialState.collectAsStateWithLifecycle()
+            val availableMoods = remember(editorialState.moods) {
+                (editorialState.moods as? EditorialSectionState.Content)?.items.orEmpty()
+            }
+            val onOpenCollection = remember(navState) {
+                { collection: elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeItem.Collection ->
+                    navState.navigateTo(
+                        Routes.youtubeCollection(
+                            collectionId = collection.summary.id,
+                            isAlbum = collection.isAlbum,
+                            title = collection.summary.title,
+                            subtitle = collection.summary.subtitle,
+                            artUri = collection.summary.thumbnailUri?.toString(),
+                        ),
+                    )
+                }
+            }
+            val onSelectTrack = remember(routeActions) {
+                { song: elovaire.music.droidbeauty.app.domain.model.Song,
+                  queue: List<elovaire.music.droidbeauty.app.domain.model.Song> ->
+                    routeActions.playback.playSongQueue(
+                        song = song,
+                        queue = queue,
+                        sourceLabel = song.artist.ifBlank { "Verso" },
+                    )
+                }
+            }
+            ExploreMoodScreen(
+                initialBrowseId = browseId,
+                initialParams = params,
+                initialTitle = title,
+                availableMoods = availableMoods,
+                youTubeCatalog = youTubeCatalog,
+                bottomPadding = padding.bottomContent,
+                onBack = { navState.navController.popBackStack() },
+                onOpenCollection = onOpenCollection,
+                onSelectTrack = onSelectTrack,
             )
         }
         composable(

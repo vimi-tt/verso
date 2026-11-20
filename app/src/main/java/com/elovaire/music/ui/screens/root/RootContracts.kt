@@ -50,6 +50,8 @@ internal const val GENRE_ROUTE = "genre"
 internal const val ARTIST_ROUTE = "artist"
 internal const val YOUTUBE_ARTIST_ROUTE = "youtube_artist"
 internal const val YOUTUBE_COLLECTION_ROUTE = "youtube_collection"
+internal const val EDITORIAL_SECTION_ROUTE = "editorial_section"
+internal const val EXPLORE_MOOD_ROUTE = "explore_mood"
 internal const val YOUTUBE_DOWNLOADS_ROUTE = "youtube_downloads"
 internal const val YOUTUBE_FAVORITES_ROUTE = "youtube_favorites"
 internal const val YOUTUBE_LOGIN_ROUTE = "youtube_login"
@@ -83,6 +85,8 @@ internal object RootRouteRegistry {
     const val ARTIST = "$ARTIST_ROUTE/{artistName}"
     const val YOUTUBE_ARTIST = "$YOUTUBE_ARTIST_ROUTE/{artistId}"
     const val YOUTUBE_COLLECTION = "$YOUTUBE_COLLECTION_ROUTE/{collectionId}?isAlbum={isAlbum}&title={title}&subtitle={subtitle}&artUri={artUri}"
+    const val EDITORIAL_SECTION = "$EDITORIAL_SECTION_ROUTE/{sectionId}"
+    const val EXPLORE_MOOD = "$EXPLORE_MOOD_ROUTE?browseId={browseId}&params={params}&title={title}"
     const val YOUTUBE_DOWNLOADS = YOUTUBE_DOWNLOADS_ROUTE
     const val YOUTUBE_FAVORITES = YOUTUBE_FAVORITES_ROUTE
     const val YOUTUBE_LOGIN = YOUTUBE_LOGIN_ROUTE
@@ -162,6 +166,16 @@ internal object Routes {
         "&title=${Uri.encode(title)}" +
         "&subtitle=${Uri.encode(subtitle)}" +
         "&artUri=${Uri.encode(artUri.orEmpty())}"
+    fun editorialSection(sectionId: EditorialSectionId): String =
+        "$EDITORIAL_SECTION_ROUTE/${Uri.encode(sectionId.routeKey)}"
+    fun exploreMood(
+        browseId: String,
+        params: String?,
+        title: String,
+    ): String = "$EXPLORE_MOOD_ROUTE" +
+        "?browseId=${Uri.encode(browseId)}" +
+        "&params=${Uri.encode(params.orEmpty())}" +
+        "&title=${Uri.encode(title)}"
     fun genre(genre: String): String = "$GENRE_ROUTE/${Uri.encode(genre)}"
     fun libraryCollection(
         kind: LibraryCollectionKind,
@@ -193,6 +207,8 @@ internal val BottomNavigationRoutes = setOf(
     "$ARTIST_ROUTE/{artistName}",
     "$YOUTUBE_ARTIST_ROUTE/{artistId}",
     RootRouteRegistry.YOUTUBE_COLLECTION,
+    RootRouteRegistry.EDITORIAL_SECTION,
+    RootRouteRegistry.EXPLORE_MOOD,
     YOUTUBE_DOWNLOADS_ROUTE,
     YOUTUBE_FAVORITES_ROUTE,
     STATS_ROUTE,
@@ -367,6 +383,8 @@ internal object ElovaireNavigationTransitions {
             "$ARTIST_ROUTE/{artistName}",
     "$YOUTUBE_ARTIST_ROUTE/{artistId}",
     RootRouteRegistry.YOUTUBE_COLLECTION,
+    RootRouteRegistry.EDITORIAL_SECTION,
+    RootRouteRegistry.EXPLORE_MOOD,
     YOUTUBE_DOWNLOADS_ROUTE,
     YOUTUBE_FAVORITES_ROUTE,
     STATS_ROUTE,
@@ -401,6 +419,8 @@ internal object ElovaireNavigationTransitions {
             "$ARTIST_ROUTE/{artistName}",
     "$YOUTUBE_ARTIST_ROUTE/{artistId}",
     RootRouteRegistry.YOUTUBE_COLLECTION,
+    RootRouteRegistry.EDITORIAL_SECTION,
+    RootRouteRegistry.EXPLORE_MOOD,
     YOUTUBE_DOWNLOADS_ROUTE,
     YOUTUBE_FAVORITES_ROUTE,
     STATS_ROUTE,
@@ -813,6 +833,8 @@ internal fun String?.normalizedNavigationRoute(): String? {
         startsWith("$ARTIST_ROUTE/") -> "$ARTIST_ROUTE/{artistName}"
         startsWith("$YOUTUBE_ARTIST_ROUTE/") -> "$YOUTUBE_ARTIST_ROUTE/{artistId}"
         startsWith("$YOUTUBE_COLLECTION_ROUTE/") -> RootRouteRegistry.YOUTUBE_COLLECTION
+        startsWith("$EDITORIAL_SECTION_ROUTE/") -> RootRouteRegistry.EDITORIAL_SECTION
+        startsWith(EXPLORE_MOOD_ROUTE) -> RootRouteRegistry.EXPLORE_MOOD
         startsWith("$LIBRARY_COLLECTION_ROUTE/") -> "$LIBRARY_COLLECTION_ROUTE/{kind}"
         else -> this
     }
@@ -833,6 +855,14 @@ internal fun androidx.navigation.NavBackStackEntry.elovaireConcreteRoute(): Stri
             title = arguments?.getString("title").orEmpty(),
             subtitle = arguments?.getString("subtitle").orEmpty(),
             artUri = arguments?.getString("artUri")?.takeIf(String::isNotBlank),
+        )
+        RootRouteRegistry.EDITORIAL_SECTION -> Routes.editorialSection(
+            EditorialSectionId.fromRouteKey(arguments?.getString("sectionId")),
+        )
+        RootRouteRegistry.EXPLORE_MOOD -> Routes.exploreMood(
+            browseId = arguments?.getString("browseId").orEmpty(),
+            params = arguments?.getString("params")?.takeIf(String::isNotBlank),
+            title = arguments?.getString("title").orEmpty(),
         )
         "$LIBRARY_COLLECTION_ROUTE/{kind}" -> "$LIBRARY_COLLECTION_ROUTE/${arguments?.getString("kind") ?: return null}"
         else -> destination.route
@@ -865,6 +895,14 @@ internal fun androidx.navigation.NavBackStackEntry.concreteNavigationRoute(): St
                 artUri = args.getString("artUri")?.takeIf(String::isNotBlank),
             )
         }
+        RootRouteRegistry.EDITORIAL_SECTION -> Routes.editorialSection(
+            EditorialSectionId.fromRouteKey(args?.getString("sectionId")),
+        )
+        RootRouteRegistry.EXPLORE_MOOD -> Routes.exploreMood(
+            browseId = args?.getString("browseId").orEmpty(),
+            params = args?.getString("params")?.takeIf(String::isNotBlank),
+            title = args?.getString("title").orEmpty(),
+        )
         else -> route
     }
 }
@@ -884,6 +922,8 @@ internal fun topLevelOwnerRoute(
         "$ARTIST_ROUTE/{artistName}",
     "$YOUTUBE_ARTIST_ROUTE/{artistId}",
     RootRouteRegistry.YOUTUBE_COLLECTION,
+    RootRouteRegistry.EDITORIAL_SECTION,
+    RootRouteRegistry.EXPLORE_MOOD,
     YOUTUBE_DOWNLOADS_ROUTE,
     YOUTUBE_FAVORITES_ROUTE,
     STATS_ROUTE,
@@ -910,6 +950,8 @@ internal fun transitionTopLevelOwnerRoute(
         "$ARTIST_ROUTE/{artistName}",
     "$YOUTUBE_ARTIST_ROUTE/{artistId}",
     RootRouteRegistry.YOUTUBE_COLLECTION,
+    RootRouteRegistry.EDITORIAL_SECTION,
+    RootRouteRegistry.EXPLORE_MOOD,
     YOUTUBE_DOWNLOADS_ROUTE,
     YOUTUBE_FAVORITES_ROUTE,
     STATS_ROUTE,

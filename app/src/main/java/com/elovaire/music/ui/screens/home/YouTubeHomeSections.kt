@@ -48,6 +48,7 @@ import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
 import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
 
+@Deprecated("Substituído por EditorialMoodsFlow na Home editorial; remover após validação.")
 @Composable
 internal fun YouTubeMoodChipsRow(
     moods: List<YouTubeHomeItem.Mood>,
@@ -166,6 +167,7 @@ private fun MoodFilterPill(
     }
 }
 
+@Deprecated("Substituído por EditorialResumeRow na Home editorial; remover após validação.")
 @Composable
 internal fun YouTubeSpeedDialSection(
     tracks: List<Song>,
@@ -305,6 +307,7 @@ private fun SpeedDialTile(
     }
 }
 
+@Deprecated("Substituído pelas seções editoriais (Lançamentos/Essenciais/Em alta); remover após validação.")
 @Composable
 internal fun YouTubeHomeShelfSection(
     shelf: YouTubeHomeShelf,
@@ -521,6 +524,7 @@ private fun YouTubeShelfCard(
     }
 }
 
+@Deprecated("Substituído por skeletons e estados de erro independentes por seção; remover após validação.")
 @Composable
 internal fun YouTubeHomeStatusBanner(
     isLoading: Boolean,
@@ -571,6 +575,7 @@ internal fun YouTubeHomeStatusBanner(
     }
 }
 
+@Deprecated("Substituído pela Home editorial sem feed infinito; remover após validação.")
 @Composable
 internal fun YouTubeHomeLoadMorePill(
     isLoadingMore: Boolean,

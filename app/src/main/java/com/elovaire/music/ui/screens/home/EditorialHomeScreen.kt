@@ -290,7 +290,7 @@ internal fun EditorialHomeScreen(
                 showSeeAll = editorialState.moods is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Moods) },
             ) {
-                when (editorialState.moods) {
+                when (val section = editorialState.moods) {
                     EditorialSectionState.Loading -> EditorialMoodsSkeleton()
                     EditorialSectionState.Empty -> EditorialSectionEmptyState(
                         message = stringResource(R.string.editorial_section_moods_empty),
@@ -299,8 +299,11 @@ internal fun EditorialHomeScreen(
                         onRetry = { onRetrySection(EditorialSectionId.Moods) },
                     )
                     is EditorialSectionState.Content -> {
-                        // Preenchido na Etapa 4
-                        EditorialMoodsSkeleton()
+                        val limited = remember(section.items) { section.items.take(12) }
+                        EditorialMoodsFlow(
+                            moods = limited,
+                            onMoodClick = onOpenExploreMood,
+                        )
                     }
                 }
             }
@@ -659,6 +662,82 @@ internal fun EditorialTrendingRow(
                 )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun EditorialMoodsFlow(
+    moods: List<EditorialMoodItem>,
+    onMoodClick: (YouTubeHomeItem.Mood) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FlowRow(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        moods.forEach { item ->
+            EditorialMoodChip(
+                title = item.title,
+                selected = false,
+                onClick = { onMoodClick(item.mood) },
+            )
+        }
+    }
+}
+
+@Composable
+internal fun EditorialMoodChip(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val chipCd = stringResource(R.string.editorial_section_moods_chip_cd, title)
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+    }
+    val textColor = if (selected) {
+        MaterialTheme.colorScheme.surface
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    Box(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(ElovaireRadii.pill))
+            .background(containerColor)
+            .then(
+                if (selected) {
+                    Modifier
+                } else {
+                    Modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(ElovaireRadii.pill),
+                    )
+                },
+            )
+            .semantics {
+                role = Role.Button
+                contentDescription = chipCd
+            }
+            .elovaireClickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+            color = textColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
