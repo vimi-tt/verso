@@ -192,7 +192,7 @@ internal fun EditorialHomeScreen(
                 showSeeAll = editorialState.newReleases is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.NewReleases) },
             ) {
-                when (editorialState.newReleases) {
+                when (val section = editorialState.newReleases) {
                     EditorialSectionState.Loading -> EditorialCarouselSkeleton(cardSize = 164.dp, count = 4)
                     EditorialSectionState.Empty -> EditorialSectionEmptyState(
                         message = stringResource(R.string.editorial_section_new_releases_empty),
@@ -201,8 +201,14 @@ internal fun EditorialHomeScreen(
                         onRetry = { onRetrySection(EditorialSectionId.NewReleases) },
                     )
                     is EditorialSectionState.Content -> {
-                        // Preenchido na Etapa 3
-                        EditorialCarouselSkeleton(cardSize = 164.dp, count = 4)
+                        val limited = remember(section.items) {
+                            section.items.take(EDITORIAL_CAROUSEL_LIMIT)
+                        }
+                        EditorialCollectionCarousel(
+                            items = limited,
+                            keyPrefix = "new_release",
+                            onCollectionClick = onOpenCollection,
+                        )
                     }
                 }
             }
@@ -219,7 +225,7 @@ internal fun EditorialHomeScreen(
                 showSeeAll = editorialState.essentials is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Essentials) },
             ) {
-                when (editorialState.essentials) {
+                when (val section = editorialState.essentials) {
                     EditorialSectionState.Loading -> EditorialCarouselSkeleton(cardSize = 164.dp, count = 4)
                     EditorialSectionState.Empty -> EditorialSectionEmptyState(
                         message = stringResource(R.string.editorial_section_essentials_empty),
@@ -228,8 +234,14 @@ internal fun EditorialHomeScreen(
                         onRetry = { onRetrySection(EditorialSectionId.Essentials) },
                     )
                     is EditorialSectionState.Content -> {
-                        // Preenchido na Etapa 3
-                        EditorialCarouselSkeleton(cardSize = 164.dp, count = 4)
+                        val limited = remember(section.items) {
+                            section.items.take(EDITORIAL_CAROUSEL_LIMIT)
+                        }
+                        EditorialCollectionCarousel(
+                            items = limited,
+                            keyPrefix = "essential",
+                            onCollectionClick = onOpenCollection,
+                        )
                     }
                 }
             }
@@ -246,7 +258,7 @@ internal fun EditorialHomeScreen(
                 showSeeAll = editorialState.trending is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Trending) },
             ) {
-                when (editorialState.trending) {
+                when (val section = editorialState.trending) {
                     EditorialSectionState.Loading -> EditorialTrendingSkeleton()
                     EditorialSectionState.Empty -> EditorialSectionEmptyState(
                         message = stringResource(R.string.editorial_section_trending_empty),
@@ -255,8 +267,13 @@ internal fun EditorialHomeScreen(
                         onRetry = { onRetrySection(EditorialSectionId.Trending) },
                     )
                     is EditorialSectionState.Content -> {
-                        // Preenchido na Etapa 3
-                        EditorialTrendingSkeleton()
+                        val limited = remember(section.items) {
+                            section.items.take(EDITORIAL_TRENDING_LIMIT)
+                        }
+                        EditorialTrendingCarousel(
+                            tracks = limited,
+                            onTrackClick = onSelectTrendingTrack,
+                        )
                     }
                 }
             }
@@ -461,6 +478,180 @@ private fun EditorialResumeCard(
             if (song.artist.isNotBlank()) {
                 Text(
                     text = song.artist,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = readableSecondaryTextColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun EditorialCollectionCarousel(
+    items: List<EditorialCollectionItem>,
+    keyPrefix: String,
+    onCollectionClick: (YouTubeHomeItem.Collection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyRow(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = ElovaireSpacing.screenHorizontalPadding),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        items(
+            items = items,
+            key = { item -> "${keyPrefix}_${item.id}" },
+            contentType = { "editorial_collection_card" },
+        ) { item ->
+            EditorialCollectionCard(
+                item = item,
+                cardWidth = 164.dp,
+                onClick = { onCollectionClick(item.collection) },
+            )
+        }
+    }
+}
+
+@Composable
+internal fun EditorialCollectionCard(
+    item: EditorialCollectionItem,
+    cardWidth: Dp,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .width(cardWidth)
+            .clip(RoundedCornerShape(ElovaireRadii.artwork))
+            .semantics(mergeDescendants = true) { role = Role.Button }
+            .elovaireClickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ArtworkImage(
+            uri = item.artUri,
+            title = item.title,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f),
+            cornerRadius = ElovaireRadii.artwork,
+            requestedSizePx = 360,
+            showArtworkGlow = false,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (item.subtitle.isNotBlank()) {
+                Text(
+                    text = item.subtitle,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = readableSecondaryTextColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun EditorialTrendingCarousel(
+    tracks: List<EditorialChartTrack>,
+    onTrackClick: (Song, List<Song>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val queue = remember(tracks) { tracks.map { it.song } }
+    val columns = remember(tracks) { tracks.chunked(2) }
+    LazyRow(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = ElovaireSpacing.screenHorizontalPadding),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        items(
+            items = columns,
+            key = { col -> "trending_col_${col.firstOrNull()?.rank ?: 0}" },
+            contentType = { "editorial_trending_column" },
+        ) { columnTracks ->
+            Column(
+                modifier = Modifier.width(292.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                columnTracks.forEach { entry ->
+                    EditorialTrendingRow(
+                        entry = entry,
+                        onClick = { onTrackClick(entry.song, queue) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun EditorialTrendingRow(
+    entry: EditorialChartTrack,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val rankCd = stringResource(
+        R.string.editorial_section_trending_rank_cd,
+        entry.rank,
+        entry.song.title,
+        entry.song.artist,
+    )
+    val rankLabel = remember(entry.rank) { entry.rank.toString().padStart(2, '0') }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .clip(RoundedCornerShape(ElovaireRadii.artwork))
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                contentDescription = rankCd
+            }
+            .elovaireClickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = rankLabel,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontFeatureSettings = "tnum",
+            ),
+            color = readableSecondaryTextColor(),
+            modifier = Modifier.width(30.dp),
+        )
+        ArtworkImage(
+            uri = entry.song.artUri,
+            title = entry.song.title,
+            modifier = Modifier.size(56.dp),
+            cornerRadius = ElovaireRadii.artwork,
+            requestedSizePx = 160,
+            showArtworkGlow = false,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = entry.song.title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (entry.song.artist.isNotBlank()) {
+                Text(
+                    text = entry.song.artist,
                     style = MaterialTheme.typography.labelLarge,
                     color = readableSecondaryTextColor(),
                     maxLines = 1,
