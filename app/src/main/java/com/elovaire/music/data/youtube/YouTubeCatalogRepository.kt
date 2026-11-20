@@ -325,6 +325,18 @@ internal class YouTubeCatalogRepository(
         streamClient.catalog.getMusicShelvesContinuation(token)?.toHomeFeed() ?: YouTubeHomeFeed()
     }
 
+    suspend fun getNewReleasesFeed(): YouTubeHomeFeed = withContext(ioDispatcher) {
+        streamClient.catalog.getMusicShelves(NEW_RELEASES_BROWSE_ID, null)?.toHomeFeed() ?: YouTubeHomeFeed()
+    }
+
+    suspend fun getExploreFeed(): YouTubeHomeFeed = withContext(ioDispatcher) {
+        streamClient.catalog.getMusicShelves(EXPLORE_BROWSE_ID, null)?.toHomeFeed() ?: YouTubeHomeFeed()
+    }
+
+    suspend fun getChartsFeed(): YouTubeHomeFeed = withContext(ioDispatcher) {
+        streamClient.catalog.getMusicShelves(CHARTS_BROWSE_ID, null)?.toHomeFeed() ?: YouTubeHomeFeed()
+    }
+
     suspend fun getMoodsAndGenres(): List<YouTubeHomeItem.Mood> = withContext(ioDispatcher) {
         val page = streamClient.catalog.getMusicShelves(MOODS_BROWSE_ID, null) ?: return@withContext emptyList()
         page.shelves.flatMap { shelf ->
@@ -354,6 +366,9 @@ internal class YouTubeCatalogRepository(
 
     private companion object {
         const val HOME_BROWSE_ID = "FEmusic_home"
+        const val EXPLORE_BROWSE_ID = "FEmusic_explore"
+        const val NEW_RELEASES_BROWSE_ID = "FEmusic_new_releases"
+        const val CHARTS_BROWSE_ID = "FEmusic_charts"
         const val MOODS_BROWSE_ID = "FEmusic_moods_and_genres"
     }
 }

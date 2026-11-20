@@ -4,4 +4,44 @@
     <string name="shortcut_albums">Álbuns</string>
     <string name="shortcut_playlists">Listas</string>
     <string name="shortcut_search">Pesquisar</string>
+
+    <!-- Editorial Home (pt-BR) -->
+    <string name="editorial_home_see_all">Ver tudo</string>
+    <string name="editorial_home_see_all_cd">Ver tudo de %1$s</string>
+    <string name="editorial_home_play">Tocar</string>
+    <string name="editorial_home_play_cd">Tocar %1$s</string>
+    <string name="editorial_home_loading_play">Carregando</string>
+    <string name="editorial_home_retry">Tentar novamente</string>
+    <string name="editorial_home_section_error">Não foi possível carregar esta seção</string>
+
+    <string name="editorial_section_featured_title">Destaque</string>
+    <string name="editorial_section_featured_subtitle">Seleção em evidência para ouvir agora</string>
+    <string name="editorial_section_featured_empty">Nenhum destaque disponível no momento</string>
+    <string name="editorial_section_featured_cd">Abrir destaque %1$s</string>
+
+    <string name="editorial_section_resume_title">Para retomar</string>
+    <string name="editorial_section_resume_subtitle">O que você ouviu por último neste aparelho</string>
+    <string name="editorial_section_resume_empty">Suas faixas ouvidas recentemente aparecerão aqui</string>
+
+    <string name="editorial_section_new_releases_title">Lançamentos</string>
+    <string name="editorial_section_new_releases_subtitle">Novos álbuns e singles recém-chegados</string>
+    <string name="editorial_section_new_releases_empty">Nenhum lançamento disponível no momento</string>
+
+    <string name="editorial_section_essentials_title">Essenciais</string>
+    <string name="editorial_section_essentials_subtitle">Playlists e álbuns de referência para explorar</string>
+    <string name="editorial_section_essentials_empty">Nenhuma seleção essencial disponível no momento</string>
+
+    <string name="editorial_section_trending_title">Em alta</string>
+    <string name="editorial_section_trending_subtitle">As faixas mais ouvidas na parada</string>
+    <string name="editorial_section_trending_empty">A parada de mais ouvidas não está disponível agora</string>
+    <string name="editorial_section_trending_rank_cd">Posição %1$d: %2$s, %3$s</string>
+
+    <string name="editorial_section_moods_title">Explorar por clima</string>
+    <string name="editorial_section_moods_subtitle">Escolha um gênero ou atmosfera para descobrir</string>
+    <string name="editorial_section_moods_empty">Nenhum clima ou gênero disponível no momento</string>
+    <string name="editorial_section_moods_chip_cd">Explorar %1$s</string>
+
+    <string name="editorial_explore_title">Explorar</string>
+    <string name="editorial_explore_empty">Nenhum conteúdo encontrado para este clima</string>
+    <string name="editorial_explore_back_cd">Voltar</string>
 </resources>
