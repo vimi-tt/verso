@@ -6,6 +6,12 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
+    <release version="1.0-beta3">
+        <item>Added the Compasso continuous recommendation engine with infinite queue flow, real-time session affinity, 1-in-5 artist diversity window, and ATV studio audio purity filtering</item>
+        <item>Added Familiar, 70/30, and Explore discovery modes in the queue panel with instant upcoming queue adaptation</item>
+        <item>Refined album and playlist detail screens with dynamic artwork palette headers, centered play controls, and downloaded confirmation badges</item>
+        <item>Fixed overlapping queue items during batch updates and updated privacy policy settings copy to Verso across all 40 languages</item>
+    </release>
     <release version="1.0-beta2">
         <item>Updated app identity with the final ver/so icon across launcher, Material You themed icon, onboarding, About, Stats, Recap, and Share Cards</item>
         <item>Redesigned Home with an editorial magazine layout featuring Featured hero, Pick up again, New releases, Essentials, numbered Trending chart, Explore by mood, and pull-to-refresh</item>

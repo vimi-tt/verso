@@ -2,9 +2,9 @@
 
 # Verso
 
-**A refined android music player combining YouTube Music streaming, fast offline downloads, word-by-word synced lyrics, Last.fm scrobbling, and a shareable Recap.**
+**A refined Android music player combining YouTube Music streaming, the Compasso continuous recommendation engine, fast offline downloads, word-by-word synced lyrics, Last.fm scrobbling, and a shareable Recap.**
 
-[![Version](https://img.shields.io/badge/version-v1.0--beta1-FF6E4A?style=for-the-badge)](https://github.com/vimi-tt/verso/releases)
+[![Version](https://img.shields.io/badge/version-v1.0--beta3-FF6E4A?style=for-the-badge)](https://github.com/vimi-tt/verso/releases)
 [![Android](https://img.shields.io/badge/Android-10%2B%20(API%2029%2B)-19183D?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-Compose-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 
@@ -16,14 +16,21 @@
 
 ## Overview
 
-**Verso** is an Android music player built on top of [Elovaire](https://github.com/droidbeauty/elovaire-music) by Droid Beauty, expanded with YouTube Music streaming, account synchronization, offline collection support, syllable-synced lyrics, listening statistics, and custom shareable cards.
+**Verso** is an Android music player built on top of [Elovaire](https://github.com/droidbeauty/elovaire-music) by Droid Beauty, expanded with YouTube Music streaming, the **Compasso** continuous recommendation engine, account synchronization, offline collection support, syllable-synced lyrics, listening statistics, and custom shareable cards.
 
 ## Features
 
+### Compasso — Continuous Recommendation Engine
+- **Infinite Flow Queue**: Inspired by Deezer Flow and executed locally on device; YouTube Music `/next` (`RDAMVM`) acts as the raw candidate provider while Verso applies deterministic heuristic filtering, reordering, and infinite queue continuation.
+- **Live Discovery Modes (`Familiar` · `70/30` · `Explore`)**: Switch discovery ratios directly inside the queue sheet (`30/70` Familiar, `70/30` Balanced, or `90/10` Explore) paired with YouTube Music's `AUTOMIX_SETTING` tuners and instant upcoming queue replacement.
+- **Studio Audio Purity (`ATV`)**: Prioritizes official album studio tracks (`MUSIC_VIDEO_TYPE_ATV`), discards user uploads (`UGC`), and uses music videos (`OMV`) only as a last resort; automatically resolves `OMV`/`UGC` initial seeds to their `ATV` studio counterpart.
+- **Multi-Layer Anti-Repetition & 1-in-5 Artist Diversity**: Canonical `TrackNormalizer` strips YouTube noise (`Official Video`, `Lyrics`, `Remastered`, `Live`, `HD`/`4K`, `feat.`) to deduplicate against the active queue and last 50 history tracks, while enforcing at most **1 track per artist every 5 consecutive songs** via a waiting buffer.
+- **Real-Time Session Affinity & Time-of-Day Weighting**: Early skips (`< 30s`) immediately penalize the artist in the current session, completed plays (`> 80%`) and Likes boost artist affinity and register fallback seeds, and familiar picks are weighted by the current period of the day (dawn, morning, afternoon, night).
+
 ### Streaming & Discovery
-- **YouTube Music Integration**: Browse Home shelves, mood chips, artists, albums, and playlists, or stream in anonymous mode without signing in.
+- **Editorial Magazine Home**: Qobuz-inspired editorial Home featuring a Featured hero card, Pick up again, New releases, Essentials, numbered Trending chart, Explore by mood chips, and pull-to-refresh.
+- **YouTube Music Integration**: Browse Home shelves, mood chips, artists, albums, and playlists with dynamic artwork palette headers, or stream in anonymous mode without signing in.
 - **Account Sync & Profile**: Sign in with Google / YouTube Music to sync liked songs, saved albums, followed artists, and show your profile avatar in the top bar.
-- **Activity Mix**: Personalized mix on Home built from your account shelves and recent listening activity.
 - **YouTube Watch History Sync**: Optional setting to report playback to your YouTube Music account after 30 seconds so plays count toward your official YouTube Recap.
 
 ### Offline Downloads & Library
