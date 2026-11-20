@@ -225,6 +225,21 @@ internal class AppServices(
     val lastFmClient: elovaire.music.droidbeauty.app.data.youtube.LastFmClient
         get() = lastFmClientDelegate.value
 
+    private val compassoEngineDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        elovaire.music.droidbeauty.app.data.compasso.CompassoEngine(
+            radioSource = elovaire.music.droidbeauty.app.data.compasso.YouTubeCompassoRadioSource(
+                youTubeCatalog = youTubeCatalogRepositoryDelegate.value,
+            ),
+            store = elovaire.music.droidbeauty.app.data.compasso.RoomCompassoStore(
+                dao = database.compassoDao(),
+            ),
+            ioDispatcher = appDispatchers.io,
+            nowMs = AndroidAppClock::wallTimeMs,
+        )
+    }
+    val compassoEngine: elovaire.music.droidbeauty.app.data.compasso.CompassoEngine
+        get() = compassoEngineDelegate.value
+
     private val networkDataSourceFactory = NetworkDataSourceFactory(
         defaultFactory = DefaultDataSource.Factory(applicationContext),
         registryProvider = { networkFileSystemRegistryDelegate.value },

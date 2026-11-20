@@ -62,6 +62,11 @@ interface MusicCatalogDataSource {
 
     suspend fun getRelatedSongs(videoId: String, limit: Int = 25): List<Song>
 
+    suspend fun getRadioPage(
+        videoId: String,
+        continuationToken: String? = null,
+    ): com.vimi.k7.innertube.model.RadioPage = com.vimi.k7.innertube.model.RadioPage(emptyList(), null)
+
     suspend fun getSongFromPanel(videoId: String): Song?
 
     // --- Playlists, albums & library ---
@@ -135,6 +140,11 @@ class LegacyMusicCatalogDataSource(
 
     override suspend fun getRelatedSongs(videoId: String, limit: Int): List<Song> =
         musicBrowse.getRelatedSongs(videoId, limit)
+
+    override suspend fun getRadioPage(
+        videoId: String,
+        continuationToken: String?,
+    ): com.vimi.k7.innertube.model.RadioPage = musicBrowse.getRadioPage(videoId, continuationToken)
 
     override suspend fun getSongFromPanel(videoId: String): Song? =
         musicBrowse.getSongFromPanel(videoId)

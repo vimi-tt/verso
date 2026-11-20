@@ -301,6 +301,11 @@ internal object MusicMetadata {
         return if (types.isEmpty()) null else types.any { it == "MUSIC_VIDEO_TYPE_ATV" }
     }
 
+    fun extractMusicVideoType(node: JSONObject): String? {
+        val types = strings(node, "musicVideoType")
+        return types.firstOrNull { it == "MUSIC_VIDEO_TYPE_ATV" } ?: types.firstOrNull()
+    }
+
     /**
      * Whether an album page listed videos in place of its songs.
      *
@@ -356,17 +361,46 @@ internal object MusicMetadata {
      * [verified October 2026]
      */
     fun queueSongs(root: JSONObject): List<Song> {
-        val entries = objects(root, "playlistPanelRenderer")
-            .flatMap { it.optJSONArray("contents").rows() }
-        if (entries.isEmpty()) return objects(root, "playlistPanelVideoRenderer").mapNotNull(::song)
-        return entries.mapNotNull { entry ->
-            val wrapper = entry.optJSONObject("playlistPanelVideoWrapperRenderer")
-            val versions = if (wrapper != null) {
-                objects(wrapper.optJSONObject("primaryRenderer"), "playlistPanelVideoRenderer") +
-                    objects(wrapper.optJSONArray("counterpart"), "playlistPanelVideoRenderer")
-            } else listOfNotNull(entry.optJSONObject("playlistPanelVideoRenderer"))
-            (versions.firstOrNull { isSongVersion(it) == true } ?: versions.firstOrNull())?.let(::song)
+        return queueRadioPage(root).candidates.map { it.song }
+    }
+
+    fun queueRadioPage(root: JSONObject): RadioPage {
+        val panels = objects(root, "playlistPanelRenderer") + objects(root, "playlistPanelContinuation")
+        val entries = panels.flatMap { it.optJSONArray("contents").rows() }
+        val candidates = if (entries.isEmpty()) {
+            objects(root, "playlistPanelVideoRenderer").mapNotNull { renderer ->
+                song(renderer)?.let { s -> RadioCandidate(song = s, musicVideoType = extractMusicVideoType(renderer)) }
+            }
+        } else {
+            entries.mapNotNull { entry ->
+                val wrapper = entry.optJSONObject("playlistPanelVideoWrapperRenderer")
+                val versions = if (wrapper != null) {
+                    objects(wrapper.optJSONObject("primaryRenderer"), "playlistPanelVideoRenderer") +
+                        objects(wrapper.optJSONArray("counterpart"), "playlistPanelVideoRenderer")
+                } else {
+                    listOfNotNull(entry.optJSONObject("playlistPanelVideoRenderer"))
+                }
+                val chosen = versions.firstOrNull { isSongVersion(it) == true } ?: versions.firstOrNull()
+                chosen?.let { renderer ->
+                    song(renderer)?.let { s ->
+                        RadioCandidate(song = s, musicVideoType = extractMusicVideoType(renderer))
+                    }
+                }
+            }
         }
+        val token = panels.firstNotNullOfOrNull { panel ->
+            objects(panel, "nextRadioContinuationData").firstNotNullOfOrNull {
+                it.optString("continuation").takeIf(String::isNotBlank)
+            } ?: objects(panel, "nextContinuationData").firstNotNullOfOrNull {
+                it.optString("continuation").takeIf(String::isNotBlank)
+            } ?: objects(panel, "continuationItemRenderer").firstNotNullOfOrNull {
+                it.optJSONObject("continuationEndpoint")?.optJSONObject("continuationCommand")
+                    ?.optString("token")?.takeIf(String::isNotBlank)
+            }
+        } ?: objects(root, "nextRadioContinuationData").firstNotNullOfOrNull {
+            it.optString("continuation").takeIf(String::isNotBlank)
+        } ?: continuation(root)
+        return RadioPage(candidates = candidates, continuationToken = token)
     }
 
     /** Search and discography continuations only; never call on an artist page
@@ -378,6 +412,16 @@ internal object MusicMetadata {
                     ?.optString("token")?.takeIf(String::isNotBlank)
             }
 }
+
+data class RadioCandidate(
+    val song: Song,
+    val musicVideoType: String?,
+)
+
+data class RadioPage(
+    val candidates: List<RadioCandidate>,
+    val continuationToken: String?,
+)
 
 /** Stable ties preserve source order; an absent year is never the current year. */
 internal fun List<PlaylistDisplayItem>.newestReleasesFirst(): List<PlaylistDisplayItem> =

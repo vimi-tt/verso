@@ -664,6 +664,11 @@ class MetrolistMusicCatalogDataSource(
     override suspend fun getRelatedSongs(videoId: String, limit: Int): List<Song> =
         legacy.getRelatedSongs(videoId, limit)
 
+    override suspend fun getRadioPage(
+        videoId: String,
+        continuationToken: String?,
+    ): com.vimi.k7.innertube.model.RadioPage = legacy.getRadioPage(videoId, continuationToken)
+
     override suspend fun getSongFromPanel(videoId: String): Song? =
         legacy.getSongFromPanel(videoId)
 

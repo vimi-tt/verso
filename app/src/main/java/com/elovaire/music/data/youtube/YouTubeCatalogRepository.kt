@@ -288,6 +288,30 @@ internal class YouTubeCatalogRepository(
         streamClient.catalog.getRelatedSongs(videoId, limit).map { it.toElovaireSong() }
     }
 
+    suspend fun getCompassoRadioPage(
+        videoId: String,
+        continuationToken: String? = null,
+    ): elovaire.music.droidbeauty.app.data.compasso.CompassoRadioPage = withContext(ioDispatcher) {
+        val page = streamClient.catalog.getRadioPage(videoId, continuationToken)
+        elovaire.music.droidbeauty.app.data.compasso.CompassoRadioPage(
+            candidates = page.candidates.map { candidate ->
+                elovaire.music.droidbeauty.app.data.compasso.CompassoCandidate(
+                    videoId = candidate.song.id,
+                    song = candidate.song.toElovaireSong(),
+                    musicVideoType = candidate.musicVideoType,
+                )
+            },
+            continuationToken = page.continuationToken,
+        )
+    }
+
+    suspend fun resolveAtvSeedVideoId(song: Song): String? = withContext(ioDispatcher) {
+        val query = listOf(song.title, song.artist).filter { it.isNotBlank() }.joinToString(" ").trim()
+        if (query.isBlank()) return@withContext null
+        val matches = runCatching { streamClient.catalog.search(query) }.getOrDefault(emptyList())
+        matches.firstOrNull()?.id?.takeIf { it.length == 11 }
+    }
+
     /**
      * Builds a musically coherent queue for a seed song:
      * 1. Uses the familiar YouTube Music radio (/next RDAMVM) filtered against long non-music tracks & duplicates.

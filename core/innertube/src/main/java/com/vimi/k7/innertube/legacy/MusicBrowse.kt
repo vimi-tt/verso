@@ -449,6 +449,53 @@ class MusicBrowse(
         }
     }
 
+    suspend fun getRadioPage(
+        videoId: String,
+        continuationToken: String? = null,
+    ): com.vimi.k7.innertube.model.RadioPage = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().apply {
+                put(
+                    "context",
+                    JSONObject().put(
+                        "client",
+                        JSONObject()
+                            .put("clientName", "WEB_REMIX")
+                            .put("clientVersion", WEB_REMIX_VERSION)
+                            .put("hl", http.contentLanguage())
+                            .put("gl", http.contentRegion()),
+                    ),
+                )
+                if (!continuationToken.isNullOrBlank()) {
+                    put("continuation", continuationToken)
+                } else {
+                    put("videoId", videoId)
+                    put("playlistId", "RDAMVM$videoId")
+                    put("isAudioOnly", true)
+                    put("enablePersistentPlaylistPanel", true)
+                    put("tunerSettingValue", "AUTOMIX_SETTING_FAMILIAR")
+                }
+            }
+            val requestBuilder = Request.Builder()
+                .url("https://music.youtube.com/youtubei/v1/next")
+                .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                .addHeader("User-Agent", BROWSER_USER_AGENT)
+                .addHeader("Origin", "https://music.youtube.com")
+            requestBuilder.authenticate(sessionManager.captureSession())
+
+            val response = http.okHttpClient.newCall(requestBuilder.build()).execute()
+            val body = response.use { it.body?.string() }
+            if (body.isNullOrEmpty()) {
+                return@withContext com.vimi.k7.innertube.model.RadioPage(emptyList(), null)
+            }
+            MusicMetadata.queueRadioPage(JSONObject(body))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            KLog.e(YOUTUBE_TAG, "Error fetching radio page for $videoId", e)
+            com.vimi.k7.innertube.model.RadioPage(emptyList(), null)
+        }
+    }
+
     /** The song itself as the radio panel describes it: title, artist and length. */
     suspend fun getSongFromPanel(videoId: String): Song? = withContext(Dispatchers.IO) {
         try {

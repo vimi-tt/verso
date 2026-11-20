@@ -70,6 +70,58 @@ internal fun ElovaireRootReadyHost(
             positionMs = composition.playback.progressState.value.positionMs,
         )
     }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        composition.compassoEngine.restorePersistedQueueState()
+    }
+    var previousFavoriteIds by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<Set<Long>?>(null)
+    }
+    androidx.compose.runtime.LaunchedEffect(appState.favoriteSongIds) {
+        val prev = previousFavoriteIds
+        previousFavoriteIds = appState.favoriteSongIds
+        if (prev != null) {
+            val newlyLiked = appState.favoriteSongIds - prev
+            for (likedId in newlyLiked) {
+                val song = derivedState.songsById[likedId]
+                    ?: playbackState.queue.firstOrNull { it.id == likedId }
+                    ?: playbackState.currentSong?.takeIf { it.id == likedId }
+                if (song != null) {
+                    composition.compassoEngine.recordLikeSignal(song)
+                }
+            }
+        }
+    }
+    var previousCompassoSong by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<elovaire.music.droidbeauty.app.domain.model.Song?>(null)
+    }
+    var previousCompassoPlayedMs by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableLongStateOf(0L)
+    }
+    androidx.compose.runtime.LaunchedEffect(playbackState.currentSong?.id, playbackState.currentIndex, playbackState.queue.size) {
+        val current = playbackState.currentSong
+        val prev = previousCompassoSong
+        if (prev != null && current != null && prev.id != current.id) {
+            val wasSkipped = prev.durationMs <= 0L ||
+                previousCompassoPlayedMs < (prev.durationMs * 0.80f).toLong()
+            composition.compassoEngine.recordPlaybackOutcome(
+                song = prev,
+                playedMs = previousCompassoPlayedMs,
+                wasSkipped = wasSkipped,
+            )
+            previousCompassoPlayedMs = 0L
+        }
+        previousCompassoSong = current
+        if (current != null && playbackState.queue.isNotEmpty()) {
+            composition.compassoEngine.onPlaybackPositionChanged(
+                currentIndex = playbackState.currentIndex,
+                currentQueue = playbackState.queue,
+                autoActivateAtEndOfCollection = true,
+                onAppendTracks = { newTracks ->
+                    newTracks.forEach(composition.playback::enqueueSong)
+                },
+            )
+        }
+    }
     androidx.compose.runtime.LaunchedEffect(playbackState.currentSong?.id) {
         val song = playbackState.currentSong ?: return@LaunchedEffect
         composition.listeningStatsStore.recordRecentSong(song)
@@ -93,6 +145,7 @@ internal fun ElovaireRootReadyHost(
         while (true) {
             kotlinx.coroutines.delay(1_000L)
             accumulatedPlayMs += 1_000L
+            previousCompassoPlayedMs = accumulatedPlayMs
             if (!reportedYouTubeHistory && accumulatedPlayMs >= 15_000L) {
                 reportedYouTubeHistory = true
                 composition.youTubeCatalog.reportPlaybackHistory(song, playedSeconds = 15)
@@ -137,6 +190,9 @@ internal fun ElovaireRootReadyHost(
         youTubeDownloadManager = composition.youTubeDownloadManager,
     )
 
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalCompassoEngine provides composition.compassoEngine,
+    ) {
     ElovaireRootShell(
         overscrollFactory = uiRuntime.shellInputs.overscrollFactory,
         songMenuActions = actionRuntime.songMenuActions,
@@ -223,4 +279,5 @@ internal fun ElovaireRootReadyHost(
             )
         },
     )
+    }
 }

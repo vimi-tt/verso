@@ -25,8 +25,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         NetworkInventorySourceEntity::class,
         LibraryCommitRelocationEntity::class,
         AudiobookProgressEntity::class,
+        PlaybackHistoryEntity::class,
+        BlockedTrackEntity::class,
+        PersistedQueueEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 internal abstract class ElovaireDatabase : RoomDatabase() {
@@ -36,6 +39,7 @@ internal abstract class ElovaireDatabase : RoomDatabase() {
     abstract fun userDataDao(): UserDataDao
     abstract fun playbackHistoryDao(): PlaybackHistoryDao
     abstract fun searchHistoryDao(): SearchHistoryDao
+    abstract fun compassoDao(): CompassoDao
 
     companion object {
         fun create(context: Context): ElovaireDatabase {
@@ -59,6 +63,7 @@ internal abstract class ElovaireDatabase : RoomDatabase() {
                     MIGRATION_9_10,
                     MIGRATION_10_11,
                     MIGRATION_11_12,
+                    MIGRATION_12_13,
                 )
                 .build()
         }
@@ -234,6 +239,36 @@ internal abstract class ElovaireDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `network_inventory` ADD COLUMN `trackPeak` REAL")
                 db.execSQL("ALTER TABLE `network_inventory` ADD COLUMN `albumPeak` REAL")
                 db.execSQL("UPDATE `network_inventory` SET `metadataResolved` = 0")
+            }
+        }
+
+        internal val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `compasso_playback_history` (" +
+                        "`videoId` TEXT NOT NULL, `normalizedKey` TEXT NOT NULL, " +
+                        "`artistId` TEXT, `artistName` TEXT NOT NULL, `title` TEXT NOT NULL, " +
+                        "`album` TEXT NOT NULL, `artUri` TEXT, `durationMs` INTEGER NOT NULL, " +
+                        "`playedAt` INTEGER NOT NULL, `playDurationMs` INTEGER NOT NULL, " +
+                        "`wasSkippedEarly` INTEGER NOT NULL, PRIMARY KEY(`videoId`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_compasso_playback_history_normalizedKey` ON `compasso_playback_history` (`normalizedKey`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_compasso_playback_history_playedAt` ON `compasso_playback_history` (`playedAt`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `compasso_blocked_tracks` (" +
+                        "`videoId` TEXT NOT NULL, `normalizedKey` TEXT NOT NULL, " +
+                        "`artistName` TEXT NOT NULL, `blockedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`videoId`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_compasso_blocked_tracks_normalizedKey` ON `compasso_blocked_tracks` (`normalizedKey`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `compasso_persisted_queue` (" +
+                        "`singletonId` INTEGER NOT NULL, `queueJson` TEXT NOT NULL, " +
+                        "`currentIndex` INTEGER NOT NULL, `continuationToken` TEXT, " +
+                        "`discoveryRatio` REAL NOT NULL, `isActive` INTEGER NOT NULL, " +
+                        "`seedVideoId` TEXT, `updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`singletonId`))",
+                )
             }
         }
     }

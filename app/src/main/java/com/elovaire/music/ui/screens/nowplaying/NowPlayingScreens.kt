@@ -2241,6 +2241,24 @@ private fun QueueSheet(
                 onDismiss = onDismiss,
                 modifier = Modifier.hazeSource(backdropHazeState, zIndex = 1f),
             )
+            if (!audiobookMode) {
+                CompassoQueueControlBar(
+                    currentSong = currentSong,
+                    queue = queue,
+                    currentIndex = currentIndex,
+                    tint = tint,
+                    secondaryTint = secondaryTint,
+                    onAppendTracks = { newTracks ->
+                        newTracks.forEach(playbackManager::enqueueSong)
+                    },
+                    onBlockCurrentTrack = {
+                        if (currentIndex in queue.indices) {
+                            onQueueItemRemoved(currentIndex)
+                        }
+                    },
+                    modifier = Modifier.hazeSource(backdropHazeState, zIndex = 1f),
+                )
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
