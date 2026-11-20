@@ -27,7 +27,11 @@ internal data class CompassoRadioPage(
 )
 
 internal interface CompassoRadioSource {
-    suspend fun getRadioPage(videoId: String, continuationToken: String? = null): CompassoRadioPage
+    suspend fun getRadioPage(
+        videoId: String,
+        continuationToken: String? = null,
+        tunerSetting: String = "AUTOMIX_SETTING_NORMAL",
+    ): CompassoRadioPage
     suspend fun resolveAtvSeedVideoId(song: Song): String?
     fun likedSongsSnapshot(): List<Song>
 }
@@ -63,8 +67,12 @@ internal class RoomCompassoStore(
 internal class YouTubeCompassoRadioSource(
     private val youTubeCatalog: YouTubeCatalogRepository,
 ) : CompassoRadioSource {
-    override suspend fun getRadioPage(videoId: String, continuationToken: String?): CompassoRadioPage =
-        youTubeCatalog.getCompassoRadioPage(videoId, continuationToken)
+    override suspend fun getRadioPage(
+        videoId: String,
+        continuationToken: String?,
+        tunerSetting: String,
+    ): CompassoRadioPage =
+        youTubeCatalog.getCompassoRadioPage(videoId, continuationToken, tunerSetting)
 
     override suspend fun resolveAtvSeedVideoId(song: Song): String? =
         youTubeCatalog.resolveAtvSeedVideoId(song)

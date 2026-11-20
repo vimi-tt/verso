@@ -667,7 +667,8 @@ class MetrolistMusicCatalogDataSource(
     override suspend fun getRadioPage(
         videoId: String,
         continuationToken: String?,
-    ): com.vimi.k7.innertube.model.RadioPage = legacy.getRadioPage(videoId, continuationToken)
+        tunerSetting: String,
+    ): com.vimi.k7.innertube.model.RadioPage = legacy.getRadioPage(videoId, continuationToken, tunerSetting)
 
     override suspend fun getSongFromPanel(videoId: String): Song? =
         legacy.getSongFromPanel(videoId)

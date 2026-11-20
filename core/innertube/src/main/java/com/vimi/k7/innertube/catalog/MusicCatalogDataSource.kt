@@ -65,6 +65,7 @@ interface MusicCatalogDataSource {
     suspend fun getRadioPage(
         videoId: String,
         continuationToken: String? = null,
+        tunerSetting: String = "AUTOMIX_SETTING_NORMAL",
     ): com.vimi.k7.innertube.model.RadioPage = com.vimi.k7.innertube.model.RadioPage(emptyList(), null)
 
     suspend fun getSongFromPanel(videoId: String): Song?
@@ -144,7 +145,8 @@ class LegacyMusicCatalogDataSource(
     override suspend fun getRadioPage(
         videoId: String,
         continuationToken: String?,
-    ): com.vimi.k7.innertube.model.RadioPage = musicBrowse.getRadioPage(videoId, continuationToken)
+        tunerSetting: String,
+    ): com.vimi.k7.innertube.model.RadioPage = musicBrowse.getRadioPage(videoId, continuationToken, tunerSetting)
 
     override suspend fun getSongFromPanel(videoId: String): Song? =
         musicBrowse.getSongFromPanel(videoId)

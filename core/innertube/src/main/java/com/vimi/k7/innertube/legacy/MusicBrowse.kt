@@ -452,6 +452,7 @@ class MusicBrowse(
     suspend fun getRadioPage(
         videoId: String,
         continuationToken: String? = null,
+        tunerSetting: String = "AUTOMIX_SETTING_NORMAL",
     ): com.vimi.k7.innertube.model.RadioPage = withContext(Dispatchers.IO) {
         try {
             val payload = JSONObject().apply {
@@ -473,7 +474,7 @@ class MusicBrowse(
                     put("playlistId", "RDAMVM$videoId")
                     put("isAudioOnly", true)
                     put("enablePersistentPlaylistPanel", true)
-                    put("tunerSettingValue", "AUTOMIX_SETTING_FAMILIAR")
+                    put("tunerSettingValue", tunerSetting)
                 }
             }
             val requestBuilder = Request.Builder()

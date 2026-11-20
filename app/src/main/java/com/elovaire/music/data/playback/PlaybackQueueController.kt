@@ -159,6 +159,29 @@ internal class PlaybackQueueController(
         runtime.updateState()
     }
 
+    fun replaceUpcomingQueue(upcomingSongs: List<Song>) {
+        val state = runtime.state
+        val existingQueue = state.queue
+        if (existingQueue.isEmpty() || runtime.player.mediaItemCount == 0) return
+        val player = runtime.player
+        val currentIndex = runtime.resolveCurrentQueueIndex(state)
+            .takeIf { it in existingQueue.indices }
+            ?: state.currentIndex.coerceIn(0, existingQueue.lastIndex)
+        val keepPrefix = existingQueue.take(currentIndex + 1)
+        val removeFrom = currentIndex + 1
+        if (removeFrom < player.mediaItemCount) {
+            player.removeMediaItems(removeFrom, player.mediaItemCount)
+        }
+        val lang = language()
+        allowStrictModeDiskReads {
+            upcomingSongs.forEach { song ->
+                player.addMediaItem(song.toPlaybackMediaItem(lang))
+            }
+        }
+        runtime.publishState(state.copy(queue = keepPrefix + upcomingSongs))
+        runtime.updateState()
+    }
+
     fun removeQueueIndex(index: Int) {
         val state = runtime.state
         val existingQueue = state.queue

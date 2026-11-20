@@ -22,7 +22,7 @@ import kotlinx.coroutines.withContext
 
 @Immutable
 internal data class CompassoUiState(
-    val isActive: Boolean = false,
+    val isActive: Boolean = true,
     val discoveryRatio: Float = CompassoEngine.DEFAULT_DISCOVERY_RATIO,
     val isLoadingMore: Boolean = false,
     val seedTitle: String? = null,
@@ -89,6 +89,44 @@ internal class CompassoEngine(
     fun setDiscoveryRatio(ratio: Float) {
         val clamped = ratio.coerceIn(0f, 1f)
         _uiState.update { it.copy(discoveryRatio = clamped) }
+    }
+
+    /**
+     * Switches discovery mode (Familiar / 70-30 / Explore) and immediately refreshes the upcoming
+     * queue using YouTube Music's matching Flow tuner setting (`FAMILIAR` / `NORMAL` / `DISCOVER`).
+     */
+    suspend fun switchDiscoveryMode(
+        ratio: Float,
+        currentSong: Song?,
+        currentQueue: List<Song>,
+        currentIndex: Int,
+        onReplaceUpcoming: (List<Song>) -> Unit,
+    ): List<Song> {
+        val clamped = ratio.coerceIn(0f, 1f)
+        _uiState.update { it.copy(isActive = true, discoveryRatio = clamped) }
+        userExplicitlyDisabled = false
+        waitingBuffer.clear()
+        continuationToken = null
+        val seedSong = currentSong ?: currentQueue.getOrNull(currentIndex) ?: return emptyList()
+        val seedId = videoIdExtractor(seedSong)
+            ?: withContext(ioDispatcher) { runCatching { radioSource.resolveAtvSeedVideoId(seedSong) }.getOrNull() }
+        if (seedId != null) {
+            activeSeedVideoId = seedId
+        }
+        val safeIndex = currentIndex.coerceIn(0, (currentQueue.lastIndex).coerceAtLeast(0))
+        val prefixQueue = if (currentQueue.isNotEmpty()) currentQueue.take(safeIndex + 1) else listOf(seedSong)
+        return fillAheadIfNeeded(
+            currentIndex = prefixQueue.lastIndex.coerceAtLeast(0),
+            currentQueue = prefixQueue,
+            forceFetch = true,
+            onAppendTracks = onReplaceUpcoming,
+        )
+    }
+
+    private fun tunerSettingForRatio(ratio: Float): String = when {
+        ratio <= 0.45f -> "AUTOMIX_SETTING_FAMILIAR"
+        ratio > 0.80f -> "AUTOMIX_SETTING_DISCOVER"
+        else -> "AUTOMIX_SETTING_NORMAL"
     }
 
     /**
@@ -313,7 +351,7 @@ internal class CompassoEngine(
         activeSeedVideoId = saved.seedVideoId
         _uiState.update {
             it.copy(
-                isActive = saved.isActive,
+                isActive = true,
                 discoveryRatio = saved.discoveryRatio.coerceIn(0f, 1f),
             )
         }
@@ -330,6 +368,7 @@ internal class CompassoEngine(
         val needed = (TARGET_BUFFER_AHEAD - remainingAhead).coerceAtLeast(0)
         if (!forceFetch && needed <= 0) return@withLock emptyList()
         val targetCount = if (needed > 0) needed else TARGET_BUFFER_AHEAD
+        val tunerSetting = tunerSettingForRatio(_uiState.value.discoveryRatio)
 
         _uiState.update { it.copy(isLoadingMore = true) }
         try {
@@ -360,40 +399,84 @@ internal class CompassoEngine(
                 addAll(sessionNormalizedKeys)
             }
 
-            // Pull fresh discovery candidates via continuation loop (up to MAX_PAGINATION_REQUESTS)
+            // Pull fresh discovery candidates via continuation loop (up to MAX_PAGINATION_REQUESTS).
+            // Count POST-FILTER valid candidates inside the loop so a page full of already-queued
+            // songs triggers continuation or seed rotation instead of falling back to Favorites.
             val freshCandidates = ArrayList<CompassoCandidate>()
             val omvFallbackCandidates = ArrayList<CompassoCandidate>()
+            val seenFreshIds = HashSet<String>()
+            var validFreshCount = 0
             var pagesFetched = 0
-            var currentSeed = activeSeedVideoId
-                ?: currentQueue.getOrNull(currentIndex)?.let { videoIdExtractor(it) }
-                ?: affinityTracker.bestFallbackSeed()
-                ?: positiveHistory.firstOrNull()?.videoId
+
+            // Prefer the tail of the queue (or current song) when starting a fresh cycle so we
+            // extend from the latest musical vibe instead of re-fetching an old seed's queue.
+            var currentSeed = if (continuationToken.isNullOrBlank()) {
+                currentQueue.lastOrNull()?.let { videoIdExtractor(it) }
+                    ?: currentQueue.getOrNull(currentIndex)?.let { videoIdExtractor(it) }
+                    ?: activeSeedVideoId
+                    ?: affinityTracker.bestFallbackSeed()
+                    ?: positiveHistory.firstOrNull()?.videoId
+            } else {
+                activeSeedVideoId
+                    ?: currentQueue.lastOrNull()?.let { videoIdExtractor(it) }
+                    ?: currentQueue.getOrNull(currentIndex)?.let { videoIdExtractor(it) }
+                    ?: affinityTracker.bestFallbackSeed()
+                    ?: positiveHistory.firstOrNull()?.videoId
+            }
+            if (currentSeed == null) {
+                val anchorSong = currentQueue.getOrNull(currentIndex) ?: currentQueue.lastOrNull()
+                if (anchorSong != null) {
+                    currentSeed = withContext(ioDispatcher) {
+                        runCatching { radioSource.resolveAtvSeedVideoId(anchorSong) }.getOrNull()
+                    }
+                }
+            }
             val usedFallbackSeeds = HashSet<String>()
-            if (currentSeed != null) usedFallbackSeeds.add(currentSeed)
+            if (currentSeed != null) {
+                usedFallbackSeeds.add(currentSeed)
+                activeSeedVideoId = currentSeed
+            }
 
             while (pagesFetched < MAX_PAGINATION_REQUESTS &&
-                (freshCandidates.size + waitingBuffer.size) < targetCount * 2 &&
+                (validFreshCount + waitingBuffer.size) < targetCount &&
                 currentSeed != null
             ) {
                 pagesFetched += 1
                 val seedForRequest = currentSeed
                 val page = withContext(ioDispatcher) {
-                    runCatching { radioSource.getRadioPage(seedForRequest, continuationToken) }
+                    runCatching { radioSource.getRadioPage(seedForRequest, continuationToken, tunerSetting) }
                         .getOrElse { CompassoRadioPage(emptyList(), null) }
                 }
                 continuationToken = page.continuationToken
 
                 val (pureBatch, omvBatch) = partitionByAudioPurity(page.candidates)
-                freshCandidates.addAll(pureBatch)
-                omvFallbackCandidates.addAll(omvBatch)
+                var addedValidThisPage = 0
+                for (candidate in pureBatch) {
+                    if (!seenFreshIds.add(candidate.videoId)) continue
+                    freshCandidates.add(candidate)
+                    val key = TrackNormalizer.normalizeKey(candidate.song.title, candidate.song.artist)
+                    if (candidate.videoId !in excludedIds && key !in excludedKeys &&
+                        (candidate.song.durationMs <= 0L || candidate.song.durationMs <= MAX_TRACK_DURATION_MS)
+                    ) {
+                        validFreshCount += 1
+                        addedValidThisPage += 1
+                    }
+                }
+                for (candidate in omvBatch) {
+                    if (seenFreshIds.add(candidate.videoId)) {
+                        omvFallbackCandidates.add(candidate)
+                    }
+                }
 
-                if (continuationToken.isNullOrBlank() || (pureBatch.isEmpty() && omvBatch.isEmpty())) {
-                    // Fallback to the currently playing track, another queue track, session affinity, positive history, or liked songs
+                if (continuationToken.isNullOrBlank() || addedValidThisPage == 0) {
+                    // Rotate to another seed: current song, another queue track, newly discovered
+                    // candidate, session affinity, or positive history.
                     val fallback = currentQueue.getOrNull(currentIndex)?.let { videoIdExtractor(it) }
                         ?.takeIf { it !in usedFallbackSeeds && it !in blockedIds }
                         ?: currentQueue.asReversed().firstNotNullOfOrNull { song ->
                             videoIdExtractor(song)?.takeIf { it !in usedFallbackSeeds && it !in blockedIds }
                         }
+                        ?: freshCandidates.firstOrNull { it.videoId !in usedFallbackSeeds && it.videoId !in blockedIds }?.videoId
                         ?: affinityTracker.bestFallbackSeed(excludingVideoIds = usedFallbackSeeds)
                         ?: positiveHistory.firstOrNull { it.videoId !in usedFallbackSeeds && it.videoId !in blockedIds }?.videoId
                         ?: radioSource.likedSongsSnapshot().firstNotNullOfOrNull { song ->
@@ -404,7 +487,7 @@ internal class CompassoEngine(
                         currentSeed = fallback
                         activeSeedVideoId = fallback
                         continuationToken = null
-                    } else {
+                    } else if (continuationToken.isNullOrBlank()) {
                         break
                     }
                 }
@@ -594,23 +677,39 @@ internal class CompassoEngine(
             return null
         }
 
+        val maxFamiliar = when {
+            clampedRatio >= 1f -> 0
+            clampedRatio <= 0f -> targetCount
+            else -> kotlin.math.round(targetCount * (1f - clampedRatio)).toInt().coerceIn(0, targetCount)
+        }
+
         while (selected.size < targetCount) {
             val totalPicked = discoveryPicked + familiarPicked
             val desiredDiscovery = (totalPicked + 1) * clampedRatio
+            val canPickFamiliar = familiarPicked < maxFamiliar
             val wantDiscovery = when {
                 clampedRatio >= 1f -> true
                 clampedRatio <= 0f -> false
+                !canPickFamiliar -> true
                 else -> discoveryPicked < desiredDiscovery
             }
 
             val next = if (wantDiscovery) {
                 tryPickFromWaitingBuffer(preferFamiliar = false)
                     ?: tryPickFromPool(sortedDiscovery)
-                    ?: tryPickFromWaitingBuffer(preferFamiliar = true)
-                    ?: tryPickFromPool(sortedFamiliar)
+                    ?: if (canPickFamiliar) {
+                        tryPickFromWaitingBuffer(preferFamiliar = true)
+                            ?: tryPickFromPool(sortedFamiliar)
+                    } else {
+                        null
+                    }
             } else {
-                tryPickFromWaitingBuffer(preferFamiliar = true)
-                    ?: tryPickFromPool(sortedFamiliar)
+                (if (canPickFamiliar) {
+                    tryPickFromWaitingBuffer(preferFamiliar = true)
+                        ?: tryPickFromPool(sortedFamiliar)
+                } else {
+                    null
+                })
                     ?: tryPickFromWaitingBuffer(preferFamiliar = false)
                     ?: tryPickFromPool(sortedDiscovery)
             }

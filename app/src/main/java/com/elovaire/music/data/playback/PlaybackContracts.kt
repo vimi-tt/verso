@@ -50,6 +50,8 @@ interface PlaybackQueueCommands {
     )
 
     fun enqueueSong(song: Song)
+
+    fun replaceUpcomingQueue(songs: List<Song>) {}
 }
 
 /** The smallest playback surface needed by the player screen and its state holder. */

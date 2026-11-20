@@ -284,6 +284,51 @@ class CompassoEngineTest {
         assertEquals(null, whenDisabled)
     }
 
+    @Test
+    fun `switchDiscoveryMode uses matching YouTube tuner and caps favorites share`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val liked = (1..15).map { idx ->
+            testSong(id = 1000L + idx, title = "Fav $idx", artist = "Fav Artist $idx")
+        }
+        val radio = FakeRadioSource(
+            pages = mapOf(
+                ("vid_50" to null) to CompassoRadioPage(
+                    candidates = (1..12).map { idx ->
+                        candidate("disc_$idx", "Similar Track $idx", "Similar Artist $idx")
+                    },
+                    continuationToken = null,
+                ),
+            ),
+            liked = liked,
+        )
+        val engine = createEngine(radioSource = radio, dispatcher = dispatcher)
+        val seed = testSong(id = 50L, title = "Seed", artist = "Seed Artist")
+        val oldUpcoming = testSong(id = 51L, title = "Old Upcoming", artist = "Old Artist")
+        var replacedWith: List<Song> = emptyList()
+
+        engine.switchDiscoveryMode(
+            ratio = CompassoEngine.EXPLORE_DISCOVERY_RATIO,
+            currentSong = seed,
+            currentQueue = listOf(seed, oldUpcoming),
+            currentIndex = 0,
+            onReplaceUpcoming = { replacedWith = it },
+        )
+
+        assertEquals("AUTOMIX_SETTING_DISCOVER", radio.lastTunerSetting)
+        assertTrue(replacedWith.isNotEmpty())
+        val favCount = replacedWith.count { it.title.startsWith("Fav ") }
+        assertTrue("Explore mode must cap favorites to ~10%, got $favCount/${replacedWith.size}", favCount <= 2)
+
+        engine.switchDiscoveryMode(
+            ratio = CompassoEngine.FAMILIAR_DISCOVERY_RATIO,
+            currentSong = seed,
+            currentQueue = listOf(seed),
+            currentIndex = 0,
+            onReplaceUpcoming = { replacedWith = it },
+        )
+        assertEquals("AUTOMIX_SETTING_FAMILIAR", radio.lastTunerSetting)
+    }
+
     // -------------------------------------------------------------------------
     // Test helpers
     // -------------------------------------------------------------------------
@@ -346,8 +391,16 @@ class CompassoEngineTest {
         private val pages: Map<Pair<String, String?>, CompassoRadioPage> = emptyMap(),
         private val liked: List<Song> = emptyList(),
     ) : CompassoRadioSource {
-        override suspend fun getRadioPage(videoId: String, continuationToken: String?): CompassoRadioPage =
-            pages[videoId to continuationToken] ?: CompassoRadioPage(emptyList(), null)
+        var lastTunerSetting: String? = null
+
+        override suspend fun getRadioPage(
+            videoId: String,
+            continuationToken: String?,
+            tunerSetting: String,
+        ): CompassoRadioPage {
+            lastTunerSetting = tunerSetting
+            return pages[videoId to continuationToken] ?: CompassoRadioPage(emptyList(), null)
+        }
 
         override suspend fun resolveAtvSeedVideoId(song: Song): String? = null
         override fun likedSongsSnapshot(): List<Song> = liked

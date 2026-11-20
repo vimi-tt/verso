@@ -2248,14 +2248,7 @@ private fun QueueSheet(
                     currentIndex = currentIndex,
                     tint = tint,
                     secondaryTint = secondaryTint,
-                    onAppendTracks = { newTracks ->
-                        newTracks.forEach(playbackManager::enqueueSong)
-                    },
-                    onBlockCurrentTrack = {
-                        if (currentIndex in queue.indices) {
-                            onQueueItemRemoved(currentIndex)
-                        }
-                    },
+                    onReplaceUpcoming = playbackManager::replaceUpcomingQueue,
                     modifier = Modifier.hazeSource(backdropHazeState, zIndex = 1f),
                 )
             }

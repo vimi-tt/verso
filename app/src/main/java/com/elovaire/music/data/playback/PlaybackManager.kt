@@ -1459,6 +1459,12 @@ internal class PlaybackManager internal constructor(
         queueController.enqueueSong(song)
     }
 
+    override fun replaceUpcomingQueue(songs: List<Song>) {
+        if (released.get()) return
+        crossfadeController.cancel()
+        queueController.replaceUpcomingQueue(songs)
+    }
+
     override fun removeQueueIndex(index: Int) {
         if (released.get()) return
         crossfadeController.cancel()

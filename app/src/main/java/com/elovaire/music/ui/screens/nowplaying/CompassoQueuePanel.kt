@@ -27,8 +27,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,45 +48,33 @@ internal val LocalCompassoEngine = staticCompositionLocalOf<CompassoEngine?> { n
 @Immutable
 private data class CompassoUiCopy(
     val title: String,
-    val activeLabel: String,
-    val inactiveLabel: String,
+    val subtitle: String,
     val familiarLabel: String,
     val balancedLabel: String,
     val exploreLabel: String,
-    val blockTrackLabel: String,
-    val blockTrackCd: String,
 )
 
 private fun compassoUiCopy(language: AppLanguage): CompassoUiCopy = when (language) {
     AppLanguage.Portuguese -> CompassoUiCopy(
         title = "Compasso",
-        activeLabel = "Ativo",
-        inactiveLabel = "Desativado",
+        subtitle = "Fluxo contínuo",
         familiarLabel = "Familiar",
         balancedLabel = "70/30",
         exploreLabel = "Explorar",
-        blockTrackLabel = "Nunca mais",
-        blockTrackCd = "Bloquear e nunca mais tocar esta faixa",
     )
     AppLanguage.Spanish -> CompassoUiCopy(
         title = "Compasso",
-        activeLabel = "Activo",
-        inactiveLabel = "Inactivo",
+        subtitle = "Flujo continuo",
         familiarLabel = "Familiar",
         balancedLabel = "70/30",
         exploreLabel = "Explorar",
-        blockTrackLabel = "No repetir",
-        blockTrackCd = "Bloquear y no volver a reproducir esta canción",
     )
     else -> CompassoUiCopy(
         title = "Compasso",
-        activeLabel = "On",
-        inactiveLabel = "Off",
+        subtitle = "Continuous flow",
         familiarLabel = "Familiar",
         balancedLabel = "70/30",
         exploreLabel = "Explore",
-        blockTrackLabel = "Never play",
-        blockTrackCd = "Block and never play this track again",
     )
 }
 
@@ -97,8 +85,7 @@ internal fun CompassoQueueControlBar(
     currentIndex: Int,
     tint: Color,
     secondaryTint: Color,
-    onAppendTracks: (List<Song>) -> Unit,
-    onBlockCurrentTrack: () -> Unit,
+    onReplaceUpcoming: (List<Song>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val engine = LocalCompassoEngine.current ?: return
@@ -106,6 +93,18 @@ internal fun CompassoQueueControlBar(
     val language = LocalAppLanguage.current
     val copy = remember(language) { compassoUiCopy(language) }
     val scope = rememberCoroutineScope()
+
+    val selectMode: (Float) -> Unit = { ratio ->
+        scope.launch {
+            engine.switchDiscoveryMode(
+                ratio = ratio,
+                currentSong = currentSong,
+                currentQueue = queue,
+                currentIndex = currentIndex,
+                onReplaceUpcoming = onReplaceUpcoming,
+            )
+        }
+    }
 
     Column(
         modifier = modifier
@@ -118,134 +117,65 @@ internal fun CompassoQueueControlBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Compasso toggle pill
-            Row(
-                modifier = Modifier
-                    .heightIn(min = 38.dp)
-                    .clip(RoundedCornerShape(ElovaireRadii.pill))
-                    .background(
-                        if (state.isActive) tint.copy(alpha = 0.22f) else tint.copy(alpha = 0.08f),
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = if (state.isActive) tint.copy(alpha = 0.48f) else tint.copy(alpha = 0.16f),
-                        shape = RoundedCornerShape(ElovaireRadii.pill),
-                    )
-                    .semantics { role = Role.Button }
-                    .elovaireClickable {
-                        val nextActive = !state.isActive
-                        engine.setActive(nextActive)
-                        if (nextActive && currentSong != null) {
-                            scope.launch {
-                                engine.startFromSeed(
-                                    seedSong = currentSong,
-                                    currentQueue = queue,
-                                    onAppendTracks = onAppendTracks,
-                                )
-                            }
-                        }
-                    }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (state.isLoadingMore) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(13.dp),
-                        strokeWidth = 1.8.dp,
-                        color = tint,
-                    )
-                } else {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_lucide_audio_waveform),
-                        contentDescription = null,
-                        tint = tint,
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
-                Text(
-                    text = "${copy.title} · ${if (state.isActive) copy.activeLabel else copy.inactiveLabel}",
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            if (state.isLoadingMore) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 1.8.dp,
                     color = tint,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_lucide_audio_waveform),
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(15.dp),
                 )
             }
-
-            // Quick "Never play / Block" action for current song
-            if (currentSong != null) {
-                Row(
-                    modifier = Modifier
-                        .heightIn(min = 38.dp)
-                        .clip(RoundedCornerShape(ElovaireRadii.pill))
-                        .background(tint.copy(alpha = 0.08f))
-                        .border(
-                            width = 1.dp,
-                            color = tint.copy(alpha = 0.16f),
-                            shape = RoundedCornerShape(ElovaireRadii.pill),
-                        )
-                        .semantics {
-                            role = Role.Button
-                            contentDescription = copy.blockTrackCd
-                        }
-                        .elovaireClickable {
-                            scope.launch {
-                                engine.blockTrack(currentSong) {
-                                    onBlockCurrentTrack()
-                                }
-                            }
-                        }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_lucide_x),
-                        contentDescription = null,
-                        tint = secondaryTint,
-                        modifier = Modifier.size(13.dp),
-                    )
-                    Text(
-                        text = copy.blockTrackLabel,
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-                        color = secondaryTint,
-                        maxLines = 1,
-                    )
-                }
-            }
+            Text(
+                text = copy.title,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = tint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "· ${copy.subtitle}",
+                style = MaterialTheme.typography.labelMedium,
+                color = secondaryTint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
 
-        // Discovery level selector: Familiar (30/70) | Balanced (70/30) | Explore (90/10)
-        if (state.isActive) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                CompassoRatioPill(
-                    label = copy.familiarLabel,
-                    selected = state.discoveryRatio <= 0.45f,
-                    tint = tint,
-                    secondaryTint = secondaryTint,
-                    onClick = { engine.setDiscoveryRatio(CompassoEngine.FAMILIAR_DISCOVERY_RATIO) },
-                    modifier = Modifier.weight(1f),
-                )
-                CompassoRatioPill(
-                    label = copy.balancedLabel,
-                    selected = state.discoveryRatio in 0.46f..0.80f,
-                    tint = tint,
-                    secondaryTint = secondaryTint,
-                    onClick = { engine.setDiscoveryRatio(CompassoEngine.DEFAULT_DISCOVERY_RATIO) },
-                    modifier = Modifier.weight(1f),
-                )
-                CompassoRatioPill(
-                    label = copy.exploreLabel,
-                    selected = state.discoveryRatio > 0.80f,
-                    tint = tint,
-                    secondaryTint = secondaryTint,
-                    onClick = { engine.setDiscoveryRatio(CompassoEngine.EXPLORE_DISCOVERY_RATIO) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
+        // Discovery mode selector: Familiar (30/70) | Balanced (70/30) | Explore (90/10)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            CompassoRatioPill(
+                label = copy.familiarLabel,
+                selected = state.discoveryRatio <= 0.45f,
+                tint = tint,
+                secondaryTint = secondaryTint,
+                onClick = { selectMode(CompassoEngine.FAMILIAR_DISCOVERY_RATIO) },
+                modifier = Modifier.weight(1f),
+            )
+            CompassoRatioPill(
+                label = copy.balancedLabel,
+                selected = state.discoveryRatio in 0.46f..0.80f,
+                tint = tint,
+                secondaryTint = secondaryTint,
+                onClick = { selectMode(CompassoEngine.DEFAULT_DISCOVERY_RATIO) },
+                modifier = Modifier.weight(1f),
+            )
+            CompassoRatioPill(
+                label = copy.exploreLabel,
+                selected = state.discoveryRatio > 0.80f,
+                tint = tint,
+                secondaryTint = secondaryTint,
+                onClick = { selectMode(CompassoEngine.EXPLORE_DISCOVERY_RATIO) },
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
@@ -261,26 +191,30 @@ private fun CompassoRatioPill(
 ) {
     Box(
         modifier = modifier
-            .heightIn(min = 34.dp)
+            .heightIn(min = 38.dp)
             .clip(RoundedCornerShape(ElovaireRadii.pill))
-            .background(if (selected) tint.copy(alpha = 0.24f) else tint.copy(alpha = 0.06f))
+            .background(if (selected) tint.copy(alpha = 0.22f) else tint.copy(alpha = 0.06f))
             .border(
                 width = 1.dp,
-                color = if (selected) tint.copy(alpha = 0.50f) else tint.copy(alpha = 0.12f),
+                color = if (selected) tint.copy(alpha = 0.46f) else tint.copy(alpha = 0.14f),
                 shape = RoundedCornerShape(ElovaireRadii.pill),
             )
-            .semantics { role = Role.Button }
+            .semantics {
+                role = Role.RadioButton
+                this.selected = selected
+            }
             .elovaireClickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelLarge.copy(
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             ),
             color = if (selected) tint else secondaryTint,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

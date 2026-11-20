@@ -291,8 +291,9 @@ internal class YouTubeCatalogRepository(
     suspend fun getCompassoRadioPage(
         videoId: String,
         continuationToken: String? = null,
+        tunerSetting: String = "AUTOMIX_SETTING_NORMAL",
     ): elovaire.music.droidbeauty.app.data.compasso.CompassoRadioPage = withContext(ioDispatcher) {
-        val page = streamClient.catalog.getRadioPage(videoId, continuationToken)
+        val page = streamClient.catalog.getRadioPage(videoId, continuationToken, tunerSetting)
         elovaire.music.droidbeauty.app.data.compasso.CompassoRadioPage(
             candidates = page.candidates.map { candidate ->
                 elovaire.music.droidbeauty.app.data.compasso.CompassoCandidate(
