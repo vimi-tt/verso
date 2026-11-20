@@ -137,7 +137,7 @@ internal object PunjabiTranslations {
     const val playback_playLabel_1 = "ਚਲਾਓ"
     const val playback_playingFromPrefix_1 = "ਇੱਥੋਂ ਚੱਲ ਰਿਹਾ ਹੈ"
     fun playback_playingFromText_dynamic_1(source: String) = "$source ਤੋਂ ਚੱਲ ਰਿਹਾ ਹੈ"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Elovaire ਫਾਈਲਾਂ, ਇਜਾਜ਼ਤਾਂ, ਨੈੱਟਵਰਕ ਬੇਨਤੀਆਂ ਅਤੇ ਐਪ ਡੇਟਾ ਨੂੰ ਕਿਵੇਂ ਸੰਭਾਲਦਾ ਹੈ"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Verso ਫਾਈਲਾਂ, ਇਜਾਜ਼ਤਾਂ, ਨੈੱਟਵਰਕ ਬੇਨਤੀਆਂ ਅਤੇ ਐਪ ਡੇਟਾ ਨੂੰ ਕਿਵੇਂ ਸੰਭਾਲਦਾ ਹੈ"
     const val playback_queueTitle_1 = "ਕਤਾਰ"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("ਸਲੀਪ ਟਾਈਮਰ", "ਬੰਦ", "ਗੀਤ ਦਾ ਅੰਤ", "ਪੁਸ਼ਟੀ ਕਰੋ", "ਸਲੀਪ ਟਾਈਮਰ ਬੰਦ ਕਰੋ", " ਮਿੰਟ")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "ਵਰਤੋਂਕਾਰ ਡਾਟਾ ਕਾਰਵਾਈਆਂ ਦੀ ਕਤਾਰ ਭਰੀ ਹੋਈ ਹੈ"

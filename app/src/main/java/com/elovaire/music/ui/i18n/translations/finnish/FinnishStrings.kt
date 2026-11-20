@@ -138,7 +138,7 @@ internal object FinnishTranslations {
     const val playback_pauseLabel_1 = "Tauko"
     const val playback_playLabel_1 = "Toista"
     const val playback_playingFromPrefix_1 = "Toistetaan lähteestä"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Miten Elovaire käsittelee tiedostoja, käyttöoikeuksia, verkkopyyntöjä ja sovellustietoja"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Miten Verso käsittelee tiedostoja, käyttöoikeuksia, verkkopyyntöjä ja sovellustietoja"
     const val playback_queueTitle_1 = "Toistojono"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Uniajastin", "Pois", "Kappaleen lopussa", "Vahvista", "Sulje uniajastin")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Käyttäjätietotoimintojen jono on täynnä"

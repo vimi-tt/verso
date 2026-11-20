@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -50,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -69,6 +71,7 @@ import elovaire.music.droidbeauty.app.domain.model.Playlist
 import elovaire.music.droidbeauty.app.domain.model.Song
 import elovaire.music.droidbeauty.app.domain.model.sumDurationMs
 import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
+import elovaire.music.droidbeauty.app.ui.components.rememberArtworkPaletteAccent
 import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
 import elovaire.music.droidbeauty.app.ui.i18n.localizedArtistName
 import elovaire.music.droidbeauty.app.ui.i18n.localizedAlbumTitle
@@ -279,11 +282,26 @@ internal fun PlaylistDetailScreen(
         }
     }
     CompositionLocalProvider(LocalSongMenuActions provides playlistSongMenuActions) {
+        val bgColor = MaterialTheme.colorScheme.background
+        val paletteAccent by rememberArtworkPaletteAccent(playlistSongs.firstOrNull()?.artUri)
+        val headerTint = paletteAccent ?: MaterialTheme.colorScheme.primary
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+                .background(bgColor),
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(340.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            0.0f to headerTint.copy(alpha = 0.34f),
+                            0.65f to headerTint.copy(alpha = 0.12f),
+                            1.0f to bgColor.copy(alpha = 0f),
+                        ),
+                    ),
+            )
             val listState = rememberElovaireLazyListState(playlistState.id, "playlist_detail")
             val density = androidx.compose.ui.platform.LocalDensity.current
             LazyColumn(

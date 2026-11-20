@@ -214,7 +214,7 @@ internal object PolishTranslations {
     const val playback_pauseLabel_1 = "Wstrzymaj"
     const val playback_playLabel_1 = "Odtwórz"
     const val playback_playingFromPrefix_1 = "Odtwarzanie z"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Jak Elovaire obsługuje pliki, uprawnienia, żądania sieciowe i dane aplikacji"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Jak Verso obsługuje pliki, uprawnienia, żądania sieciowe i dane aplikacji"
     const val playback_queueTitle_1 = "Kolejka"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Wyłącznik czasowy", "Wyłączony", "Koniec utworu", "Potwierdź", "Zamknij wyłącznik czasowy")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Kolejka operacji na danych użytkownika jest pełna"

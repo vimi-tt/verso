@@ -170,7 +170,7 @@ internal object RussianTranslations {
     const val playback_pauseLabel_1 = "Пауза"
     const val playback_playLabel_1 = "Играть"
     const val playback_playingFromPrefix_1 = "Воспроизведение из"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Как Elovaire обрабатывает файлы, разрешения, сетевые запросы и данные приложения"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Как Verso обрабатывает файлы, разрешения, сетевые запросы и данные приложения"
     const val playback_queueTitle_1 = "Очередь"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Таймер сна", "Выкл.", "Конец песни", "Подтвердить", "Закрыть таймер сна", " мин")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Очередь операций с данными пользователя заполнена"

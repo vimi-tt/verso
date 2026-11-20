@@ -141,7 +141,7 @@ internal object RomanianTranslations {
     const val playback_pauseLabel_1 = "Pauză"
     const val playback_playLabel_1 = "Redă"
     const val playback_playingFromPrefix_1 = "Se redă din"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Cum gestionează Elovaire fișierele, permisiunile, solicitările de rețea și datele aplicației"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Cum gestionează Verso fișierele, permisiunile, solicitările de rețea și datele aplicației"
     const val playback_queueTitle_1 = "Coadă"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Temporizator de somn", "Oprit", "Sfârșitul melodiei", "Confirmă", "Închide temporizatorul")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Coada operațiunilor cu datele utilizatorului este plină"

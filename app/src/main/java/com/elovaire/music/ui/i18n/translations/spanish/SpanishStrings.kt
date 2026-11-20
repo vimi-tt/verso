@@ -152,7 +152,7 @@ internal object SpanishTranslations {
     const val playback_pauseLabel_1 = "Pausar"
     const val playback_playLabel_1 = "Reproducir"
     const val playback_playingFromPrefix_1 = "Reproduciendo desde"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Cómo Elovaire gestiona archivos, permisos, solicitudes de red y datos de la app"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Cómo Verso gestiona archivos, permisos, solicitudes de red y datos de la app"
     const val playback_queueTitle_1 = "Cola"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Temporizador", "Desactivado", "Final de la canción", "Confirmar", "Cerrar temporizador")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "La cola de operaciones de datos de usuario está llena"

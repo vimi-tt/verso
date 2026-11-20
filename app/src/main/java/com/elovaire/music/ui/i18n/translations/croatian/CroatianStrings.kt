@@ -160,7 +160,7 @@ internal object CroatianTranslations {
     const val playback_pauseLabel_1 = "Pauziraj"
     const val playback_playLabel_1 = "Reproduciraj"
     const val playback_playingFromPrefix_1 = "Reprodukcija iz"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Kako Elovaire upravlja datotekama, dozvolama, mrežnim zahtjevima i podacima aplikacije"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Kako Verso upravlja datotekama, dozvolama, mrežnim zahtjevima i podacima aplikacije"
     const val playback_queueTitle_1 = "Red"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Mjerač vremena za spavanje", "Isključeno", "Kraj pjesme", "Potvrdi", "Zatvori mjerač vremena")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Red operacija korisničkih podataka je pun"

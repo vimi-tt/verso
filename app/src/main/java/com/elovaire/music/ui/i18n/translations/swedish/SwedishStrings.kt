@@ -151,7 +151,7 @@ internal object SwedishTranslations {
     const val playback_pauseLabel_1 = "Pausa"
     const val playback_playLabel_1 = "Spela"
     const val playback_playingFromPrefix_1 = "Spelar från"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Så här hanterar Elovaire filer, behörigheter, nätverksbegäranden och appdata"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Så här hanterar Verso filer, behörigheter, nätverksbegäranden och appdata"
     const val playback_queueTitle_1 = "Kö"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Insomningstimer", "Av", "Slutet av låten", "Bekräfta", "Stäng insomningstimer")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Kön för användardataåtgärder är full"

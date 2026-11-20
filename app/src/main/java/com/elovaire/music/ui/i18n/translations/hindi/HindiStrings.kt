@@ -151,7 +151,7 @@ internal object HindiTranslations {
     const val playback_playLabel_1 = "चलाएँ"
     const val playback_playingFromPrefix_1 = "चल रहा है"
     fun playback_playingFromText_dynamic_1(source: String) = "$source से चल रहा है"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Elovaire फ़ाइलों, अनुमतियों, नेटवर्क अनुरोधों और ऐप डेटा को कैसे संभालता है"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Verso फ़ाइलों, अनुमतियों, नेटवर्क अनुरोधों और ऐप डेटा को कैसे संभालता है"
     const val playback_queueTitle_1 = "कतार"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("स्लीप टाइमर", "बंद", "गाने के अंत में", "पुष्टि करें", "स्लीप टाइमर बंद करें", " मिनट")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "उपयोगकर्ता डेटा की कार्रवाइयों की कतार भरी है"

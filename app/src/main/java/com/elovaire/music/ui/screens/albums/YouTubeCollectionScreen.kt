@@ -2,6 +2,7 @@ package elovaire.music.droidbeauty.app.ui.screens
 
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -36,7 +38,12 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +55,7 @@ import elovaire.music.droidbeauty.app.data.youtube.YouTubeDownloadedCollection
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeUri
 import elovaire.music.droidbeauty.app.domain.model.Song
 import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
+import elovaire.music.droidbeauty.app.ui.components.rememberArtworkPaletteAccent
 import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
 import elovaire.music.droidbeauty.app.ui.i18n.commonUiCopy
 import elovaire.music.droidbeauty.app.ui.i18n.localizedCountLabel
@@ -55,7 +63,6 @@ import elovaire.music.droidbeauty.app.ui.i18n.smartPlaylistActionCopy
 import elovaire.music.droidbeauty.app.ui.i18n.youtubeCopy
 import elovaire.music.droidbeauty.app.ui.i18n.youtubeDownloadCopy
 import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
-import elovaire.music.droidbeauty.app.ui.screens.common.ModuleCard
 import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
 import kotlinx.coroutines.CancellationException
@@ -70,6 +77,8 @@ internal fun YouTubeCollectionScreen(
     initialArtUri: String?,
     youTubeCatalog: YouTubeCatalogRepository,
     offlineCollection: YouTubeDownloadedCollection? = null,
+    downloadedVideoIds: Set<String> = emptySet(),
+    activeDownloadVideoIds: Set<String> = emptySet(),
     favoriteSongIds: Set<Long>,
     bottomPadding: Dp,
     onBack: () -> Unit,
@@ -129,43 +138,62 @@ internal fun YouTubeCollectionScreen(
             ?: offlineCollection?.thumbnailUri
             ?: songs.firstOrNull()?.artUri
     }
+    val isCollectionDownloaded = remember(offlineCollection, songs, downloadedVideoIds) {
+        if (offlineCollection != null) {
+            true
+        } else if (songs.isEmpty()) {
+            false
+        } else {
+            val ids = songs.mapNotNull { YouTubeUri.videoId(it.uri) }
+            ids.isNotEmpty() && ids.all { it in downloadedVideoIds }
+        }
+    }
+    val isCollectionDownloading = remember(songs, activeDownloadVideoIds) {
+        songs.any { YouTubeUri.videoId(it.uri) in activeDownloadVideoIds }
+    }
 
     val bgColor = MaterialTheme.colorScheme.background
+    val paletteAccent by rememberArtworkPaletteAccent(resolvedArtUri)
+    val headerAccent = (paletteAccent ?: MaterialTheme.colorScheme.primary)
+        .copy(alpha = 0.68f)
+        .compositeOver(bgColor)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor),
     ) {
-        if (resolvedArtUri != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(420.dp),
-            ) {
+        // Editorial dynamic color atmosphere extracted from the cover artwork
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(460.dp),
+        ) {
+            if (resolvedArtUri != null) {
                 ArtworkImage(
                     uri = resolvedArtUri,
                     title = resolvedTitle,
                     modifier = Modifier
                         .fillMaxSize()
-                        .blur(48.dp)
-                        .alpha(0.55f),
+                        .blur(56.dp)
+                        .alpha(0.32f),
                     cornerRadius = 0.dp,
                 )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    bgColor.copy(alpha = 0.25f),
-                                    bgColor.copy(alpha = 0.65f),
-                                    bgColor,
-                                ),
-                            ),
-                        ),
-                )
             }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0.0f to headerAccent.copy(alpha = 0.92f),
+                            0.55f to headerAccent.copy(alpha = 0.45f),
+                            0.85f to bgColor.copy(alpha = 0.88f),
+                            1.0f to bgColor,
+                        ),
+                    ),
+            )
         }
+
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -188,13 +216,13 @@ internal fun YouTubeCollectionScreen(
                     ArtworkImage(
                         uri = resolvedArtUri,
                         title = resolvedTitle,
-                        modifier = Modifier.size(200.dp),
+                        modifier = Modifier.size(204.dp),
                         cornerRadius = 16.dp,
                         showArtworkGlow = true,
                     )
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
                             text = resolvedTitle,
@@ -220,61 +248,103 @@ internal fun YouTubeCollectionScreen(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                        if (isCollectionDownloaded) {
+                            Row(
+                                modifier = Modifier
+                                    .padding(top = 2.dp)
+                                    .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(ElovaireRadii.pill),
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_lucide_check),
+                                    contentDescription = dlCopy.downloadedAction,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(13.dp),
+                                )
+                                Text(
+                                    text = dlCopy.downloadedAction,
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                     }
                 }
             }
 
             if (songs.isNotEmpty()) {
                 item(key = "yt_collection_actions") {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        CollectionQuickAction(
+                            label = shuffleLabel,
+                            iconResId = R.drawable.ic_lucide_shuffle,
+                            onClick = { onShuffleSongs(songs, resolvedTitle) },
+                        )
+                        // Signature circular Play button
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onSurface)
+                                .semantics {
+                                    role = Role.Button
+                                    contentDescription = ytCopy.playAll
+                                }
+                                .elovaireClickable { onPlaySongs(songs.first(), songs, resolvedTitle) },
+                            contentAlignment = Alignment.Center,
                         ) {
-                            CollectionActionPill(
-                                label = ytCopy.playAll,
-                                iconResId = R.drawable.ic_lucide_play,
-                                primary = true,
-                                onClick = { onPlaySongs(songs.first(), songs, resolvedTitle) },
-                                modifier = Modifier.weight(1f),
-                            )
-                            CollectionActionPill(
-                                label = shuffleLabel,
-                                iconResId = R.drawable.ic_lucide_shuffle,
-                                primary = false,
-                                onClick = { onShuffleSongs(songs, resolvedTitle) },
-                                modifier = Modifier.weight(1f),
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_lucide_play),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.surface,
+                                modifier = Modifier.size(22.dp),
                             )
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        CollectionQuickAction(
+                            label = ytCopy.radioLabel,
+                            iconResId = R.drawable.ic_lucide_audio_waveform,
+                            onClick = {
+                                val seed = songs.first()
+                                val videoId = YouTubeUri.videoId(seed.uri) ?: return@CollectionQuickAction
+                                scope.launch {
+                                    val related = runCatching {
+                                        youTubeCatalog.getRelatedSongs(videoId)
+                                    }.getOrDefault(emptyList())
+                                    val queue = listOf(seed) + related.filterNot { it.id == seed.id }
+                                    onPlaySongs(seed, queue, resolvedTitle)
+                                }
+                            },
+                        )
+                        if (onDownloadCollection != null) {
                             CollectionQuickAction(
-                                label = ytCopy.radioLabel,
-                                iconResId = R.drawable.ic_lucide_audio_waveform,
-                                onClick = {
-                                    val seed = songs.first()
-                                    val videoId = YouTubeUri.videoId(seed.uri) ?: return@CollectionQuickAction
-                                    scope.launch {
-                                        val related = runCatching {
-                                            youTubeCatalog.getRelatedSongs(videoId)
-                                        }.getOrDefault(emptyList())
-                                        val queue = listOf(seed) + related.filterNot { it.id == seed.id }
-                                        onPlaySongs(seed, queue, resolvedTitle)
-                                    }
+                                label = when {
+                                    isCollectionDownloaded -> dlCopy.downloadedAction
+                                    isCollectionDownloading -> dlCopy.downloadingAction
+                                    else -> dlCopy.downloadAction
                                 },
-                            )
-                            if (onDownloadCollection != null) {
-                                CollectionQuickAction(
-                                    label = dlCopy.downloadAction,
-                                    iconResId = R.drawable.ic_lucide_download,
-                                    onClick = {
+                                iconResId = if (isCollectionDownloaded) {
+                                    R.drawable.ic_lucide_check
+                                } else {
+                                    R.drawable.ic_lucide_download
+                                },
+                                highlighted = isCollectionDownloaded,
+                                isLoading = isCollectionDownloading && !isCollectionDownloaded,
+                                onClick = {
+                                    if (!isCollectionDownloaded) {
                                         onDownloadCollection(
                                             songs,
                                             YouTubeDownloadedCollection(
@@ -286,9 +356,9 @@ internal fun YouTubeCollectionScreen(
                                                 songs = songs,
                                             ),
                                         )
-                                    },
-                                )
-                            }
+                                    }
+                                },
+                            )
                         }
                     }
                 }
@@ -349,10 +419,14 @@ internal fun YouTubeCollectionScreen(
                         items = songs,
                         key = { index, song -> "${index}_${song.id}" },
                     ) { index, song ->
+                        val trackDownloaded = isCollectionDownloaded ||
+                            (YouTubeUri.videoId(song.uri) in downloadedVideoIds)
                         NumberedCollectionTrackRow(
                             index = index + 1,
                             song = song,
                             isFavorite = song.id in favoriteSongIds,
+                            isDownloaded = trackDownloaded,
+                            downloadedCd = dlCopy.downloadedAction,
                             onClick = { onPlaySongs(song, songs, resolvedTitle) },
                             onToggleFavorite = { onToggleFavorite(song.id) },
                         )
@@ -370,73 +444,58 @@ internal fun YouTubeCollectionScreen(
 }
 
 @Composable
-private fun CollectionActionPill(
-    label: String,
-    iconResId: Int,
-    primary: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val bg = if (primary) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
-    }
-    val fg = if (primary) {
-        MaterialTheme.colorScheme.surface
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    Row(
-        modifier = modifier
-            .height(46.dp)
-            .clip(RoundedCornerShape(ElovaireRadii.pill))
-            .background(bg)
-            .elovaireClickable(onClick = onClick)
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painter = painterResource(id = iconResId),
-            contentDescription = null,
-            tint = fg,
-            modifier = Modifier.size(16.dp),
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-            color = fg,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
 private fun CollectionQuickAction(
     label: String,
     iconResId: Int,
+    highlighted: Boolean = false,
+    isLoading: Boolean = false,
     onClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
+            .semantics(mergeDescendants = true) { role = Role.Button }
             .elovaireClickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Icon(
-            painter = painterResource(id = iconResId),
-            contentDescription = label,
-            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f),
-            modifier = Modifier.size(20.dp),
-        )
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(
+                    if (highlighted) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            } else {
+                Icon(
+                    painter = painterResource(id = iconResId),
+                    contentDescription = label,
+                    tint = if (highlighted) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                    },
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = readableSecondaryTextColor(),
+            color = if (highlighted) MaterialTheme.colorScheme.primary else readableSecondaryTextColor(),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -448,6 +507,8 @@ private fun NumberedCollectionTrackRow(
     index: Int,
     song: Song,
     isFavorite: Boolean,
+    isDownloaded: Boolean,
+    downloadedCd: String,
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
 ) {
@@ -478,13 +539,26 @@ private fun NumberedCollectionTrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = song.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = readableSecondaryTextColor(),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (isDownloaded) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_lucide_check),
+                        contentDescription = downloadedCd,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
+                Text(
+                    text = song.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = readableSecondaryTextColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         InlineFavoriteSongButton(
             isFavorite = isFavorite,

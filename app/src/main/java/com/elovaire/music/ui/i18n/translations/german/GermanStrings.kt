@@ -153,7 +153,7 @@ internal object GermanTranslations {
     const val playback_pauseLabel_1 = "Pause"
     const val playback_playLabel_1 = "Abspielen"
     const val playback_playingFromPrefix_1 = "Wiedergabe aus"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Wie Elovaire Dateien, Berechtigungen, Netzwerkanfragen und App-Daten verarbeitet"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Wie Verso Dateien, Berechtigungen, Netzwerkanfragen und App-Daten verarbeitet"
     const val playback_queueTitle_1 = "Warteschlange"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Sleep-Timer", "Aus", "Titelende", "Bestätigen", "Sleep-Timer schließen")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Die Warteschlange für Benutzerdatenvorgänge ist voll"

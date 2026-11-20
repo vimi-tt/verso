@@ -166,7 +166,7 @@ internal object AlbanianTranslations {
     const val playback_pauseLabel_1 = "Pauzë"
     const val playback_playLabel_1 = "Luaj"
     const val playback_playingFromPrefix_1 = "Duke luajtur nga"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Si i trajton Elovaire skedarët, lejet, kërkesat e rrjetit dhe të dhënat e aplikacionit"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Si i trajton Verso skedarët, lejet, kërkesat e rrjetit dhe të dhënat e aplikacionit"
     const val playback_queueTitle_1 = "Radha"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Kohëmatësi i gjumit", "Fikur", "Fundi i këngës", "Konfirmo", "Mbyll kohëmatësin")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Radha e veprimeve të të dhënave është plot"

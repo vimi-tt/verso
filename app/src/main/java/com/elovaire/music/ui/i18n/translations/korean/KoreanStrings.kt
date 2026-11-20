@@ -178,7 +178,7 @@ internal object KoreanTranslations {
     const val playback_pauseLabel_1 = "일시정지"
     const val playback_playLabel_1 = "재생"
     const val playback_playingFromPrefix_1 = "재생 위치"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Elovaire가 파일, 권한, 네트워크 요청 및 앱 데이터를 처리하는 방법"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Verso가 파일, 권한, 네트워크 요청 및 앱 데이터를 처리하는 방법"
     const val playback_queueTitle_1 = "대기열"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("취침 타이머", "꺼짐", "곡이 끝날 때", "확인", "취침 타이머 닫기", "분")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "사용자 데이터 작업 대기열이 가득 찼습니다"

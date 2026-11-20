@@ -152,7 +152,7 @@ internal object EstonianTranslations {
     const val playback_pauseLabel_1 = "Paus"
     const val playback_playLabel_1 = "Esita"
     const val playback_playingFromPrefix_1 = "Esitamine allikast"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Kuidas Elovaire käsitleb faile, õigusi, võrgupäringuid ja rakenduse andmeid"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Kuidas Verso käsitleb faile, õigusi, võrgupäringuid ja rakenduse andmeid"
     const val playback_queueTitle_1 = "Järjekord"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Unetaimer", "Väljas", "Loo lõpus", "Kinnita", "Sulge unetaimer")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Kasutajaandmete toimingute järjekord on täis"

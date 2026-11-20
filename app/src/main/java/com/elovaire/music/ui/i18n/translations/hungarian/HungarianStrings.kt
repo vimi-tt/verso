@@ -148,7 +148,7 @@ internal object HungarianTranslations {
     const val playback_pauseLabel_1 = "Szünet"
     const val playback_playLabel_1 = "Lejátszás"
     const val playback_playingFromPrefix_1 = "Lejátszás innen:"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Hogyan kezeli az Elovaire a fájlokat, engedélyeket, hálózati kéréseket és alkalmazásadatokat"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Hogyan kezeli az Verso a fájlokat, engedélyeket, hálózati kéréseket és alkalmazásadatokat"
     const val playback_queueTitle_1 = "Sor"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Elalvás-időzítő", "Ki", "Dal végén", "Megerősítés", "Időzítő bezárása")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "A felhasználói adatok műveleti sora megtelt"

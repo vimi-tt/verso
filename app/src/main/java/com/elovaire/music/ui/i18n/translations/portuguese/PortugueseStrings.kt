@@ -152,7 +152,7 @@ internal object PortugueseTranslations {
     const val playback_pauseLabel_1 = "Pausa"
     const val playback_playLabel_1 = "Reproduzir"
     const val playback_playingFromPrefix_1 = "A reproduzir de"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Como o Elovaire lida com ficheiros, permissões, pedidos de rede e dados da aplicação"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Como o Verso lida com ficheiros, permissões, pedidos de rede e dados da aplicação"
     const val playback_queueTitle_1 = "Fila"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Temporizador", "Desligado", "Fim da música", "Confirmar", "Fechar temporizador")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "A fila de operações de dados do utilizador está cheia"

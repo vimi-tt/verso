@@ -172,7 +172,7 @@ internal object UkrainianTranslations {
     const val playback_pauseLabel_1 = "Пауза"
     const val playback_playLabel_1 = "Відтворити"
     const val playback_playingFromPrefix_1 = "Відтворення з"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Як Elovaire обробляє файли, дозволи, мережеві запити й дані застосунку"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Як Verso обробляє файли, дозволи, мережеві запити й дані застосунку"
     const val playback_queueTitle_1 = "Черга"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Таймер сну", "Вимкнено", "Кінець пісні", "Підтвердити", "Закрити таймер сну", " хв")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Черга операцій із даними користувача заповнена"

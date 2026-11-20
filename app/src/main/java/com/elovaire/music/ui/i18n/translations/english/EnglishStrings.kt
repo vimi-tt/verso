@@ -200,7 +200,7 @@ internal object EnglishTranslations {
     const val playback_pauseLabel_1 = "Pause"
     const val playback_playLabel_1 = "Play"
     const val playback_playingFromPrefix_1 = "Playing from"
-    const val playback_privacyPolicySettingsSubtitle_1 = "How Elovaire handles files, permissions, network requests, and app data"
+    const val playback_privacyPolicySettingsSubtitle_1 = "How Verso handles files, permissions, network requests, and app data"
     const val playback_queueTitle_1 = "Queue"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Sleep timer", "Off", "End of song", "Confirm", "Close sleep timer")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "The user-data operation queue is full"

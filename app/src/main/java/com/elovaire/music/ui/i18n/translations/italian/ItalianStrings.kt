@@ -152,7 +152,7 @@ internal object ItalianTranslations {
     const val playback_pauseLabel_1 = "Pausa"
     const val playback_playLabel_1 = "Riproduci"
     const val playback_playingFromPrefix_1 = "Riproduzione da"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Come Elovaire gestisce file, autorizzazioni, richieste di rete e dati dell’app"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Come Verso gestisce file, autorizzazioni, richieste di rete e dati dell’app"
     const val playback_queueTitle_1 = "Coda"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Timer di spegnimento", "Disattivato", "Fine del brano", "Conferma", "Chiudi timer")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "La coda delle operazioni sui dati utente è piena"

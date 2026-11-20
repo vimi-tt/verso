@@ -183,7 +183,7 @@ internal object UrduTranslations {
     const val playback_playLabel_1 = "چلائیں"
     const val playback_playingFromPrefix_1 = "یہاں سے چل رہا ہے"
     fun playback_playingFromText_dynamic_1(source: String) = "$source سے چل رہا ہے"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Elovaire فائلوں، اجازتوں، نیٹ ورک درخواستوں اور ایپ ڈیٹا کو کیسے سنبھالتا ہے"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Verso فائلوں، اجازتوں، نیٹ ورک درخواستوں اور ایپ ڈیٹا کو کیسے سنبھالتا ہے"
     const val playback_queueTitle_1 = "قطار"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("سلیپ ٹائمر", "بند", "گانے کے اختتام پر", "تصدیق کریں", "سلیپ ٹائمر بند کریں", " منٹ")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "صارف کے ڈیٹا کی کارروائیوں کی قطار بھر گئی ہے"

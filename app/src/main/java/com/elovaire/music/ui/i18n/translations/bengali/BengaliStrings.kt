@@ -184,7 +184,7 @@ internal object BengaliTranslations {
     const val playback_playLabel_1 = "চালান"
     const val playback_playingFromPrefix_1 = "যেখান থেকে চলছে"
     fun playback_playingFromText_dynamic_1(source: String) = "$source থেকে চলছে"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Elovaire কীভাবে ফাইল, অনুমতি, নেটওয়ার্ক অনুরোধ ও অ্যাপ ডেটা পরিচালনা করে"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Verso কীভাবে ফাইল, অনুমতি, নেটওয়ার্ক অনুরোধ ও অ্যাপ ডেটা পরিচালনা করে"
     const val playback_queueTitle_1 = "কিউ"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("স্লিপ টাইমার", "বন্ধ", "গানের শেষে", "নিশ্চিত করুন", "স্লিপ টাইমার বন্ধ করুন", " মিনিট")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "ব্যবহারকারীর তথ্যের কাজের সারি পূর্ণ"

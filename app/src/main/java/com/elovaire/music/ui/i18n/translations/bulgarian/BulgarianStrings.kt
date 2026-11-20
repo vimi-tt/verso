@@ -137,7 +137,7 @@ internal object BulgarianTranslations {
     const val playback_pauseLabel_1 = "Пауза"
     const val playback_playLabel_1 = "Пусни"
     const val playback_playingFromPrefix_1 = "Възпроизвеждане от"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Как Elovaire обработва файлове, разрешения, мрежови заявки и данни на приложението"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Как Verso обработва файлове, разрешения, мрежови заявки и данни на приложението"
     const val playback_queueTitle_1 = "Опашка"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Таймер за заспиване", "Изключен", "Край на песента", "Потвърди", "Затвори таймера", " мин")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Опашката за операции с потребителски данни е пълна"

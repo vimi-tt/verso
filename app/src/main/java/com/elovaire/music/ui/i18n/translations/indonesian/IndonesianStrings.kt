@@ -133,7 +133,7 @@ internal object IndonesianTranslations {
     const val playback_pauseLabel_1 = "Jeda"
     const val playback_playLabel_1 = "Putar"
     const val playback_playingFromPrefix_1 = "Diputar dari"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Cara Elovaire menangani berkas, izin, permintaan jaringan, dan data aplikasi"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Cara Verso menangani berkas, izin, permintaan jaringan, dan data aplikasi"
     const val playback_queueTitle_1 = "Antrean"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Timer tidur", "Nonaktif", "Akhir lagu", "Konfirmasi", "Tutup timer tidur")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Antrean operasi data pengguna penuh"

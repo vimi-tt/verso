@@ -149,7 +149,7 @@ internal object ThaiTranslations {
     const val playback_pauseLabel_1 = "หยุดชั่วคราว"
     const val playback_playLabel_1 = "เล่น"
     const val playback_playingFromPrefix_1 = "กำลังเล่นจาก"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Elovaire จัดการไฟล์ สิทธิ์ คำขอเครือข่าย และข้อมูลแอปอย่างไร"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Verso จัดการไฟล์ สิทธิ์ คำขอเครือข่าย และข้อมูลแอปอย่างไร"
     const val playback_queueTitle_1 = "คิว"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("ตัวตั้งเวลาปิด", "ปิด", "เมื่อเพลงจบ", "ยืนยัน", "ปิดตัวตั้งเวลา", " นาที")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "คิวการดำเนินการข้อมูลผู้ใช้เต็มแล้ว"

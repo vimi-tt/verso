@@ -153,7 +153,7 @@ internal object DutchTranslations {
     const val playback_pauseLabel_1 = "Pauzeren"
     const val playback_playLabel_1 = "Afspelen"
     const val playback_playingFromPrefix_1 = "Afspelen vanuit"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Hoe Elovaire bestanden, machtigingen, netwerkverzoeken en appgegevens verwerkt"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Hoe Verso bestanden, machtigingen, netwerkverzoeken en appgegevens verwerkt"
     const val playback_queueTitle_1 = "Wachtrij"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Slaaptimer", "Uit", "Einde van nummer", "Bevestigen", "Slaaptimer sluiten")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "De wachtrij voor gebruikersgegevensbewerkingen is vol"

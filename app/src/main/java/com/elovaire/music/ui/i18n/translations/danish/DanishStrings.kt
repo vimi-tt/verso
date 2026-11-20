@@ -151,7 +151,7 @@ internal object DanishTranslations {
     const val playback_pauseLabel_1 = "Pause"
     const val playback_playLabel_1 = "Afspil"
     const val playback_playingFromPrefix_1 = "Afspiller fra"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Sådan håndterer Elovaire filer, tilladelser, netværksanmodninger og appdata"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Sådan håndterer Verso filer, tilladelser, netværksanmodninger og appdata"
     const val playback_queueTitle_1 = "Kø"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Sleep-timer", "Fra", "Slutningen af sangen", "Bekræft", "Luk sleep-timer")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Køen for brugerdatahandlinger er fuld"

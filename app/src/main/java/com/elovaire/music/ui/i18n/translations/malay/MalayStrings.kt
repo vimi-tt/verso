@@ -179,7 +179,7 @@ internal object MalayTranslations {
     const val playback_pauseLabel_1 = "Jeda"
     const val playback_playLabel_1 = "Mainkan"
     const val playback_playingFromPrefix_1 = "Dimainkan dari"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Cara Elovaire mengendalikan fail, kebenaran, permintaan rangkaian dan data aplikasi"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Cara Verso mengendalikan fail, kebenaran, permintaan rangkaian dan data aplikasi"
     const val playback_queueTitle_1 = "Barisan"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Pemasa tidur", "Mati", "Akhir lagu", "Sahkan", "Tutup pemasa tidur")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Baris gilir operasi data pengguna penuh"

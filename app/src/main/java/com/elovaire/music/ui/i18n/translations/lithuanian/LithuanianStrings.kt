@@ -171,7 +171,7 @@ internal object LithuanianTranslations {
     const val playback_pauseLabel_1 = "Pristabdyti"
     const val playback_playLabel_1 = "Leisti"
     const val playback_playingFromPrefix_1 = "Groja iš"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Kaip Elovaire tvarko failus, leidimus, tinklo užklausas ir programos duomenis"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Kaip Verso tvarko failus, leidimus, tinklo užklausas ir programos duomenis"
     const val playback_queueTitle_1 = "Eilė"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Miego laikmatis", "Išjungta", "Dainos pabaigoje", "Patvirtinti", "Uždaryti miego laikmatį")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Naudotojo duomenų operacijų eilė pilna"

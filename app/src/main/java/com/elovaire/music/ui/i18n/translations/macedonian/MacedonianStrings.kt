@@ -152,7 +152,7 @@ internal object MacedonianTranslations {
     const val playback_pauseLabel_1 = "Пауза"
     const val playback_playLabel_1 = "Пушти"
     const val playback_playingFromPrefix_1 = "Се репродуцира од"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Како Elovaire управува со датотеки, дозволи, мрежни барања и податоци од апликацијата"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Како Verso управува со датотеки, дозволи, мрежни барања и податоци од апликацијата"
     const val playback_queueTitle_1 = "Редица"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Тајмер за спиење", "Исклучено", "Крај на песната", "Потврди", "Затвори го тајмерот")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Редицата за операции со кориснички податоци е полна"

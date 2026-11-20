@@ -168,7 +168,7 @@ internal object CzechTranslations {
     const val playback_pauseLabel_1 = "Pozastavit"
     const val playback_playLabel_1 = "Přehrát"
     const val playback_playingFromPrefix_1 = "Přehrávání z"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Jak Elovaire pracuje se soubory, oprávněními, síťovými požadavky a daty aplikace"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Jak Verso pracuje se soubory, oprávněními, síťovými požadavky a daty aplikace"
     const val playback_queueTitle_1 = "Fronta"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Časovač vypnutí", "Vypnuto", "Konec skladby", "Potvrdit", "Zavřít časovač")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Fronta operací s uživatelskými daty je plná"

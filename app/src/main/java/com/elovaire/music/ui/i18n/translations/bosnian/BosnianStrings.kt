@@ -147,7 +147,7 @@ internal object BosnianTranslations {
     const val playback_pauseLabel_1 = "Pauziraj"
     const val playback_playLabel_1 = "Pusti"
     const val playback_playingFromPrefix_1 = "Reprodukcija iz"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Kako Elovaire obrađuje datoteke, dozvole, mrežne zahtjeve i podatke aplikacije"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Kako Verso obrađuje datoteke, dozvole, mrežne zahtjeve i podatke aplikacije"
     const val playback_queueTitle_1 = "Red čekanja"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Tajmer za spavanje", "Isključeno", "Kraj pjesme", "Potvrdi", "Zatvori tajmer")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Red operacija korisničkih podataka je pun"

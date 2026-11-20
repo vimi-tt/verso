@@ -157,7 +157,7 @@ internal object SlovenianTranslations {
     const val playback_pauseLabel_1 = "Premor"
     const val playback_playLabel_1 = "Predvajaj"
     const val playback_playingFromPrefix_1 = "Predvajanje iz"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Kako Elovaire obravnava datoteke, dovoljenja, omrežne zahteve in podatke aplikacije"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Kako Verso obravnava datoteke, dovoljenja, omrežne zahteve in podatke aplikacije"
     const val playback_queueTitle_1 = "Čakalna vrsta"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Časovnik za spanje", "Izklopljeno", "Konec skladbe", "Potrdi", "Zapri časovnik")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Čakalna vrsta opravil uporabniških podatkov je polna"

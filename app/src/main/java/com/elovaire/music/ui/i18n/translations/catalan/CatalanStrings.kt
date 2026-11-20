@@ -138,7 +138,7 @@ internal object CatalanTranslations {
     const val playback_pauseLabel_1 = "Pausa"
     const val playback_playLabel_1 = "Reprodueix"
     const val playback_playingFromPrefix_1 = "Reproduint des de"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Com Elovaire gestiona fitxers, permisos, sol·licituds de xarxa i dades de l’aplicació"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Com Verso gestiona fitxers, permisos, sol·licituds de xarxa i dades de l’aplicació"
     const val playback_queueTitle_1 = "Cua"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Temporitzador de son", "Desactivat", "Final de la cançó", "Confirma", "Tanca el temporitzador")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "La cua d’operacions de dades d’usuari és plena"

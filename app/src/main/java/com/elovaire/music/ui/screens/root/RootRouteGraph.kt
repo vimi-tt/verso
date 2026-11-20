@@ -531,6 +531,8 @@ internal fun RootRouteGraph(
                 initialArtUri = artUri,
                 youTubeCatalog = youTubeCatalog,
                 offlineCollection = offlineCollection,
+                downloadedVideoIds = downloadsState.downloadedVideoIds,
+                activeDownloadVideoIds = downloadsState.activeVideoIds,
                 favoriteSongIds = routeState.appState.favoriteSongIds,
                 bottomPadding = padding.bottomContent,
                 onBack = { navState.navController.popBackStack() },

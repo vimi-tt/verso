@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -736,16 +737,36 @@ private fun DownloadGridCard(
             .elovaireClickable(onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ArtworkImage(
-            uri = artUri,
-            title = title,
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f),
-            cornerRadius = ElovaireRadii.artwork,
-            requestedSizePx = 320,
-            showArtworkGlow = false,
-        )
+        ) {
+            ArtworkImage(
+                uri = artUri,
+                title = title,
+                modifier = Modifier.fillMaxSize(),
+                cornerRadius = ElovaireRadii.artwork,
+                requestedSizePx = 320,
+                showArtworkGlow = false,
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp)
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_lucide_check),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(13.dp),
+                )
+            }
+        }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = title,

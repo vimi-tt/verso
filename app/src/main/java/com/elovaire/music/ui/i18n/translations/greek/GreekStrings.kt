@@ -154,7 +154,7 @@ internal object GreekTranslations {
     const val playback_pauseLabel_1 = "Παύση"
     const val playback_playLabel_1 = "Αναπαραγωγή"
     const val playback_playingFromPrefix_1 = "Αναπαραγωγή από"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Πώς το Elovaire διαχειρίζεται αρχεία, άδειες, αιτήματα δικτύου και δεδομένα εφαρμογής"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Πώς το Verso διαχειρίζεται αρχεία, άδειες, αιτήματα δικτύου και δεδομένα εφαρμογής"
     const val playback_queueTitle_1 = "Ουρά"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Χρονοδιακόπτης ύπνου", "Ανενεργό", "Τέλος τραγουδιού", "Επιβεβαίωση", "Κλείσιμο χρονοδιακόπτη")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Η ουρά εργασιών δεδομένων χρήστη είναι πλήρης"

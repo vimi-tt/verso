@@ -154,7 +154,7 @@ internal object FrenchTranslations {
     const val playback_pauseLabel_1 = "Pause"
     const val playback_playLabel_1 = "Lire"
     const val playback_playingFromPrefix_1 = "Lecture depuis"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Comment Elovaire gère les fichiers, autorisations, requêtes réseau et données de l’app"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Comment Verso gère les fichiers, autorisations, requêtes réseau et données de l’app"
     const val playback_queueTitle_1 = "File"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Minuteur de veille", "Désactivé", "Fin du morceau", "Confirmer", "Fermer le minuteur")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "La file d’opérations sur les données utilisateur est pleine"

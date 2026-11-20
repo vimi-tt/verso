@@ -199,7 +199,7 @@ internal object SlovakTranslations {
     const val playback_pauseLabel_1 = "Pozastaviť"
     const val playback_playLabel_1 = "Prehrať"
     const val playback_playingFromPrefix_1 = "Prehráva sa z"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Ako Elovaire spracúva súbory, povolenia, sieťové požiadavky a údaje aplikácie"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Ako Verso spracúva súbory, povolenia, sieťové požiadavky a údaje aplikácie"
     const val playback_queueTitle_1 = "Front"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Časovač spánku", "Vypnuté", "Koniec skladby", "Potvrdiť", "Zavrieť časovač")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Front operácií s používateľskými údajmi je plný"

@@ -151,7 +151,7 @@ internal object NorwegianTranslations {
     const val playback_pauseLabel_1 = "Pause"
     const val playback_playLabel_1 = "Spill av"
     const val playback_playingFromPrefix_1 = "Spiller fra"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Hvordan Elovaire håndterer filer, tillatelser, nettverksforespørsler og appdata"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Hvordan Verso håndterer filer, tillatelser, nettverksforespørsler og appdata"
     const val playback_queueTitle_1 = "Kø"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Innsovningstimer", "Av", "Slutten av sangen", "Bekreft", "Lukk innsovningstimer")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Køen for brukerdatoperasjoner er full"

@@ -171,7 +171,7 @@ internal object LatvianTranslations {
     const val playback_pauseLabel_1 = "Pauze"
     const val playback_playLabel_1 = "Atskaņot"
     const val playback_playingFromPrefix_1 = "Atskaņo no"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Kā Elovaire apstrādā failus, atļaujas, tīkla pieprasījumus un lietotnes datus"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Kā Verso apstrādā failus, atļaujas, tīkla pieprasījumus un lietotnes datus"
     const val playback_queueTitle_1 = "Rinda"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("Miega taimeris", "Izslēgts", "Dziesmas beigās", "Apstiprināt", "Aizvērt miega taimeri")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "Lietotāja datu darbību rinda ir pilna"

@@ -147,7 +147,7 @@ internal object ChineseSimplifiedTranslations {
     const val playback_pauseLabel_1 = "暂停"
     const val playback_playLabel_1 = "播放"
     const val playback_playingFromPrefix_1 = "播放来源"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Elovaire 如何处理文件、权限、网络请求和应用数据"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Verso 如何处理文件、权限、网络请求和应用数据"
     const val playback_queueTitle_1 = "队列"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("睡眠定时器", "关闭", "歌曲结束时", "确认", "关闭睡眠定时器", " 分钟")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "用户数据操作队列已满"

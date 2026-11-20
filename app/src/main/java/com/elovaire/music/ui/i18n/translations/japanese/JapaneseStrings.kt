@@ -147,7 +147,7 @@ internal object JapaneseTranslations {
     const val playback_pauseLabel_1 = "一時停止"
     const val playback_playLabel_1 = "再生"
     const val playback_playingFromPrefix_1 = "再生元"
-    const val playback_privacyPolicySettingsSubtitle_1 = "Elovaire によるファイル、権限、ネットワーク要求、アプリデータの扱い"
+    const val playback_privacyPolicySettingsSubtitle_1 = "Verso によるファイル、権限、ネットワーク要求、アプリデータの扱い"
     const val playback_queueTitle_1 = "キュー"
     val playback_sleepTimerCopy_1 get() = SleepTimerCopy("スリープタイマー", "オフ", "曲の終了時", "確認", "スリープタイマーを閉じる", "分")
     const val playlistFeedback_localizedPlaylistCreateError_1 = "ユーザーデータ操作のキューがいっぱいです"
