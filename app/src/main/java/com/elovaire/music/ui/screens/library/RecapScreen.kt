@@ -12,7 +12,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -50,13 +50,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -156,45 +152,19 @@ private fun recapUiCopy(language: AppLanguage): RecapUiCopy = when (language) {
 }
 
 /**
- * Option 1 Verso app icon: dark navy rounded square with two angled bars forming a V
- * (left bar white, right bar coral-orange).
+ * Verso app icon: dark warm charcoal squircle with serif "ver / so" wordmark
+ * split by an angled blue slash, rendered from the shared vector drawable.
  */
 @Composable
 internal fun VersoOption1Icon(
     size: Dp,
     modifier: Modifier = Modifier,
 ) {
-    Canvas(modifier = modifier.size(size)) {
-        val w = this.size.width
-        val h = this.size.height
-        val corner = w * 0.24f
-        drawRoundRect(
-            color = Color(0xFF19183D),
-            topLeft = Offset.Zero,
-            size = Size(w, h),
-            cornerRadius = CornerRadius(corner, corner),
-        )
-        val barWidth = w * 0.14f
-        val barHeight = h * 0.56f
-        val barRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
-        val pivot = Offset(w * 0.50f, h * 0.72f)
-        rotate(degrees = -22f, pivot = pivot) {
-            drawRoundRect(
-                color = Color.White,
-                topLeft = Offset(pivot.x - barWidth * 0.85f, pivot.y - barHeight),
-                size = Size(barWidth, barHeight),
-                cornerRadius = barRadius,
-            )
-        }
-        rotate(degrees = 24f, pivot = pivot) {
-            drawRoundRect(
-                color = Color(0xFFFF6E4A),
-                topLeft = Offset(pivot.x - barWidth * 0.15f, pivot.y - barHeight * 0.86f),
-                size = Size(barWidth, barHeight * 0.86f),
-                cornerRadius = barRadius,
-            )
-        }
-    }
+    Image(
+        painter = painterResource(id = R.drawable.ic_verso_app_icon),
+        contentDescription = null,
+        modifier = modifier.size(size),
+    )
 }
 
 @Composable
