@@ -2214,7 +2214,7 @@ private fun QueueSheet(
         animationSpec = motionSpecs.contentSize(),
         label = "queue_footer_height",
     )
-    LaunchedEffect(currentIndex, queue.size, audiobookMode, activeChapterIndex) {
+    LaunchedEffect(currentIndex, queue.isNotEmpty(), audiobookMode, activeChapterIndex) {
         if (audiobookMode && activeChapterIndex in audiobookChapters.indices) {
             listState.scrollToItem((activeChapterIndex - 2).coerceAtLeast(0))
         } else if (!audiobookMode && currentIndex in queue.indices) {
@@ -2699,6 +2699,8 @@ private fun QueueSongList(
                 Box(
                     modifier = Modifier
                         .animateItem(
+                            fadeInSpec = null,
+                            fadeOutSpec = null,
                             placementSpec = motionSpecs.tween(
                                 durationMillis = MotionDuration.ListPlacement,
                                 easing = MotionEasing.RefinedDecelerate,

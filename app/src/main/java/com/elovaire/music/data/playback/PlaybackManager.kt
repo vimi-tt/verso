@@ -1401,7 +1401,7 @@ internal class PlaybackManager internal constructor(
             }
             if (appended.isNotEmpty()) {
                 val targetIndex = _state.value.queue.size
-                appended.forEach { queueController.enqueueSong(it) }
+                queueController.enqueueSongs(appended)
                 if (player.hasNextMediaItem()) {
                     player.seekToNextMediaItem()
                 } else if (targetIndex in 0 until player.mediaItemCount) {
@@ -1457,6 +1457,12 @@ internal class PlaybackManager internal constructor(
         if (released.get()) return
         crossfadeController.cancel()
         queueController.enqueueSong(song)
+    }
+
+    override fun enqueueSongs(songs: List<Song>) {
+        if (released.get() || songs.isEmpty()) return
+        crossfadeController.cancel()
+        queueController.enqueueSongs(songs)
     }
 
     override fun replaceUpcomingQueue(songs: List<Song>) {

@@ -159,6 +159,37 @@ internal class PlaybackQueueController(
         runtime.updateState()
     }
 
+    fun enqueueSongs(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        if (songs.size == 1) {
+            enqueueSong(songs.first())
+            return
+        }
+        val state = runtime.state
+        val existingQueue = state.queue
+        if (existingQueue.isEmpty() || runtime.player.mediaItemCount == 0) {
+            setQueue(
+                songs = songs,
+                startIndex = 0,
+                sourceLabel = songs.first().album,
+                shuffleEnabled = false,
+                sourcePlaylistId = null,
+                audioPathDelayMs = 80L,
+                libraryBacked = queueBackedByLibrary,
+            )
+            return
+        }
+        val player = runtime.player
+        val lang = language()
+        allowStrictModeDiskReads {
+            songs.forEach { song ->
+                player.addMediaItem(song.toPlaybackMediaItem(lang))
+            }
+        }
+        runtime.publishState(state.copy(queue = existingQueue + songs))
+        runtime.updateState()
+    }
+
     fun replaceUpcomingQueue(upcomingSongs: List<Song>) {
         val state = runtime.state
         val existingQueue = state.queue

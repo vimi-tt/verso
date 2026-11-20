@@ -125,7 +125,7 @@ internal fun ElovaireRootReadyHost(
                     currentQueue = queueSnapshot,
                     autoActivateAtEndOfCollection = true,
                     onAppendTracks = { newTracks ->
-                        newTracks.forEach(composition.playback::enqueueSong)
+                        composition.playback.enqueueSongs(newTracks)
                     },
                 )
             }

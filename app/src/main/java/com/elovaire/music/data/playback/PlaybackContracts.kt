@@ -51,6 +51,10 @@ interface PlaybackQueueCommands {
 
     fun enqueueSong(song: Song)
 
+    fun enqueueSongs(songs: List<Song>) {
+        songs.forEach(::enqueueSong)
+    }
+
     fun replaceUpcomingQueue(songs: List<Song>) {}
 }
 
