@@ -155,7 +155,11 @@ android {
 androidComponents {
     onVariants(selector().all()) { variant ->
         val buildLabel = variant.buildType ?: variant.name
-        val apkFileName = "${AppBuildConfig.Application.packageName}-$buildLabel.apk"
+        val apkFileName = if (variant.name == "release") {
+            "verso.apk"
+        } else {
+            "${AppBuildConfig.Application.packageName}-$buildLabel.apk"
+        }
         val variantName = variant.name
         val buildDirPath = layout.buildDirectory.asFile.get().absolutePath
         val apkArtifact = variant.artifacts.get(SingleArtifact.APK)

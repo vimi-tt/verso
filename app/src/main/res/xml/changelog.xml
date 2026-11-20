@@ -6,6 +6,16 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
+    <release version="1.0-beta2">
+        <item>Updated app identity with the final ver/so icon across launcher, Material You themed icon, onboarding, About, Stats, Recap, and Share Cards</item>
+        <item>Redesigned Home with an editorial magazine layout featuring Featured hero, Pick up again, New releases, Essentials, numbered Trending chart, Explore by mood, and pull-to-refresh</item>
+        <item>Added dedicated See All and Explore by mood screens with full in-app language support</item>
+        <item>Improved music recommendations and musically coherent auto-queue for YouTube tracks</item>
+        <item>Redesigned Downloads with an instant Collections grid and a virtualized Songs tab with A–Z, Album, and Artist filters</item>
+        <item>Redesigned Favorites and consolidated Favorites and Downloads exclusively inside Library</item>
+        <item>Replaced character-splitting lyrics highlighting with a flicker-free smooth sweep and progressive focal blur</item>
+        <item>Improved YouTube Music watch history syncing reliability and updated the Verso privacy policy</item>
+    </release>
     <release version="1.0-beta1">
         <item>Rebranded to Verso with a new Option 1 adaptive icon and redesigned About screen</item>
         <item>Added YouTube Music streaming, account login, synced favorites, library browsing, and Activity Mix on Home</item>

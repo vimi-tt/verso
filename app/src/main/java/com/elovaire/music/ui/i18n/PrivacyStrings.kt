@@ -72,46 +72,96 @@ internal fun privacyPolicySection(title: String, body: String) = PrivacySafetySe
 
 private fun privacyPolicySections(language: AppLanguage): List<PrivacySafetySectionCopy> {
     return when (language) {
-        AppLanguage.Bosnian -> BosnianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Indonesian -> IndonesianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Punjabi -> PunjabiTranslations.privacy_listOf_multiline_1
-        AppLanguage.Albanian -> AlbanianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Bengali -> BengaliTranslations.privacy_listOf_multiline_1
-        AppLanguage.ChineseSimplified -> ChineseSimplifiedTranslations.privacy_listOf_multiline_1
-        AppLanguage.Croatian -> CroatianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Czech -> CzechTranslations.privacy_listOf_multiline_1
-        AppLanguage.Danish -> DanishTranslations.privacy_listOf_multiline_1
-        AppLanguage.Dutch -> DutchTranslations.privacy_listOf_multiline_1
-        AppLanguage.Estonian -> EstonianTranslations.privacy_listOf_multiline_1
-        AppLanguage.French -> FrenchTranslations.privacy_listOf_multiline_1
-        AppLanguage.German -> GermanTranslations.privacy_listOf_multiline_1
-        AppLanguage.Greek -> GreekTranslations.privacy_listOf_multiline_1
-        AppLanguage.Hindi -> HindiTranslations.privacy_listOf_multiline_1
-        AppLanguage.Hungarian -> HungarianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Italian -> ItalianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Japanese -> JapaneseTranslations.privacy_listOf_multiline_1
-        AppLanguage.Korean -> KoreanTranslations.privacy_listOf_multiline_1
-        AppLanguage.Latvian -> LatvianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Lithuanian -> LithuanianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Malay -> MalayTranslations.privacy_listOf_multiline_1
-        AppLanguage.Macedonian -> MacedonianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Norwegian -> NorwegianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Polish -> PolishTranslations.privacy_listOf_multiline_1
-        AppLanguage.Portuguese -> PortugueseTranslations.privacy_listOf_multiline_1
-        AppLanguage.Russian -> RussianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Serbian -> SerbianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Slovak -> SlovakTranslations.privacy_listOf_multiline_1
-        AppLanguage.Spanish -> SpanishTranslations.privacy_listOf_multiline_1
-        AppLanguage.Swedish -> SwedishTranslations.privacy_listOf_multiline_1
-        AppLanguage.Thai -> ThaiTranslations.privacy_listOf_multiline_1
-        AppLanguage.Ukrainian -> UkrainianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Urdu -> UrduTranslations.privacy_listOf_multiline_1
-        AppLanguage.Bulgarian -> BulgarianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Catalan -> CatalanTranslations.privacy_listOf_multiline_1
-        AppLanguage.Romanian -> RomanianTranslations.privacy_listOf_multiline_1
-        AppLanguage.Finnish -> FinnishTranslations.privacy_listOf_multiline_1
-        AppLanguage.Slovenian -> SlovenianTranslations.privacy_listOf_multiline_1
-        AppLanguage.English -> EnglishTranslations.privacy_listOf_multiline_1
+        AppLanguage.Portuguese -> listOf(
+            privacyPolicySection(
+                "Visão geral",
+                "O Verso é um reprodutor de música que combina áudio local, streaming do YouTube Music, downloads offline, letras sincronizadas e estatísticas locais. O Verso não exibe anúncios, não utiliza SDKs de rastreamento nem opera servidores próprios para coletar dados pessoais",
+            ),
+            privacyPolicySection(
+                "Dados mantidos no seu aparelho",
+                "O Verso armazena localmente suas músicas baixadas, filas de reprodução, favoritos, playlists, histórico recente, estatísticas de escuta, Verso Recap e preferências de áudio, idioma e aparência em armazenamento privado do aplicativo",
+            ),
+            privacyPolicySection(
+                "YouTube Music e conta Google opcional",
+                "Você pode usar o Verso em modo anônimo ou conectar sua conta Google / YouTube Music para sincronizar favoritos, álbuns, artistas e playlists. Os cookies de sessão ficam salvos apenas no armazenamento privado do aparelho e são enviados diretamente ao YouTube Music",
+            ),
+            privacyPolicySection(
+                "Histórico de reprodução no YouTube",
+                "Quando a opção de enviar histórico ao YouTube estiver ativada nas Definições e sua conta estiver conectada, o Verso informa a reprodução diretamente ao YouTube Music para atualizar seu histórico e recomendações. Você pode desativar isso a qualquer momento",
+            ),
+            privacyPolicySection(
+                "Letras sincronizadas e Last.fm",
+                "Para exibir letras sincronizadas, o Verso envia apenas o título, artista, álbum e duração da faixa aos provedores BetterLyrics ou LRCLIB. A integração com Last.fm é opcional e só realiza scrobbling e busca de gêneros se você conectar sua conta",
+            ),
+            privacyPolicySection(
+                "Downloads offline e armazenamento local",
+                "Faixas, álbuns e playlists baixados para ouvir offline permanecem exclusivamente no seu aparelho. O acesso aos arquivos de áudio locais é opcional e usado somente para indexar e reproduzir sua biblioteca",
+            ),
+            privacyPolicySection(
+                "Permissões e exclusão de dados",
+                "O Verso solicita acesso à internet para streaming, letras e sincronização opcional, além de notificações para controles de reprodução e downloads. Você pode limpar caches, downloads, sair das contas ou apagar todos os dados locais nas Definições do app ou do Android",
+            ),
+        )
+        AppLanguage.Spanish -> listOf(
+            privacyPolicySection(
+                "Resumen",
+                "Verso es un reproductor de música que combina audio local, streaming de YouTube Music, descargas offline, letras sincronizadas y estadísticas locales. Verso no muestra anuncios, no incluye SDK de rastreo ni opera servidores propios para recopilar datos personales",
+            ),
+            privacyPolicySection(
+                "Datos almacenados en tu dispositivo",
+                "Verso guarda localmente tus canciones descargadas, colas de reproducción, favoritos, playlists, historial reciente, estadísticas de escucha, Verso Recap y ajustes de audio, idioma y apariencia en el almacenamiento privado de la app",
+            ),
+            privacyPolicySection(
+                "YouTube Music y cuenta de Google opcional",
+                "Puedes usar Verso en modo anónimo o iniciar sesión con tu cuenta de Google / YouTube Music para sincronizar favoritos, álbumes, artistas y playlists. Las cookies de sesión se guardan únicamente en tu dispositivo y se envían directamente a YouTube Music",
+            ),
+            privacyPolicySection(
+                "Historial de reproducción en YouTube",
+                "Cuando la opción de enviar el historial a YouTube está activada en Ajustes y tu cuenta está conectada, Verso reporta la reproducción directamente a YouTube Music para actualizar tu historial y recomendaciones. Puedes desactivarlo en cualquier momento",
+            ),
+            privacyPolicySection(
+                "Letras sincronizadas y Last.fm",
+                "Para mostrar letras sincronizadas, Verso envía solo el título, artista, álbum y duración de la canción a BetterLyrics o LRCLIB. La integración con Last.fm es opcional y solo realiza scrobbling y consulta de géneros si conectas tu cuenta",
+            ),
+            privacyPolicySection(
+                "Descargas offline y biblioteca local",
+                "Las canciones, álbumes y playlists descargados para escuchar sin conexión permanecen únicamente en tu dispositivo. El acceso al audio local es opcional y se usa solo para indexar y reproducir tu biblioteca",
+            ),
+            privacyPolicySection(
+                "Permisos y eliminación de datos",
+                "Verso utiliza acceso a internet para streaming, letras y sincronización opcional, además de notificaciones para controles y descargas. Puedes borrar cachés, descargas, cerrar sesión o eliminar todos los datos locales desde los Ajustes de la app o de Android",
+            ),
+        )
+        else -> listOf(
+            privacyPolicySection(
+                "Overview",
+                "Verso is a music player combining local audio, YouTube Music streaming, offline downloads, synced lyrics, and local listening stats. Verso has no ads, no analytics or tracking SDKs, and no app-operated backend collecting personal data",
+            ),
+            privacyPolicySection(
+                "Information kept on your device",
+                "Verso stores your offline downloads, playback queue, favorites, playlists, recent history, listening statistics, Verso Recap data, and audio, language, and appearance preferences locally in app-private storage",
+            ),
+            privacyPolicySection(
+                "YouTube Music and optional Google sign-in",
+                "You can use Verso anonymously or sign in with Google / YouTube Music to sync liked songs, albums, artists, and playlists. Session cookies stay in app-private storage on your device and are sent only to YouTube Music",
+            ),
+            privacyPolicySection(
+                "YouTube watch history syncing",
+                "When YouTube playback history sync is enabled in Settings and your account is connected, Verso reports playback directly to YouTube Music so plays update your history and recommendations. You can turn this off at any time",
+            ),
+            privacyPolicySection(
+                "Synced lyrics and Last.fm",
+                "To display synced lyrics, Verso sends only track title, artist, album, and duration to BetterLyrics or LRCLIB. Last.fm integration is optional and only scrobbles plays or looks up genres when you connect your account",
+            ),
+            privacyPolicySection(
+                "Offline downloads and local audio",
+                "Tracks, albums, and playlists downloaded for offline playback remain exclusively on your device. Local audio permission is optional and used only to index and play files on your device",
+            ),
+            privacyPolicySection(
+                "Permissions and data deletion",
+                "Verso uses internet access for streaming, lyrics, and optional account sync, plus notifications for playback controls and downloads. You can clear caches and downloads, sign out of accounts, or delete all local data in app or Android settings",
+            ),
+        )
     }
 }
 

@@ -5579,91 +5579,153 @@ private fun ActiveKaraokeLyricLineText(
     }
 
     val positionMs = smoothPositionMs
-    val litStyle = remember(contentColor) { androidx.compose.ui.text.SpanStyle(color = contentColor) }
-    val dimStyle = remember(contentColor) { androidx.compose.ui.text.SpanStyle(color = contentColor.copy(alpha = 0.48f)) }
+    val textStyle = MaterialTheme.typography.headlineMedium.copy(
+        fontSize = 24.sp,
+        fontWeight = FontWeight.SemiBold,
+        lineHeight = 32.sp,
+    )
 
-    fun androidx.compose.ui.text.AnnotatedString.Builder.appendSmoothChars(
-        text: String,
-        fraction: Float,
-    ) {
-        if (text.isEmpty()) return
-        val exact = text.length * fraction.coerceIn(0f, 1f)
-        val fullChars = exact.toInt().coerceIn(0, text.length)
-        val partial = (exact - fullChars).coerceIn(0f, 1f)
-        if (fullChars > 0) {
-            pushStyle(litStyle)
-            append(text.substring(0, fullChars))
-            pop()
-        }
-        if (fullChars < text.length) {
-            val transitionAlpha = 0.36f + (0.64f * partial)
-            pushStyle(androidx.compose.ui.text.SpanStyle(color = contentColor.copy(alpha = transitionAlpha)))
-            append(text[fullChars])
-            pop()
-            val nextIdx = fullChars + 1
-            if (nextIdx < text.length) {
-                val leadAlpha = 0.36f + (0.24f * partial)
-                pushStyle(androidx.compose.ui.text.SpanStyle(color = contentColor.copy(alpha = leadAlpha)))
-                append(text[nextIdx])
-                pop()
-                if (nextIdx + 1 < text.length) {
-                    pushStyle(dimStyle)
-                    append(text.substring(nextIdx + 1))
-                    pop()
-                }
-            }
-        }
+    // Compute continuous character progress (0f..line.text.length) so the text layout never changes
+    // and HarfBuzz kerning/ligatures stay 100% locked (zero horizontal jitter or flicker).
+    val fullText = remember(line) {
+        if (line.words.isNotEmpty()) line.words.joinToString(separator = "") { it.text } else line.text
     }
-
-    val annotated = remember(line, positionMs, nextLineStartMs, contentColor) {
-        androidx.compose.ui.text.buildAnnotatedString {
-            if (line.words.isNotEmpty()) {
-                line.words.forEach { word ->
-                    when {
-                        positionMs >= word.endTimeMs -> {
-                            pushStyle(litStyle)
-                            append(word.text)
-                            pop()
-                        }
-                        positionMs <= word.startTimeMs -> {
-                            pushStyle(dimStyle)
-                            append(word.text)
-                            pop()
-                        }
-                        else -> {
-                            val spanDuration = (word.endTimeMs - word.startTimeMs).coerceAtLeast(1L)
-                            val fraction = ((positionMs - word.startTimeMs).toFloat() / spanDuration.toFloat()).coerceIn(0f, 1f)
-                            appendSmoothChars(word.text, fraction)
-                        }
+    val charProgress = remember(line, fullText, positionMs, nextLineStartMs) {
+        if (fullText.isEmpty()) {
+            0f
+        } else if (line.words.isNotEmpty()) {
+            var cursor = 0f
+            var resolved = 0f
+            var foundActive = false
+            for (word in line.words) {
+                val len = word.text.length.toFloat()
+                when {
+                    positionMs >= word.endTimeMs -> {
+                        cursor += len
+                        resolved = cursor
+                    }
+                    positionMs <= word.startTimeMs -> {
+                        resolved = cursor
+                        foundActive = true
+                        break
+                    }
+                    else -> {
+                        val span = (word.endTimeMs - word.startTimeMs).coerceAtLeast(1L).toFloat()
+                        val frac = ((positionMs - word.startTimeMs).toFloat() / span).coerceIn(0f, 1f)
+                        resolved = cursor + len * frac
+                        foundActive = true
+                        break
                     }
                 }
+            }
+            if (!foundActive) cursor else resolved
+        } else {
+            val startMs = line.startTimeMs
+            val endMs = line.endTimeMs ?: nextLineStartMs
+            if (startMs != null && endMs != null && endMs > startMs) {
+                val frac = ((positionMs - startMs).toFloat() / (endMs - startMs).toFloat()).coerceIn(0f, 1f)
+                fullText.length * frac
             } else {
-                val startMs = line.startTimeMs
-                val endMs = line.endTimeMs ?: nextLineStartMs
-                if (startMs != null && endMs != null && endMs > startMs) {
-                    val fraction = ((positionMs - startMs).toFloat() / (endMs - startMs).toFloat()).coerceIn(0f, 1f)
-                    appendSmoothChars(line.text, fraction)
-                } else {
-                    pushStyle(litStyle)
-                    append(line.text)
-                    pop()
-                }
+                fullText.length.toFloat()
             }
         }
     }
 
-    Text(
-        text = annotated,
-        style = MaterialTheme.typography.headlineMedium.copy(
-            fontSize = 26.sp,
-            fontWeight = FontWeight.SemiBold,
-            lineHeight = 34.sp,
-        ),
-        textAlign = androidx.compose.ui.text.style.TextAlign.Start,
-        softWrap = true,
-        maxLines = Int.MAX_VALUE,
-        modifier = modifier,
-    )
+    var textLayout by remember(fullText) { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+
+    Box(modifier = modifier) {
+        // Base layer: dimmed full text with locked layout
+        Text(
+            text = fullText,
+            style = textStyle,
+            color = contentColor.copy(alpha = 0.42f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+            softWrap = true,
+            maxLines = Int.MAX_VALUE,
+            onTextLayout = { textLayout = it },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        // Highlight layer: identical text revealed smoothly line-by-line via offscreen DstIn mask
+        Text(
+            text = fullText,
+            style = textStyle,
+            color = contentColor,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+            softWrap = true,
+            maxLines = Int.MAX_VALUE,
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                    val layout = textLayout
+                    if (layout == null || fullText.isEmpty()) {
+                        drawContent()
+                        return@drawWithContent
+                    }
+                    drawContent()
+                    val featherPx = 24.dp.toPx()
+                    val totalLen = fullText.length
+                    for (lineIdx in 0 until layout.lineCount) {
+                        val lineStart = layout.getLineStart(lineIdx)
+                        val lineEnd = layout.getLineEnd(lineIdx, visibleEnd = true).coerceAtLeast(lineStart)
+                        val top = layout.getLineTop(lineIdx)
+                        val bottom = layout.getLineBottom(lineIdx)
+                        val lineH = (bottom - top).coerceAtLeast(1f)
+                        val lineRight = layout.getLineRight(lineIdx)
+
+                        when {
+                            charProgress >= lineEnd.toFloat() -> {
+                                // Already fully sung: keep full alpha
+                            }
+                            charProgress <= lineStart.toFloat() -> {
+                                // Not yet reached: erase highlight layer on this line
+                                drawRect(
+                                    color = Color.Transparent,
+                                    topLeft = Offset(0f, top),
+                                    size = androidx.compose.ui.geometry.Size(size.width, lineH),
+                                    blendMode = BlendMode.Clear,
+                                )
+                            }
+                            else -> {
+                                val floorIdx = charProgress.toInt().coerceIn(lineStart, (totalLen - 1).coerceAtLeast(0))
+                                val ceilIdx = (floorIdx + 1).coerceAtMost(totalLen)
+                                val frac = (charProgress - floorIdx).coerceIn(0f, 1f)
+                                val x0 = layout.getHorizontalPosition(floorIdx, usePrimaryDirection = true)
+                                val x1 = if (ceilIdx < totalLen) {
+                                    layout.getHorizontalPosition(ceilIdx, usePrimaryDirection = true)
+                                } else {
+                                    lineRight
+                                }
+                                val revealX = (x0 + (x1 - x0) * frac).coerceIn(0f, size.width)
+                                val gradStart = (revealX - featherPx * 0.5f).coerceAtLeast(0f)
+                                val gradEnd = (revealX + featherPx * 0.5f).coerceAtMost(size.width)
+                                // Soft horizontal fade across the active sweep edge
+                                if (gradEnd > gradStart) {
+                                    drawRect(
+                                        brush = Brush.horizontalGradient(
+                                            colors = listOf(Color.Black, Color.Transparent),
+                                            startX = gradStart,
+                                            endX = gradEnd,
+                                        ),
+                                        topLeft = Offset(gradStart, top),
+                                        size = androidx.compose.ui.geometry.Size(gradEnd - gradStart, lineH),
+                                        blendMode = BlendMode.DstIn,
+                                    )
+                                }
+                                if (gradEnd < size.width) {
+                                    drawRect(
+                                        color = Color.Transparent,
+                                        topLeft = Offset(gradEnd, top),
+                                        size = androidx.compose.ui.geometry.Size(size.width - gradEnd, lineH),
+                                        blendMode = BlendMode.Clear,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+        )
+    }
 }
 
 @Composable
