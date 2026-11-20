@@ -79,8 +79,10 @@ internal class CompassoEngine(
 
     private var activeSeedVideoId: String? = null
     private var continuationToken: String? = null
+    private var userExplicitlyDisabled: Boolean = false
 
     fun setActive(enabled: Boolean) {
+        userExplicitlyDisabled = !enabled
         _uiState.update { it.copy(isActive = enabled) }
     }
 
@@ -99,7 +101,10 @@ internal class CompassoEngine(
         currentQueue: List<Song> = listOf(seedSong),
         onAppendTracks: (List<Song>) -> Unit,
     ): List<Song> {
-        val rawVideoId = videoIdExtractor(seedSong) ?: return emptyList()
+        val rawVideoId = videoIdExtractor(seedSong)
+            ?: withContext(ioDispatcher) { runCatching { radioSource.resolveAtvSeedVideoId(seedSong) }.getOrNull() }
+            ?: return emptyList()
+        userExplicitlyDisabled = false
         val seedKey = TrackNormalizer.normalizeKey(seedSong.title, seedSong.artist)
         sessionNormalizedKeys.clear()
         sessionNormalizedKeys.add(seedKey)
@@ -146,8 +151,9 @@ internal class CompassoEngine(
         }
 
         if (!_uiState.value.isActive) {
-            if (autoActivateAtEndOfCollection && remainingAhead <= 1 && currentSong != null) {
+            if (!userExplicitlyDisabled && autoActivateAtEndOfCollection && remainingAhead <= 1 && currentSong != null) {
                 val ytId = videoIdExtractor(currentSong)
+                    ?: withContext(ioDispatcher) { runCatching { radioSource.resolveAtvSeedVideoId(currentSong) }.getOrNull() }
                 if (ytId != null) {
                     activeSeedVideoId = ytId
                     continuationToken = null
@@ -168,6 +174,42 @@ internal class CompassoEngine(
                 onAppendTracks = onAppendTracks,
             )
         }
+    }
+
+    /**
+     * Called directly by [PlaybackManager] when the user taps Next on the last track or when the
+     * last track reaches [Player.STATE_ENDED].
+     *
+     * Returns:
+     * - `null` if the user explicitly turned Compasso off (caller may stop playback normally).
+     * - non-empty `List<Song>` with tracks to enqueue and play immediately.
+     * - `emptyList()` if Compasso is active but offline / no candidates could be fetched (caller
+     *   should keep the player open instead of closing it).
+     */
+    suspend fun fetchTracksForEndOfQueue(
+        currentSong: Song,
+        currentQueue: List<Song>,
+        currentIndex: Int,
+    ): List<Song>? {
+        if (!_uiState.value.isActive && userExplicitlyDisabled) {
+            return null
+        }
+        val currentVideoId = videoIdExtractor(currentSong)
+            ?: withContext(ioDispatcher) { runCatching { radioSource.resolveAtvSeedVideoId(currentSong) }.getOrNull() }
+        if (!_uiState.value.isActive) {
+            if (currentVideoId == null) return null
+            activeSeedVideoId = currentVideoId
+            continuationToken = null
+            _uiState.update { it.copy(isActive = true, seedTitle = currentSong.title) }
+        } else if (activeSeedVideoId == null && currentVideoId != null) {
+            activeSeedVideoId = currentVideoId
+        }
+        return fillAheadIfNeeded(
+            currentIndex = currentIndex,
+            currentQueue = currentQueue,
+            forceFetch = true,
+            onAppendTracks = {},
+        )
     }
 
     suspend fun recordPlaybackOutcome(
@@ -345,14 +387,23 @@ internal class CompassoEngine(
                 freshCandidates.addAll(pureBatch)
                 omvFallbackCandidates.addAll(omvBatch)
 
-                if (continuationToken.isNullOrBlank()) {
-                    // Fallback to another well-received track from the session or positive history
-                    val fallback = affinityTracker.bestFallbackSeed(excludingVideoIds = usedFallbackSeeds)
+                if (continuationToken.isNullOrBlank() || (pureBatch.isEmpty() && omvBatch.isEmpty())) {
+                    // Fallback to the currently playing track, another queue track, session affinity, positive history, or liked songs
+                    val fallback = currentQueue.getOrNull(currentIndex)?.let { videoIdExtractor(it) }
+                        ?.takeIf { it !in usedFallbackSeeds && it !in blockedIds }
+                        ?: currentQueue.asReversed().firstNotNullOfOrNull { song ->
+                            videoIdExtractor(song)?.takeIf { it !in usedFallbackSeeds && it !in blockedIds }
+                        }
+                        ?: affinityTracker.bestFallbackSeed(excludingVideoIds = usedFallbackSeeds)
                         ?: positiveHistory.firstOrNull { it.videoId !in usedFallbackSeeds && it.videoId !in blockedIds }?.videoId
+                        ?: radioSource.likedSongsSnapshot().firstNotNullOfOrNull { song ->
+                            videoIdExtractor(song)?.takeIf { it !in usedFallbackSeeds && it !in blockedIds }
+                        }
                     if (fallback != null) {
                         usedFallbackSeeds.add(fallback)
                         currentSeed = fallback
                         activeSeedVideoId = fallback
+                        continuationToken = null
                     } else {
                         break
                     }
@@ -376,7 +427,7 @@ internal class CompassoEngine(
             )
 
             // Filter discovery pool against all anti-repetition & block rules
-            val filteredDiscovery = filterValidCandidates(
+            var filteredDiscovery = filterValidCandidates(
                 candidates = discoveryPool,
                 excludedIds = excludedIds,
                 excludedKeys = excludedKeys,
@@ -387,7 +438,7 @@ internal class CompassoEngine(
                 .takeLast(ARTIST_WINDOW_LOOKBACK)
                 .map { TrackNormalizer.normalizePrimaryArtist(it.artist) }
 
-            val selected = selectAndInterleave(
+            var selected = selectAndInterleave(
                 discoveryCandidates = filteredDiscovery,
                 familiarCandidates = familiarPool,
                 discoveryRatio = _uiState.value.discoveryRatio,
@@ -396,6 +447,33 @@ internal class CompassoEngine(
                 excludedIds = excludedIds,
                 excludedKeys = excludedKeys,
             )
+
+            // Emergency fallback at end-of-queue: if strict 50-track history dedup filtered out the
+            // entire batch, relax history dedup while strictly preserving blocked tracks and active queue dedup.
+            if (selected.isEmpty() && forceFetch && discoveryPool.isNotEmpty()) {
+                val strictOnlyIds = HashSet<String>().apply {
+                    addAll(blockedIds)
+                    addAll(queueIds)
+                }
+                val strictOnlyKeys = HashSet<String>().apply {
+                    addAll(blockedKeys)
+                    addAll(queueKeys)
+                }
+                filteredDiscovery = filterValidCandidates(
+                    candidates = discoveryPool,
+                    excludedIds = strictOnlyIds,
+                    excludedKeys = strictOnlyKeys,
+                )
+                selected = selectAndInterleave(
+                    discoveryCandidates = filteredDiscovery,
+                    familiarCandidates = familiarPool,
+                    discoveryRatio = _uiState.value.discoveryRatio,
+                    targetCount = targetCount,
+                    initialRecentArtists = tailArtists,
+                    excludedIds = strictOnlyIds,
+                    excludedKeys = strictOnlyKeys,
+                )
+            }
 
             val songsToAppend = selected.map { it.song }
             if (songsToAppend.isNotEmpty()) {

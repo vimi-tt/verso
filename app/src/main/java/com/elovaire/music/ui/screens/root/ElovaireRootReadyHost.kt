@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 
 /** Owns the ready-state shell after the root permission gate has granted media access. */
 @Composable
@@ -91,6 +92,7 @@ internal fun ElovaireRootReadyHost(
             }
         }
     }
+    val compassoScope = androidx.compose.runtime.rememberCoroutineScope()
     var previousCompassoSong by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<elovaire.music.droidbeauty.app.domain.model.Song?>(null)
     }
@@ -100,26 +102,33 @@ internal fun ElovaireRootReadyHost(
     androidx.compose.runtime.LaunchedEffect(playbackState.currentSong?.id, playbackState.currentIndex, playbackState.queue.size) {
         val current = playbackState.currentSong
         val prev = previousCompassoSong
+        val prevPlayedMs = previousCompassoPlayedMs
         if (prev != null && current != null && prev.id != current.id) {
             val wasSkipped = prev.durationMs <= 0L ||
-                previousCompassoPlayedMs < (prev.durationMs * 0.80f).toLong()
-            composition.compassoEngine.recordPlaybackOutcome(
-                song = prev,
-                playedMs = previousCompassoPlayedMs,
-                wasSkipped = wasSkipped,
-            )
+                prevPlayedMs < (prev.durationMs * 0.80f).toLong()
             previousCompassoPlayedMs = 0L
+            compassoScope.launch {
+                composition.compassoEngine.recordPlaybackOutcome(
+                    song = prev,
+                    playedMs = prevPlayedMs,
+                    wasSkipped = wasSkipped,
+                )
+            }
         }
         previousCompassoSong = current
-        if (current != null && playbackState.queue.isNotEmpty()) {
-            composition.compassoEngine.onPlaybackPositionChanged(
-                currentIndex = playbackState.currentIndex,
-                currentQueue = playbackState.queue,
-                autoActivateAtEndOfCollection = true,
-                onAppendTracks = { newTracks ->
-                    newTracks.forEach(composition.playback::enqueueSong)
-                },
-            )
+        val queueSnapshot = playbackState.queue
+        val indexSnapshot = playbackState.currentIndex
+        if (current != null && queueSnapshot.isNotEmpty()) {
+            compassoScope.launch {
+                composition.compassoEngine.onPlaybackPositionChanged(
+                    currentIndex = indexSnapshot,
+                    currentQueue = queueSnapshot,
+                    autoActivateAtEndOfCollection = true,
+                    onAppendTracks = { newTracks ->
+                        newTracks.forEach(composition.playback::enqueueSong)
+                    },
+                )
+            }
         }
     }
     androidx.compose.runtime.LaunchedEffect(playbackState.currentSong?.id) {

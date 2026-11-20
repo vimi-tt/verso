@@ -249,6 +249,41 @@ class CompassoEngineTest {
         assertEquals(listOf("Alpha", "Beta", "Gamma", "Delta", "Epsilon"), titles)
     }
 
+    @Test
+    fun `fetchTracksForEndOfQueue extends queue on last track and returns null when explicitly disabled`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val radio = FakeRadioSource(
+            pages = mapOf(
+                ("vid_99" to null) to CompassoRadioPage(
+                    candidates = listOf(
+                        candidate("next_1", "Next One", "Artist A"),
+                        candidate("next_2", "Next Two", "Artist B"),
+                    ),
+                    continuationToken = null,
+                ),
+            ),
+        )
+        val engine = createEngine(radioSource = radio, dispatcher = dispatcher)
+        val lastTrack = testSong(id = 99L, title = "Final Track", artist = "Seed Artist")
+
+        val fetched = engine.fetchTracksForEndOfQueue(
+            currentSong = lastTrack,
+            currentQueue = listOf(lastTrack),
+            currentIndex = 0,
+        )
+        assertEquals(listOf("Next One", "Next Two"), fetched?.map { it.title })
+        assertTrue(engine.uiState.value.isActive)
+
+        // When user explicitly disables Compasso, end-of-queue returns null so playback stops normally.
+        engine.setActive(false)
+        val whenDisabled = engine.fetchTracksForEndOfQueue(
+            currentSong = lastTrack,
+            currentQueue = listOf(lastTrack),
+            currentIndex = 0,
+        )
+        assertEquals(null, whenDisabled)
+    }
+
     // -------------------------------------------------------------------------
     // Test helpers
     // -------------------------------------------------------------------------

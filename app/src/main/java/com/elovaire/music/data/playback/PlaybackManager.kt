@@ -513,7 +513,7 @@ internal class PlaybackManager internal constructor(
                 player.repeatMode == Player.REPEAT_MODE_OFF &&
                 crossfadeController.state !in setOf(CrossfadeState.Fading, CrossfadeState.PromotingNext)
             ) {
-                stopAndClearQueue()
+                handleEndOfQueueOrStop()
             } else if (
                 playbackState == Player.STATE_IDLE &&
                 !isStoppingQueue &&
@@ -1372,6 +1372,54 @@ internal class PlaybackManager internal constructor(
         updateState()
     }
 
+    internal var onEndOfQueueReached: (suspend (currentSong: Song, currentQueue: List<Song>, currentIndex: Int) -> List<Song>?)? = null
+    private var endOfQueueExtendJob: kotlinx.coroutines.Job? = null
+
+    private fun handleEndOfQueueOrStop() {
+        val extender = onEndOfQueueReached
+        val state = _state.value
+        val queue = state.queue
+        val currentIndex = resolveCurrentQueueIndex(state)
+            .takeIf { it in queue.indices }
+            ?: state.currentIndex
+        val currentSong = queue.getOrNull(currentIndex)
+        if (extender == null || currentSong == null) {
+            stopAndClearQueue()
+            return
+        }
+        if (endOfQueueExtendJob?.isActive == true) {
+            return
+        }
+        endOfQueueExtendJob = scope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
+            val appended = runCatching {
+                extender(currentSong, queue, currentIndex)
+            }.getOrElse { emptyList() }
+            if (released.get()) return@launch
+            if (appended == null) {
+                stopAndClearQueue()
+                return@launch
+            }
+            if (appended.isNotEmpty()) {
+                val targetIndex = _state.value.queue.size
+                appended.forEach { queueController.enqueueSong(it) }
+                if (player.hasNextMediaItem()) {
+                    player.seekToNextMediaItem()
+                } else if (targetIndex in 0 until player.mediaItemCount) {
+                    player.seekTo(targetIndex, 0L)
+                }
+                player.playWhenReady = true
+                if (player.playbackState == Player.STATE_ENDED || player.playbackState == Player.STATE_IDLE) {
+                    player.prepare()
+                }
+                player.play()
+                updateState()
+            } else {
+                // Compasso is active, so keep the player open instead of closing it on transient fetch failure.
+                updateState()
+            }
+        }
+    }
+
     override fun skipNext() {
         if (released.get()) return
         crossfadeController.cancel()
@@ -1379,10 +1427,10 @@ internal class PlaybackManager internal constructor(
         clearInterruptionResumeState()
         if (player.hasNextMediaItem()) {
             player.seekToNextMediaItem()
+            updateState()
         } else {
-            stopAndClearQueue()
+            handleEndOfQueueOrStop()
         }
-        updateState()
     }
 
     override fun skipPrevious() {
@@ -1505,6 +1553,7 @@ internal class PlaybackManager internal constructor(
         beginPlaybackOperation()
         runtimeStateMachine.release()
         pauseFadeJob?.cancel()
+        endOfQueueExtendJob?.cancel()
         audiobookPlaybackSpeedSyncJob.cancel()
         crossfadeController.release()
         sleepTimerController.release()
@@ -1721,6 +1770,7 @@ internal class PlaybackManager internal constructor(
     ) {
         if (songs.isEmpty()) return
         beginPlaybackOperation()
+        endOfQueueExtendJob?.cancel()
         crossfadeController.cancel()
         activeAudiobookContext = audiobookContext
             ?.takeIf {
@@ -1751,6 +1801,7 @@ internal class PlaybackManager internal constructor(
 
     private fun stopAndClearQueue() {
         beginPlaybackOperation()
+        endOfQueueExtendJob?.cancel()
         crossfadeController.cancel()
         checkpointAudiobookProgress(force = true)
         cancelPauseFade(resetVolume = false)

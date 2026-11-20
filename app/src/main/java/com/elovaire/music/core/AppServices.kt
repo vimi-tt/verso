@@ -315,7 +315,15 @@ internal class AppServices(
         onRecentPlaybackChanged = userDataStore::setRecentPlaybackIds,
         playbackDataSourceFactory = networkDataSourceFactory,
         resourceTracker = backendDiagnostics.resources,
-    )
+    ).apply {
+        onEndOfQueueReached = { currentSong, currentQueue, currentIndex ->
+            compassoEngine.fetchTracksForEndOfQueue(
+                currentSong = currentSong,
+                currentQueue = currentQueue,
+                currentIndex = currentIndex,
+            )
+        }
+    }
     private val widgetUpdateRuntimeDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         WidgetUpdateRuntime(
             playbackReader = playbackManager,
