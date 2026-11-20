@@ -15,6 +15,7 @@ internal fun HomeRouteHost(
     routeActions: RootRouteActions,
     padding: RootRoutePadding,
     youtubeHomeViewModel: YouTubeHomeViewModel,
+    recentSongsOverride: List<Song>? = null,
     @Suppress("UNUSED_PARAMETER")
     onYouTubeArtistSelected: (String) -> Unit = {},
     onYouTubeCollectionSelected: (YouTubeHomeItem.Collection) -> Unit = {},
@@ -62,7 +63,7 @@ internal fun HomeRouteHost(
 
     EditorialHomeScreen(
         editorialState = editorialState,
-        recentSongs = state.recentSongs,
+        recentSongs = recentSongsOverride ?: state.recentSongs,
         topPadding = padding.topContent,
         bottomPadding = padding.bottomContent,
         scrollToTopRequestVersion = navState.homeScrollRequestVersion,

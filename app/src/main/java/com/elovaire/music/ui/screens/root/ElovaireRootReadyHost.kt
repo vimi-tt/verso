@@ -72,11 +72,13 @@ internal fun ElovaireRootReadyHost(
     }
     androidx.compose.runtime.LaunchedEffect(playbackState.currentSong?.id) {
         val song = playbackState.currentSong ?: return@LaunchedEffect
+        composition.listeningStatsStore.recordRecentSong(song)
         composition.lastFmClient.updateNowPlaying(song)
     }
     var trackedSongId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(-1L) }
     var accumulatedPlayMs by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     var reportedExtraMs by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    var reportedYouTubeHistory by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var recordedCurrentTrack by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(playbackState.currentSong?.id, isPlaybackActuallyPlaying) {
         val song = playbackState.currentSong ?: return@LaunchedEffect
@@ -84,12 +86,17 @@ internal fun ElovaireRootReadyHost(
             trackedSongId = song.id
             accumulatedPlayMs = 0L
             reportedExtraMs = 0L
+            reportedYouTubeHistory = false
             recordedCurrentTrack = false
         }
         if (!isPlaybackActuallyPlaying) return@LaunchedEffect
         while (true) {
             kotlinx.coroutines.delay(1_000L)
             accumulatedPlayMs += 1_000L
+            if (!reportedYouTubeHistory && accumulatedPlayMs >= 15_000L) {
+                reportedYouTubeHistory = true
+                composition.youTubeCatalog.reportPlaybackHistory(song, playedSeconds = 15)
+            }
             if (!recordedCurrentTrack && accumulatedPlayMs >= 30_000L) {
                 recordedCurrentTrack = true
                 reportedExtraMs = 30_000L

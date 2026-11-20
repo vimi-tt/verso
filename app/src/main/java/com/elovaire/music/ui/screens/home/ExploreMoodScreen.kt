@@ -33,6 +33,8 @@ import elovaire.music.droidbeauty.app.data.youtube.YouTubeCatalogRepository
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeItem
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeShelf
 import elovaire.music.droidbeauty.app.domain.model.Song
+import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.editorialHomeCopy
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
 import kotlinx.coroutines.CancellationException
 
@@ -80,7 +82,9 @@ internal fun ExploreMoodScreen(
         }
     }
 
-    val topTitle = activeTitle.ifBlank { stringResource(R.string.editorial_explore_title) }
+    val language = LocalAppLanguage.current
+    val copy = remember(language) { editorialHomeCopy(language) }
+    val topTitle = activeTitle.ifBlank { copy.exploreTitle }
 
     Box(
         modifier = Modifier
@@ -129,16 +133,12 @@ internal fun ExploreMoodScreen(
             when (val state = feedState) {
                 EditorialSectionState.Loading -> {
                     item(key = "explore_loading", contentType = "loading") {
-                        EditorialSectionEmptyState(
-                            message = stringResource(R.string.editorial_home_loading_play),
-                        )
+                        EditorialSectionEmptyState(message = copy.loadingPlay)
                     }
                 }
                 EditorialSectionState.Empty -> {
                     item(key = "explore_empty", contentType = "empty") {
-                        EditorialSectionEmptyState(
-                            message = stringResource(R.string.editorial_explore_empty),
-                        )
+                        EditorialSectionEmptyState(message = copy.exploreEmpty)
                     }
                 }
                 EditorialSectionState.Error -> {

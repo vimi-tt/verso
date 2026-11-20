@@ -60,6 +60,8 @@ import elovaire.music.droidbeauty.app.R
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeItem
 import elovaire.music.droidbeauty.app.domain.model.Song
 import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
+import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.editorialHomeCopy
 import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
 import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
@@ -91,6 +93,8 @@ internal fun EditorialHomeScreen(
 ) {
     val listState = rememberElovaireLazyListState("home_screen")
     val pullToRefreshState = rememberPullToRefreshState()
+    val language = LocalAppLanguage.current
+    val copy = remember(language) { editorialHomeCopy(language) }
     val resumeItems = remember(recentSongs) {
         recentSongs.distinctBy { it.id }.take(EDITORIAL_RESUME_LIMIT)
     }
@@ -146,8 +150,8 @@ internal fun EditorialHomeScreen(
             contentType = "editorial_featured",
         ) {
             EditorialSectionBlock(
-                title = stringResource(R.string.editorial_section_featured_title),
-                subtitle = stringResource(R.string.editorial_section_featured_subtitle),
+                title = copy.featuredTitle,
+                subtitle = copy.featuredSubtitle,
                 showSeeAll = editorialState.featured is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Featured) },
             ) {
@@ -156,7 +160,7 @@ internal fun EditorialHomeScreen(
                         modifier = Modifier.padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
                     )
                     EditorialSectionState.Empty -> EditorialSectionEmptyState(
-                        message = stringResource(R.string.editorial_section_featured_empty),
+                        message = copy.featuredEmpty,
                     )
                     EditorialSectionState.Error -> EditorialSectionErrorState(
                         onRetry = { onRetrySection(EditorialSectionId.Featured) },
@@ -173,7 +177,7 @@ internal fun EditorialHomeScreen(
                             )
                         } else {
                             EditorialSectionEmptyState(
-                                message = stringResource(R.string.editorial_section_featured_empty),
+                                message = copy.featuredEmpty,
                             )
                         }
                     }
@@ -187,14 +191,14 @@ internal fun EditorialHomeScreen(
             contentType = "editorial_resume",
         ) {
             EditorialSectionBlock(
-                title = stringResource(R.string.editorial_section_resume_title),
-                subtitle = stringResource(R.string.editorial_section_resume_subtitle),
+                title = copy.resumeTitle,
+                subtitle = copy.resumeSubtitle,
                 showSeeAll = resumeItems.isNotEmpty(),
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Resume) },
             ) {
                 if (resumeItems.isEmpty()) {
                     EditorialSectionEmptyState(
-                        message = stringResource(R.string.editorial_section_resume_empty),
+                        message = copy.resumeEmpty,
                     )
                 } else {
                     EditorialResumeRow(
@@ -211,15 +215,15 @@ internal fun EditorialHomeScreen(
             contentType = "editorial_new_releases",
         ) {
             EditorialSectionBlock(
-                title = stringResource(R.string.editorial_section_new_releases_title),
-                subtitle = stringResource(R.string.editorial_section_new_releases_subtitle),
+                title = copy.newReleasesTitle,
+                subtitle = copy.newReleasesSubtitle,
                 showSeeAll = editorialState.newReleases is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.NewReleases) },
             ) {
                 when (val section = editorialState.newReleases) {
                     EditorialSectionState.Loading -> EditorialCarouselSkeleton(cardSize = 164.dp, count = 4)
                     EditorialSectionState.Empty -> EditorialSectionEmptyState(
-                        message = stringResource(R.string.editorial_section_new_releases_empty),
+                        message = copy.newReleasesEmpty,
                     )
                     EditorialSectionState.Error -> EditorialSectionErrorState(
                         onRetry = { onRetrySection(EditorialSectionId.NewReleases) },
@@ -244,15 +248,15 @@ internal fun EditorialHomeScreen(
             contentType = "editorial_essentials",
         ) {
             EditorialSectionBlock(
-                title = stringResource(R.string.editorial_section_essentials_title),
-                subtitle = stringResource(R.string.editorial_section_essentials_subtitle),
+                title = copy.essentialsTitle,
+                subtitle = copy.essentialsSubtitle,
                 showSeeAll = editorialState.essentials is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Essentials) },
             ) {
                 when (val section = editorialState.essentials) {
                     EditorialSectionState.Loading -> EditorialCarouselSkeleton(cardSize = 164.dp, count = 4)
                     EditorialSectionState.Empty -> EditorialSectionEmptyState(
-                        message = stringResource(R.string.editorial_section_essentials_empty),
+                        message = copy.essentialsEmpty,
                     )
                     EditorialSectionState.Error -> EditorialSectionErrorState(
                         onRetry = { onRetrySection(EditorialSectionId.Essentials) },
@@ -277,15 +281,15 @@ internal fun EditorialHomeScreen(
             contentType = "editorial_trending",
         ) {
             EditorialSectionBlock(
-                title = stringResource(R.string.editorial_section_trending_title),
-                subtitle = stringResource(R.string.editorial_section_trending_subtitle),
+                title = copy.trendingTitle,
+                subtitle = copy.trendingSubtitle,
                 showSeeAll = editorialState.trending is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Trending) },
             ) {
                 when (val section = editorialState.trending) {
                     EditorialSectionState.Loading -> EditorialTrendingSkeleton()
                     EditorialSectionState.Empty -> EditorialSectionEmptyState(
-                        message = stringResource(R.string.editorial_section_trending_empty),
+                        message = copy.trendingEmpty,
                     )
                     EditorialSectionState.Error -> EditorialSectionErrorState(
                         onRetry = { onRetrySection(EditorialSectionId.Trending) },
@@ -309,15 +313,15 @@ internal fun EditorialHomeScreen(
             contentType = "editorial_moods",
         ) {
             EditorialSectionBlock(
-                title = stringResource(R.string.editorial_section_moods_title),
-                subtitle = stringResource(R.string.editorial_section_moods_subtitle),
+                title = copy.moodsTitle,
+                subtitle = copy.moodsSubtitle,
                 showSeeAll = editorialState.moods is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Moods) },
             ) {
                 when (val section = editorialState.moods) {
                     EditorialSectionState.Loading -> EditorialMoodsSkeleton()
                     EditorialSectionState.Empty -> EditorialSectionEmptyState(
-                        message = stringResource(R.string.editorial_section_moods_empty),
+                        message = copy.moodsEmpty,
                     )
                     EditorialSectionState.Error -> EditorialSectionErrorState(
                         onRetry = { onRetrySection(EditorialSectionId.Moods) },
@@ -344,13 +348,11 @@ internal fun EditorialHeroCard(
     onPlay: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val openCd = stringResource(R.string.editorial_section_featured_cd, item.title)
-    val playLabel = if (isPlayingLoading) {
-        stringResource(R.string.editorial_home_loading_play)
-    } else {
-        stringResource(R.string.editorial_home_play)
-    }
-    val playCd = stringResource(R.string.editorial_home_play_cd, item.title)
+    val language = LocalAppLanguage.current
+    val copy = remember(language) { editorialHomeCopy(language) }
+    val openCd = copy.featuredCd(item.title)
+    val playLabel = if (isPlayingLoading) copy.loadingPlay else copy.play
+    val playCd = copy.playCd(item.title)
 
     Box(
         modifier = modifier
@@ -627,12 +629,9 @@ internal fun EditorialTrendingRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val rankCd = stringResource(
-        R.string.editorial_section_trending_rank_cd,
-        entry.rank,
-        entry.song.title,
-        entry.song.artist,
-    )
+    val language = LocalAppLanguage.current
+    val copy = remember(language) { editorialHomeCopy(language) }
+    val rankCd = copy.trendingRankCd(entry.rank, entry.song.title, entry.song.artist)
     val rankLabel = remember(entry.rank) { entry.rank.toString().padStart(2, '0') }
 
     Row(
@@ -721,7 +720,9 @@ internal fun EditorialMoodChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val chipCd = stringResource(R.string.editorial_section_moods_chip_cd, title)
+    val language = LocalAppLanguage.current
+    val copy = remember(language) { editorialHomeCopy(language) }
+    val chipCd = copy.moodsChipCd(title)
     val containerColor = if (selected) {
         MaterialTheme.colorScheme.onSurface
     } else {
@@ -798,8 +799,10 @@ internal fun EditorialSectionHeader(
     onSeeAllClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val seeAllLabel = stringResource(R.string.editorial_home_see_all)
-    val seeAllCd = stringResource(R.string.editorial_home_see_all_cd, title)
+    val language = LocalAppLanguage.current
+    val copy = remember(language) { editorialHomeCopy(language) }
+    val seeAllLabel = copy.seeAll
+    val seeAllCd = copy.seeAllCd(title)
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -873,7 +876,9 @@ internal fun EditorialSectionErrorState(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val retryLabel = stringResource(R.string.editorial_home_retry)
+    val language = LocalAppLanguage.current
+    val copy = remember(language) { editorialHomeCopy(language) }
+    val retryLabel = copy.retry
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -882,7 +887,7 @@ internal fun EditorialSectionErrorState(
         horizontalAlignment = Alignment.Start,
     ) {
         Text(
-            text = stringResource(R.string.editorial_home_section_error),
+            text = copy.sectionError,
             style = MaterialTheme.typography.bodyLarge,
             color = readableSecondaryTextColor(),
         )

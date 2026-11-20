@@ -35,6 +35,8 @@ import elovaire.music.droidbeauty.app.R
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeHomeItem
 import elovaire.music.droidbeauty.app.domain.model.Song
 import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
+import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.editorialHomeCopy
 import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
 import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
@@ -54,21 +56,23 @@ internal fun EditorialSectionDetailScreen(
     onRetrySection: (EditorialSectionId) -> Unit,
 ) {
     val listState = rememberLazyListState()
+    val language = LocalAppLanguage.current
+    val copy = remember(language) { editorialHomeCopy(language) }
     val title = when (sectionId) {
-        EditorialSectionId.Featured -> stringResource(R.string.editorial_section_featured_title)
-        EditorialSectionId.Resume -> stringResource(R.string.editorial_section_resume_title)
-        EditorialSectionId.NewReleases -> stringResource(R.string.editorial_section_new_releases_title)
-        EditorialSectionId.Essentials -> stringResource(R.string.editorial_section_essentials_title)
-        EditorialSectionId.Trending -> stringResource(R.string.editorial_section_trending_title)
-        EditorialSectionId.Moods -> stringResource(R.string.editorial_section_moods_title)
+        EditorialSectionId.Featured -> copy.featuredTitle
+        EditorialSectionId.Resume -> copy.resumeTitle
+        EditorialSectionId.NewReleases -> copy.newReleasesTitle
+        EditorialSectionId.Essentials -> copy.essentialsTitle
+        EditorialSectionId.Trending -> copy.trendingTitle
+        EditorialSectionId.Moods -> copy.moodsTitle
     }
     val subtitle = when (sectionId) {
-        EditorialSectionId.Featured -> stringResource(R.string.editorial_section_featured_subtitle)
-        EditorialSectionId.Resume -> stringResource(R.string.editorial_section_resume_subtitle)
-        EditorialSectionId.NewReleases -> stringResource(R.string.editorial_section_new_releases_subtitle)
-        EditorialSectionId.Essentials -> stringResource(R.string.editorial_section_essentials_subtitle)
-        EditorialSectionId.Trending -> stringResource(R.string.editorial_section_trending_subtitle)
-        EditorialSectionId.Moods -> stringResource(R.string.editorial_section_moods_subtitle)
+        EditorialSectionId.Featured -> copy.featuredSubtitle
+        EditorialSectionId.Resume -> copy.resumeSubtitle
+        EditorialSectionId.NewReleases -> copy.newReleasesSubtitle
+        EditorialSectionId.Essentials -> copy.essentialsSubtitle
+        EditorialSectionId.Trending -> copy.trendingSubtitle
+        EditorialSectionId.Moods -> copy.moodsSubtitle
     }
 
     Box(
@@ -101,9 +105,7 @@ internal fun EditorialSectionDetailScreen(
                 EditorialSectionId.Resume -> {
                     if (recentSongs.isEmpty()) {
                         item(key = "resume_empty", contentType = "empty") {
-                            EditorialSectionEmptyState(
-                                message = stringResource(R.string.editorial_section_resume_empty),
-                            )
+                            EditorialSectionEmptyState(message = copy.resumeEmpty)
                         }
                     } else {
                         items(
@@ -130,21 +132,19 @@ internal fun EditorialSectionDetailScreen(
                         else -> editorialState.essentials
                     }
                     val emptyMsg = when (sectionId) {
-                        EditorialSectionId.Featured -> R.string.editorial_section_featured_empty
-                        EditorialSectionId.NewReleases -> R.string.editorial_section_new_releases_empty
-                        else -> R.string.editorial_section_essentials_empty
+                        EditorialSectionId.Featured -> copy.featuredEmpty
+                        EditorialSectionId.NewReleases -> copy.newReleasesEmpty
+                        else -> copy.essentialsEmpty
                     }
                     when (state) {
                         EditorialSectionState.Loading -> {
                             item(key = "col_loading", contentType = "loading") {
-                                EditorialSectionEmptyState(
-                                    message = stringResource(R.string.editorial_home_loading_play),
-                                )
+                                EditorialSectionEmptyState(message = copy.loadingPlay)
                             }
                         }
                         EditorialSectionState.Empty -> {
                             item(key = "col_empty", contentType = "empty") {
-                                EditorialSectionEmptyState(message = stringResource(emptyMsg))
+                                EditorialSectionEmptyState(message = emptyMsg)
                             }
                         }
                         EditorialSectionState.Error -> {
@@ -186,16 +186,12 @@ internal fun EditorialSectionDetailScreen(
                     when (val state = editorialState.trending) {
                         EditorialSectionState.Loading -> {
                             item(key = "trend_loading", contentType = "loading") {
-                                EditorialSectionEmptyState(
-                                    message = stringResource(R.string.editorial_home_loading_play),
-                                )
+                                EditorialSectionEmptyState(message = copy.loadingPlay)
                             }
                         }
                         EditorialSectionState.Empty -> {
                             item(key = "trend_empty", contentType = "empty") {
-                                EditorialSectionEmptyState(
-                                    message = stringResource(R.string.editorial_section_trending_empty),
-                                )
+                                EditorialSectionEmptyState(message = copy.trendingEmpty)
                             }
                         }
                         EditorialSectionState.Error -> {
@@ -224,16 +220,12 @@ internal fun EditorialSectionDetailScreen(
                     when (val state = editorialState.moods) {
                         EditorialSectionState.Loading -> {
                             item(key = "moods_loading", contentType = "loading") {
-                                EditorialSectionEmptyState(
-                                    message = stringResource(R.string.editorial_home_loading_play),
-                                )
+                                EditorialSectionEmptyState(message = copy.loadingPlay)
                             }
                         }
                         EditorialSectionState.Empty -> {
                             item(key = "moods_empty", contentType = "empty") {
-                                EditorialSectionEmptyState(
-                                    message = stringResource(R.string.editorial_section_moods_empty),
-                                )
+                                EditorialSectionEmptyState(message = copy.moodsEmpty)
                             }
                         }
                         EditorialSectionState.Error -> {

@@ -88,11 +88,55 @@ internal class ListeningStatsStore(
     private val appContext = context.applicationContext
     private val legacyStatsFile = File(appContext.filesDir, "listening_stats.json")
     private val eventsFile = File(appContext.filesDir, "listening_events.json")
+    private val recentSongsFile = File(appContext.filesDir, "recent_played_songs.json")
     private val lastPlaybackFile = File(appContext.filesDir, "last_playback_session.json")
     private val lock = Any()
 
     private val _events = MutableStateFlow(loadInitialEvents())
     val events: StateFlow<List<ListeningStatEvent>> = _events.asStateFlow()
+
+    private val _recentSongs = MutableStateFlow(loadInitialRecentSongs())
+    val recentSongs: StateFlow<List<Song>> = _recentSongs.asStateFlow()
+
+    fun recordRecentSong(song: Song) {
+        if (song.mediaKind != AudioMediaKind.Music) return
+        _recentSongs.update { current ->
+            if (current.firstOrNull()?.id == song.id) return@update current
+            (listOf(song) + current.filterNot { it.id == song.id }).take(30)
+        }
+        val snapshot = _recentSongs.value
+        scope.launch(ioDispatcher) {
+            synchronized(lock) {
+                runCatching {
+                    val array = JSONArray()
+                    snapshot.forEach { array.put(songToJson(it)) }
+                    recentSongsFile.writeText(array.toString())
+                }
+            }
+        }
+    }
+
+    private fun loadInitialRecentSongs(): List<Song> {
+        synchronized(lock) {
+            if (recentSongsFile.isFile) {
+                val loaded = runCatching {
+                    val array = JSONArray(recentSongsFile.readText())
+                    buildList {
+                        for (i in 0 until array.length()) {
+                            val obj = array.optJSONObject(i) ?: continue
+                            jsonToSong(obj)?.let(::add)
+                        }
+                    }
+                }.getOrDefault(emptyList())
+                if (loaded.isNotEmpty()) return loaded
+            }
+            return _events.value
+                .asReversed()
+                .map { it.song }
+                .distinctBy { it.id }
+                .take(30)
+        }
+    }
 
     fun recordSongPlayed(song: Song, initialListenedMs: Long = 30_000L) {
         if (song.mediaKind != AudioMediaKind.Music) return

@@ -57,6 +57,7 @@ import elovaire.music.droidbeauty.app.domain.model.Song
 import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
 import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
 import elovaire.music.droidbeauty.app.ui.i18n.commonUiCopy
+import elovaire.music.droidbeauty.app.ui.i18n.editorialHomeCopy
 import elovaire.music.droidbeauty.app.ui.i18n.localizedCountLabel
 import elovaire.music.droidbeauty.app.ui.i18n.youtubeDownloadCopy
 import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
@@ -115,6 +116,7 @@ internal fun YouTubeDownloadsScreen(
     val language = LocalAppLanguage.current
     val copy = remember(language) { youtubeDownloadCopy(language) }
     val commonCopy = remember(language) { commonUiCopy(language) }
+    val editorialCopy = remember(language) { editorialHomeCopy(language) }
     val listState = rememberElovaireLazyListState("yt_downloads_screen")
 
     var activeTab by rememberSaveable { mutableStateOf(DownloadsTab.Collections) }
@@ -122,8 +124,8 @@ internal fun YouTubeDownloadsScreen(
     var selectedLetter by rememberSaveable { mutableStateOf<String?>(null) }
     var showInProgress by rememberSaveable { mutableStateOf(downloadsState.activeDownloads.isNotEmpty()) }
 
-    val unknownAlbumLabel = stringResource(R.string.downloads_unknown_album)
-    val unknownArtistLabel = stringResource(R.string.downloads_unknown_artist)
+    val unknownAlbumLabel = editorialCopy.unknownAlbum
+    val unknownArtistLabel = editorialCopy.unknownArtist
 
     // Group loose downloaded songs by album for the editorial grid without touching disk or rendering all tracks upfront
     val derivedAlbums = remember(downloadsState.downloadedSongs, downloadsState.downloadedCollections, unknownAlbumLabel, unknownArtistLabel) {
@@ -252,7 +254,7 @@ internal fun YouTubeDownloadsScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Text(
-                        text = stringResource(R.string.downloads_subtitle),
+                        text = editorialCopy.downloadsSubtitle,
                         style = MaterialTheme.typography.bodyLarge,
                         color = readableSecondaryTextColor(),
                     )
@@ -262,7 +264,7 @@ internal fun YouTubeDownloadsScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             EditorialActionPill(
-                                label = stringResource(R.string.editorial_home_play),
+                                label = editorialCopy.play,
                                 iconResId = R.drawable.ic_lucide_play,
                                 primary = true,
                                 onClick = {
@@ -272,7 +274,7 @@ internal fun YouTubeDownloadsScreen(
                                 modifier = Modifier.weight(1f),
                             )
                             EditorialActionPill(
-                                label = stringResource(R.string.downloads_shuffle),
+                                label = editorialCopy.shuffle,
                                 iconResId = R.drawable.ic_lucide_shuffle,
                                 primary = false,
                                 onClick = {
@@ -362,12 +364,12 @@ internal fun YouTubeDownloadsScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         EditorialFilterPill(
-                            label = stringResource(R.string.downloads_tab_collections),
+                            label = editorialCopy.tabCollections,
                             selected = activeTab == DownloadsTab.Collections,
                             onClick = { activeTab = DownloadsTab.Collections },
                         )
                         EditorialFilterPill(
-                            label = "${stringResource(R.string.downloads_tab_songs)} (${downloadsState.downloadedSongs.size})",
+                            label = "${editorialCopy.tabSongs} (${downloadsState.downloadedSongs.size})",
                             selected = activeTab == DownloadsTab.Songs,
                             onClick = { activeTab = DownloadsTab.Songs },
                         )
@@ -385,7 +387,7 @@ internal fun YouTubeDownloadsScreen(
                 if (savedCollectionRows.isNotEmpty()) {
                     item(key = "dl_saved_collections_title", contentType = "dl_section_title") {
                         Text(
-                            text = stringResource(R.string.downloads_collections_saved_title),
+                            text = editorialCopy.collectionsSavedTitle,
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
@@ -423,7 +425,7 @@ internal fun YouTubeDownloadsScreen(
                 if (derivedAlbumRows.isNotEmpty()) {
                     item(key = "dl_derived_albums_title", contentType = "dl_section_title") {
                         Text(
-                            text = stringResource(R.string.downloads_collections_grouped_title),
+                            text = editorialCopy.collectionsGroupedTitle,
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
@@ -468,14 +470,14 @@ internal fun YouTubeDownloadsScreen(
                         ) {
                             item(key = "flt_az") {
                                 EditorialFilterPill(
-                                    label = stringResource(R.string.downloads_filter_alphabet),
+                                    label = editorialCopy.filterAlphabet,
                                     selected = songFilter == DownloadsSongFilter.Alphabet,
                                     onClick = { songFilter = DownloadsSongFilter.Alphabet },
                                 )
                             }
                             item(key = "flt_album") {
                                 EditorialFilterPill(
-                                    label = stringResource(R.string.downloads_filter_album),
+                                    label = editorialCopy.filterAlbum,
                                     selected = songFilter == DownloadsSongFilter.Album,
                                     onClick = {
                                         songFilter = DownloadsSongFilter.Album
@@ -485,7 +487,7 @@ internal fun YouTubeDownloadsScreen(
                             }
                             item(key = "flt_artist") {
                                 EditorialFilterPill(
-                                    label = stringResource(R.string.downloads_filter_artist),
+                                    label = editorialCopy.filterArtist,
                                     selected = songFilter == DownloadsSongFilter.Artist,
                                     onClick = {
                                         songFilter = DownloadsSongFilter.Artist
@@ -502,7 +504,7 @@ internal fun YouTubeDownloadsScreen(
                             ) {
                                 item(key = "letter_all") {
                                     AlphabetFilterChip(
-                                        label = stringResource(R.string.downloads_letter_all),
+                                        label = editorialCopy.letterAll,
                                         selected = selectedLetter == null,
                                         onClick = { selectedLetter = null },
                                     )
@@ -774,7 +776,9 @@ internal fun EditorialLibrarySongRow(
     modifier: Modifier = Modifier,
     showDivider: Boolean = true,
 ) {
-    val toggleFavCd = stringResource(R.string.downloads_toggle_favorite_cd, song.title)
+    val language = LocalAppLanguage.current
+    val editorialCopy = remember(language) { editorialHomeCopy(language) }
+    val toggleFavCd = editorialCopy.toggleFavoriteCd(song.title)
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -855,7 +859,9 @@ private fun ActiveDownloadRow(
     task: YouTubeDownloadTask,
     onCancel: () -> Unit,
 ) {
-    val cancelCd = stringResource(R.string.downloads_cancel_cd, task.song.title)
+    val language = LocalAppLanguage.current
+    val editorialCopy = remember(language) { editorialHomeCopy(language) }
+    val cancelCd = editorialCopy.cancelDownloadCd(task.song.title)
     Row(
         modifier = Modifier
             .fillMaxWidth()

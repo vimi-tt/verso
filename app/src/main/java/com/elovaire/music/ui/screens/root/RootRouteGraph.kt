@@ -77,10 +77,15 @@ internal fun RootRouteGraph(
                     )
                 }
             }
+            val statsRecentSongs by listeningStatsStore.recentSongs.collectAsStateWithLifecycle()
+            val mergedRecentSongs = remember(statsRecentSongs, routeState.recentSongs) {
+                (statsRecentSongs + routeState.recentSongs).distinctBy { it.id }
+            }
             AlbumTransitionContent(this) {
                 HomeRouteHost(
                     navState = navState,
                     state = routeState,
+                    recentSongsOverride = mergedRecentSongs,
                     routeActions = routeActions,
                     padding = padding,
                     youtubeHomeViewModel = youtubeHomeViewModel,
@@ -594,10 +599,14 @@ internal fun RootRouteGraph(
                     )
                 }
             }
+            val statsRecentSongs by listeningStatsStore.recentSongs.collectAsStateWithLifecycle()
+            val mergedRecentSongs = remember(statsRecentSongs, routeState.recentSongs) {
+                (statsRecentSongs + routeState.recentSongs).distinctBy { it.id }
+            }
             EditorialSectionDetailScreen(
                 sectionId = sectionId,
                 editorialState = editorialState,
-                recentSongs = routeState.recentSongs,
+                recentSongs = mergedRecentSongs,
                 bottomPadding = padding.bottomContent,
                 onBack = { navState.navController.popBackStack() },
                 onOpenCollection = onOpenCollection,

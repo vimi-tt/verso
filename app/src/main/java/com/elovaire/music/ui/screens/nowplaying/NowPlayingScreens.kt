@@ -5438,17 +5438,62 @@ private fun LyricsReadyContent(
             contentType = { _, _ -> "lyric_line" },
         ) { index, line ->
             val isActive = payload.isSynced && index == activeLyricLineIndex
-            val lineAlpha = animateFloatAsState(
-                targetValue = if (isActive) 1f else 0.7f,
-                animationSpec = motionSpecs.tween(MotionDuration.Medium, easing = MotionEasing.RefinedDecelerate),
+            val distanceFromActive = if (payload.isSynced && activeLyricLineIndex >= 0) {
+                kotlin.math.abs(index - activeLyricLineIndex)
+            } else {
+                0
+            }
+            val targetAlpha = when {
+                !payload.isSynced -> 0.92f
+                autoScrollHeld -> if (isActive) 1f else 0.72f
+                isActive -> 1f
+                distanceFromActive == 1 -> 0.50f
+                else -> 0.30f
+            }
+            val targetScale = when {
+                !payload.isSynced || autoScrollHeld -> 1f
+                isActive -> 1f
+                else -> 0.96f
+            }
+            val targetBlur = when {
+                !payload.isSynced || autoScrollHeld || isActive -> 0.dp
+                distanceFromActive == 1 -> 1.2.dp
+                else -> 2.4.dp
+            }
+            val lineAlpha by animateFloatAsState(
+                targetValue = targetAlpha,
+                animationSpec = motionSpecs.tween(280, easing = MotionEasing.RefinedDecelerate),
                 label = "lyrics_line_alpha_$index",
+            )
+            val lineScale by animateFloatAsState(
+                targetValue = targetScale,
+                animationSpec = motionSpecs.tween(280, easing = MotionEasing.RefinedDecelerate),
+                label = "lyrics_line_scale_$index",
+            )
+            val lineBlur by animateDpAsState(
+                targetValue = targetBlur,
+                animationSpec = motionSpecs.tween(280, easing = MotionEasing.RefinedDecelerate),
+                label = "lyrics_line_blur_$index",
             )
             val nextLineStartMs = payload.lines.getOrNull(index + 1)?.startTimeMs
             val lineModifier = Modifier
                 .animateItem(placementSpec = motionSpecs.listPlacement())
                 .fillMaxWidth()
+                .then(
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && lineBlur > 0.05.dp) {
+                        Modifier.blur(
+                            radius = lineBlur,
+                            edgeTreatment = androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded,
+                        )
+                    } else {
+                        Modifier
+                    },
+                )
                 .graphicsLayer {
-                    alpha = lineAlpha.value
+                    alpha = lineAlpha
+                    scaleX = lineScale
+                    scaleY = lineScale
+                    transformOrigin = TransformOrigin(0f, 0.5f)
                 }
                 .clickable(
                     enabled = payload.isSynced && line.startTimeMs != null,
@@ -5468,29 +5513,36 @@ private fun LyricsReadyContent(
                         latestOnSeekTo(seekPositionMs)
                     }
                 }
-            if (isActive) {
-                ActiveKaraokeLyricLineText(
-                    line = line,
-                    nextLineStartMs = nextLineStartMs,
-                    playbackManager = playbackManager,
-                    isPlaying = isPlaying,
-                    contentColor = contentColor,
-                    modifier = lineModifier,
-                )
-            } else {
-                Text(
-                    text = line.text,
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Medium,
-                        lineHeight = 29.sp,
-                    ),
-                    color = contentColor,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Start,
-                    softWrap = true,
-                    maxLines = Int.MAX_VALUE,
-                    modifier = lineModifier,
-                )
+            androidx.compose.animation.Crossfade(
+                targetState = isActive,
+                animationSpec = motionSpecs.tween(220, easing = MotionEasing.RefinedDecelerate),
+                modifier = lineModifier,
+                label = "lyrics_line_active_crossfade_$index",
+            ) { active ->
+                if (active) {
+                    ActiveKaraokeLyricLineText(
+                        line = line,
+                        nextLineStartMs = nextLineStartMs,
+                        playbackManager = playbackManager,
+                        isPlaying = isPlaying,
+                        contentColor = contentColor,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    Text(
+                        text = line.text,
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Medium,
+                            lineHeight = 29.sp,
+                        ),
+                        color = contentColor,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+                        softWrap = true,
+                        maxLines = Int.MAX_VALUE,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
     }
@@ -5528,7 +5580,7 @@ private fun ActiveKaraokeLyricLineText(
 
     val positionMs = smoothPositionMs
     val litStyle = remember(contentColor) { androidx.compose.ui.text.SpanStyle(color = contentColor) }
-    val dimStyle = remember(contentColor) { androidx.compose.ui.text.SpanStyle(color = contentColor.copy(alpha = 0.36f)) }
+    val dimStyle = remember(contentColor) { androidx.compose.ui.text.SpanStyle(color = contentColor.copy(alpha = 0.48f)) }
 
     fun androidx.compose.ui.text.AnnotatedString.Builder.appendSmoothChars(
         text: String,

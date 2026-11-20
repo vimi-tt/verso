@@ -728,12 +728,6 @@ internal fun SettingsScreen(
                         )
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             SettingNavigationRow(
-                                title = homeLayoutTitle(appLanguage),
-                                subtitle = homeLayoutSubtitle(appLanguage),
-                                onClick = onOpenHomeLayout,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                            )
-                            SettingNavigationRow(
                                 title = styleCopy.title,
                                 subtitle = styleCopy.subtitle,
                                 onClick = onOpenNowPlayingBarStyle,

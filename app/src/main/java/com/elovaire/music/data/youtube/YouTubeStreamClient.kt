@@ -174,6 +174,10 @@ internal class YouTubeStreamClient(
         if (!qualityPreferences.state.value.syncPlaybackHistoryToYouTube) return
         val cookies = sessionManager.getCookies()?.takeIf { it.isNotBlank() } ?: return
         val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://music.youtube.com")
+        val clientVersion = "1.20260401.01.00"
+        val locale = java.util.Locale.getDefault()
+        val hl = locale.language.ifBlank { "en" }
+        val gl = locale.country.ifBlank { "US" }
         runCatching {
             val playerPayload = JSONObject()
                 .put("videoId", videoId)
@@ -183,9 +187,9 @@ internal class YouTubeStreamClient(
                         "client",
                         JSONObject()
                             .put("clientName", "WEB_REMIX")
-                            .put("clientVersion", "1.20250101.01.00")
-                            .put("hl", "en")
-                            .put("gl", "US"),
+                            .put("clientVersion", clientVersion)
+                            .put("hl", hl)
+                            .put("gl", gl),
                     ),
                 )
             val webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -196,7 +200,7 @@ internal class YouTubeStreamClient(
                 .header("Origin", "https://music.youtube.com")
                 .header("Referer", "https://music.youtube.com/")
                 .header("X-Youtube-Client-Name", "67")
-                .header("X-Youtube-Client-Version", "1.20250101.01.00")
+                .header("X-Youtube-Client-Version", clientVersion)
                 .apply {
                     if (authHeader != null) {
                         header("Authorization", authHeader)
@@ -207,7 +211,10 @@ internal class YouTubeStreamClient(
                 .build()
 
             val tracking = okHttpClient.newCall(playerRequest).execute().use { response ->
-                if (!response.isSuccessful) return@use null
+                if (!response.isSuccessful) {
+                    android.util.Log.w("YouTubeHistory", "Player tracking fetch failed HTTP ${response.code} for $videoId")
+                    return@use null
+                }
                 val body = response.body?.string().orEmpty()
                 val json = JSONObject(body)
                 val pt = json.optJSONObject("playbackTracking") ?: return@use null
@@ -220,11 +227,16 @@ internal class YouTubeStreamClient(
                 val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
                 repeat(16) { append(chars.random()) }
             }
-            val (playbackBaseUrl, watchtimeBaseUrl) = tracking
+            val (rawPlaybackUrl, rawWatchtimeUrl) = tracking
+            // Route stats pings through music.youtube.com so Origin + SAPISIDHASH + cookies match YouTube Music's watch history endpoint.
+            val playbackBaseUrl = rawPlaybackUrl.replace("https://s.youtube.com/", "https://music.youtube.com/")
+            val watchtimeBaseUrl = rawWatchtimeUrl.replace("https://s.youtube.com/", "https://music.youtube.com/")
+            val len = durationSeconds.coerceAtLeast(playedSeconds).coerceAtLeast(1)
+
             if (playbackBaseUrl.isNotBlank()) {
                 val sep = if ('?' in playbackBaseUrl) '&' else '?'
                 val ping = Request.Builder()
-                    .url("${playbackBaseUrl}${sep}ver=2&cpn=$cpn&el=detailpage&volume=100")
+                    .url("${playbackBaseUrl}${sep}ver=2&c=WEB_REMIX&cver=$clientVersion&cpn=$cpn&el=detailpage&cmt=0&len=$len&state=playing&volume=100&muted=0")
                     .header("User-Agent", webUserAgent)
                     .header("Cookie", cookies)
                     .header("Origin", "https://music.youtube.com")
@@ -237,14 +249,17 @@ internal class YouTubeStreamClient(
                     }
                     .get()
                     .build()
-                okHttpClient.newCall(ping).execute().close()
+                okHttpClient.newCall(ping).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        android.util.Log.w("YouTubeHistory", "Playback ping HTTP ${resp.code} for $videoId")
+                    }
+                }
             }
             if (watchtimeBaseUrl.isNotBlank()) {
                 val sep = if ('?' in watchtimeBaseUrl) '&' else '?'
-                val len = durationSeconds.coerceAtLeast(playedSeconds)
                 val watch = Request.Builder()
                     .url(
-                        "${watchtimeBaseUrl}${sep}ver=2&cpn=$cpn&cmt=$playedSeconds&st=0&et=$playedSeconds&rt=$playedSeconds&len=$len&state=playing&final=1",
+                        "${watchtimeBaseUrl}${sep}ver=2&c=WEB_REMIX&cver=$clientVersion&cpn=$cpn&el=detailpage&cmt=$playedSeconds&st=0&et=$playedSeconds&rt=$playedSeconds&len=$len&state=playing&volume=100&muted=0&final=1",
                     )
                     .header("User-Agent", webUserAgent)
                     .header("Cookie", cookies)
@@ -258,8 +273,14 @@ internal class YouTubeStreamClient(
                     }
                     .get()
                     .build()
-                okHttpClient.newCall(watch).execute().close()
+                okHttpClient.newCall(watch).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        android.util.Log.w("YouTubeHistory", "Watchtime ping HTTP ${resp.code} for $videoId")
+                    }
+                }
             }
+        }.onFailure { err ->
+            android.util.Log.w("YouTubeHistory", "Failed to report playback history for $videoId", err)
         }
     }
 }

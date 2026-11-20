@@ -32,6 +32,7 @@ import elovaire.music.droidbeauty.app.R
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeAccountUiState
 import elovaire.music.droidbeauty.app.domain.model.Song
 import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.editorialHomeCopy
 import elovaire.music.droidbeauty.app.ui.i18n.youtubeAccountCopy
 import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
@@ -64,6 +65,7 @@ internal fun YouTubeFavoritesScreen(
 ) {
     val language = LocalAppLanguage.current
     val copy = remember(language) { youtubeAccountCopy(language) }
+    val editorialCopy = remember(language) { editorialHomeCopy(language) }
     val listState = rememberElovaireLazyListState("yt_favorites_screen")
 
     var selectedSource by rememberSaveable { mutableStateOf(FavoritesSourceFilter.All) }
@@ -135,7 +137,7 @@ internal fun YouTubeFavoritesScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Text(
-                        text = stringResource(R.string.favorites_subtitle),
+                        text = editorialCopy.favoritesSubtitle,
                         style = MaterialTheme.typography.bodyLarge,
                         color = readableSecondaryTextColor(),
                     )
@@ -145,7 +147,7 @@ internal fun YouTubeFavoritesScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             EditorialActionPill(
-                                label = stringResource(R.string.editorial_home_play),
+                                label = editorialCopy.play,
                                 iconResId = R.drawable.ic_lucide_play,
                                 primary = true,
                                 onClick = {
@@ -155,7 +157,7 @@ internal fun YouTubeFavoritesScreen(
                                 modifier = Modifier.weight(1f),
                             )
                             EditorialActionPill(
-                                label = stringResource(R.string.downloads_shuffle),
+                                label = editorialCopy.shuffle,
                                 iconResId = R.drawable.ic_lucide_shuffle,
                                 primary = false,
                                 onClick = {
@@ -206,28 +208,28 @@ internal fun YouTubeFavoritesScreen(
                         ) {
                             item(key = "sort_recent") {
                                 EditorialFilterPill(
-                                    label = stringResource(R.string.downloads_filter_recent),
+                                    label = editorialCopy.filterRecent,
                                     selected = sortMode == FavoritesSortMode.Recent,
                                     onClick = { sortMode = FavoritesSortMode.Recent },
                                 )
                             }
                             item(key = "sort_az") {
                                 EditorialFilterPill(
-                                    label = stringResource(R.string.downloads_filter_alphabet),
+                                    label = editorialCopy.filterAlphabet,
                                     selected = sortMode == FavoritesSortMode.Alphabet,
                                     onClick = { sortMode = FavoritesSortMode.Alphabet },
                                 )
                             }
                             item(key = "sort_artist") {
                                 EditorialFilterPill(
-                                    label = stringResource(R.string.downloads_filter_artist),
+                                    label = editorialCopy.filterArtist,
                                     selected = sortMode == FavoritesSortMode.Artist,
                                     onClick = { sortMode = FavoritesSortMode.Artist },
                                 )
                             }
                             item(key = "sort_album") {
                                 EditorialFilterPill(
-                                    label = stringResource(R.string.downloads_filter_album),
+                                    label = editorialCopy.filterAlbum,
                                     selected = sortMode == FavoritesSortMode.Album,
                                     onClick = { sortMode = FavoritesSortMode.Album },
                                 )
@@ -287,7 +289,7 @@ internal fun YouTubeFavoritesScreen(
         }
 
         PinnedBackTopBar(
-            title = stringResource(R.string.favorites_screen_title),
+            title = editorialCopy.favoritesTitle,
             onBack = onBack,
             modifier = Modifier.align(Alignment.TopCenter),
         )
