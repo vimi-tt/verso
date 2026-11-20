@@ -332,10 +332,6 @@ internal fun RootRouteGraph(
                 },
                 isYouTubeLoggedIn = accountState.isLoggedIn,
                 isYouTubeSyncing = accountState.isSyncing,
-                favoritesCount = totalFavoritesCount,
-                downloadsCount = downloadsState.downloadedSongs.size,
-                onOpenFavorites = { navState.navigateTo(Routes.youtubeFavorites()) },
-                onOpenDownloads = { navState.navigateTo(Routes.youtubeDownloads()) },
                 onSyncYouTube = { scope.launch { youTubeCatalog.syncAccountLibrary(force = true) } },
                 onOpenSettings = { navState.navigateTo(SETTINGS_ROUTE) },
             )

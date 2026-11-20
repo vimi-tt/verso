@@ -18,10 +18,6 @@ internal fun PlaylistsRouteHost(
     onOpenYouTubePlaylist: (elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary) -> Unit = {},
     isYouTubeLoggedIn: Boolean = false,
     isYouTubeSyncing: Boolean = false,
-    favoritesCount: Int = 0,
-    downloadsCount: Int = 0,
-    onOpenFavorites: () -> Unit = {},
-    onOpenDownloads: () -> Unit = {},
     onSyncYouTube: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
 ) {
@@ -53,10 +49,6 @@ internal fun PlaylistsRouteHost(
         onOpenYouTubePlaylist = onOpenYouTubePlaylist,
         isYouTubeLoggedIn = isYouTubeLoggedIn,
         isYouTubeSyncing = isYouTubeSyncing,
-        favoritesCount = favoritesCount,
-        downloadsCount = downloadsCount,
-        onOpenFavorites = onOpenFavorites,
-        onOpenDownloads = onOpenDownloads,
         onSyncYouTube = onSyncYouTube,
         onOpenSettings = onOpenSettings,
     )

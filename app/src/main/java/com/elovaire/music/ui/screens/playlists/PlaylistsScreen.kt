@@ -90,10 +90,6 @@ internal fun PlaylistsScreen(
     onOpenYouTubePlaylist: (elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary) -> Unit = {},
     isYouTubeLoggedIn: Boolean = false,
     isYouTubeSyncing: Boolean = false,
-    favoritesCount: Int = 0,
-    downloadsCount: Int = 0,
-    onOpenFavorites: () -> Unit = {},
-    onOpenDownloads: () -> Unit = {},
     onSyncYouTube: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
 ) {
@@ -105,7 +101,7 @@ internal fun PlaylistsScreen(
     var selectedPlaylistIds by rememberSaveable { mutableStateOf(setOf<Long>()) }
     val playlistRows = remember(playlists, songsById) {
         buildPlaylistRowModels(
-            playlists = playlists,
+            playlists = playlists.filterNot(Playlist::isSystem),
             songsById = songsById,
         )
     }
@@ -141,7 +137,6 @@ internal fun PlaylistsScreen(
     ) {
         val language = LocalAppLanguage.current
         val accountCopy = remember(language) { elovaire.music.droidbeauty.app.ui.i18n.youtubeAccountCopy(language) }
-        val dlCopy = remember(language) { elovaire.music.droidbeauty.app.ui.i18n.youtubeDownloadCopy(language) }
         val nonEmptySmartPlaylists = remember(smartPlaylists) {
             smartPlaylists.filter { it.songs.isNotEmpty() }
         }
@@ -161,88 +156,6 @@ internal fun PlaylistsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item(
-                key = "streaming_quick_collections",
-                span = { GridItemSpan(maxLineSpan) },
-                contentType = "streaming_quick_collections",
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(ElovaireRadii.card))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .elovaireClickable(
-                                interactionSource = rememberElovaireInteractionSource(),
-                                onClick = onOpenFavorites,
-                            )
-                            .padding(horizontal = 14.dp, vertical = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_lucide_star_filled),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = accountCopy.favoritesTitle,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                text = localizedCountLabel(favoritesCount, "song", language),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(ElovaireRadii.card))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .elovaireClickable(
-                                interactionSource = rememberElovaireInteractionSource(),
-                                onClick = onOpenDownloads,
-                            )
-                            .padding(horizontal = 14.dp, vertical = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_lucide_download),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = dlCopy.downloadsTitle,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                text = localizedCountLabel(downloadsCount, "song", language),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
-            }
-
             item(
                 key = "youtube_playlists_header",
                 span = { GridItemSpan(maxLineSpan) },
