@@ -221,6 +221,7 @@ internal fun RootRouteGraph(
                 accountState = accountState,
                 topPadding = padding.topContent,
                 bottomPadding = padding.bottomContent,
+                onBack = { navState.navController.popBackStack() },
                 onRefreshAccount = {
                     scope.launch { youTubeCatalog.syncAccountLibrary() }
                 },

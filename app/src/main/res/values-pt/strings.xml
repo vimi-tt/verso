@@ -44,4 +44,23 @@
     <string name="editorial_explore_title">Explorar</string>
     <string name="editorial_explore_empty">Nenhum conteúdo encontrado para este clima</string>
     <string name="editorial_explore_back_cd">Voltar</string>
+
+    <!-- Editorial Downloads & Favorites (pt-BR) -->
+    <string name="downloads_tab_collections">Coleções</string>
+    <string name="downloads_tab_songs">Músicas</string>
+    <string name="downloads_filter_alphabet">A–Z</string>
+    <string name="downloads_filter_album">Álbum</string>
+    <string name="downloads_filter_artist">Artista</string>
+    <string name="downloads_filter_recent">Recentes</string>
+    <string name="downloads_letter_all">Todas</string>
+    <string name="downloads_shuffle">Aleatório</string>
+    <string name="downloads_collections_saved_title">Álbuns e playlists</string>
+    <string name="downloads_collections_grouped_title">Por álbum</string>
+    <string name="downloads_unknown_album">Sem álbum</string>
+    <string name="downloads_unknown_artist">Artista desconhecido</string>
+    <string name="downloads_cancel_cd">Cancelar download de %1$s</string>
+    <string name="downloads_toggle_favorite_cd">Alternar favorito para %1$s</string>
+    <string name="favorites_screen_title">Favoritos</string>
+    <string name="favorites_subtitle">Suas faixas marcadas no Verso e no YouTube Music</string>
+    <string name="downloads_subtitle">Sua biblioteca disponível sem internet</string>
 </resources>
