@@ -80,7 +80,7 @@ internal object RootRouteRegistry {
     const val SMART_PLAYLIST_EDITOR_EXISTING = "$SMART_PLAYLIST_EDITOR_ROUTE/{smartPlaylistId}"
     const val ALBUM = "$ALBUM_ROUTE/{albumId}"
     const val ALBUM_TAG_EDITOR = "$ALBUM_TAG_EDITOR_ROUTE/{albumId}"
-    const val LIBRARY_COLLECTION = "$LIBRARY_COLLECTION_ROUTE/{kind}?localOnly={localOnly}"
+    const val LIBRARY_COLLECTION = "$LIBRARY_COLLECTION_ROUTE/{kind}"
     const val GENRE = "$GENRE_ROUTE/{genre}"
     const val ARTIST = "$ARTIST_ROUTE/{artistName}"
     const val YOUTUBE_ARTIST = "$YOUTUBE_ARTIST_ROUTE/{artistId}"
@@ -179,8 +179,7 @@ internal object Routes {
     fun genre(genre: String): String = "$GENRE_ROUTE/${Uri.encode(genre)}"
     fun libraryCollection(
         kind: LibraryCollectionKind,
-        localOnly: Boolean = false,
-    ): String = "$LIBRARY_COLLECTION_ROUTE/${kind.name}?localOnly=$localOnly"
+    ): String = "$LIBRARY_COLLECTION_ROUTE/${kind.name}"
     fun tagEditor(albumId: Long): String = "$ALBUM_TAG_EDITOR_ROUTE/$albumId"
     fun audiobook(stableKey: String): String = "$AUDIOBOOK_ROUTE/${Uri.encode(stableKey)}"
     fun audiobookTagEditor(stableKey: String): String = "$AUDIOBOOK_TAG_EDITOR_ROUTE/${Uri.encode(stableKey)}"

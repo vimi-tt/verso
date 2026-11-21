@@ -69,7 +69,7 @@ private data class OnboardingCopy(
     val permissionsTitle: String,
     val permissionsSubtitle: String,
     val allowPermissions: String,
-    val skipLocalAudio: String,
+    val skipPermissions: String,
     val permissionGrantedLabel: String,
     val continueLabel: String,
     val accountTitle: String,
@@ -95,10 +95,10 @@ private fun onboardingCopy(language: AppLanguage): OnboardingCopy = when (langua
         welcomeSubtitle = "Streaming, downloads offline, letras sincronizadas e suas estatísticas em um só lugar",
         getStarted = "Começar",
         permissionsTitle = "Permissões",
-        permissionsSubtitle = "O acesso aos áudios locais é opcional. Você também pode permitir notificações para controles e downloads",
-        allowPermissions = "Permitir acesso",
-        skipLocalAudio = "Continuar sem áudio local",
-        permissionGrantedLabel = "Acesso concedido",
+        permissionsSubtitle = "Permita notificações para controles de reprodução e downloads",
+        allowPermissions = "Permitir notificações",
+        skipPermissions = "Agora não",
+        permissionGrantedLabel = "Permissão concedida",
         continueLabel = "Continuar",
         accountTitle = "Sua conta",
         accountSubtitle = "Conecte sua conta Google / YouTube Music para sincronizar favoritos e mixes, ou use no modo anônimo",
@@ -121,10 +121,10 @@ private fun onboardingCopy(language: AppLanguage): OnboardingCopy = when (langua
         welcomeSubtitle = "Streaming, descargas offline, letras sincronizadas y tus estadísticas en un solo lugar",
         getStarted = "Comenzar",
         permissionsTitle = "Permisos",
-        permissionsSubtitle = "El acceso al audio local es opcional. También puedes permitir notificaciones para controles y descargas",
-        allowPermissions = "Permitir acceso",
-        skipLocalAudio = "Continuar sin audio local",
-        permissionGrantedLabel = "Acceso concedido",
+        permissionsSubtitle = "Permite las notificaciones para los controles de reproducción y las descargas",
+        allowPermissions = "Permitir notificaciones",
+        skipPermissions = "Ahora no",
+        permissionGrantedLabel = "Permiso concedido",
         continueLabel = "Continuar",
         accountTitle = "Tu cuenta",
         accountSubtitle = "Conecta tu cuenta de Google / YouTube Music para sincronizar favoritos y mixes, o usa el modo anónimo",
@@ -147,10 +147,10 @@ private fun onboardingCopy(language: AppLanguage): OnboardingCopy = when (langua
         welcomeSubtitle = "Streaming, offline downloads, synced lyrics, and listening stats in one place",
         getStarted = "Get started",
         permissionsTitle = "Permissions",
-        permissionsSubtitle = "Local audio access is optional. You can also allow notifications for playback controls and downloads",
-        allowPermissions = "Allow access",
-        skipLocalAudio = "Continue without local audio",
-        permissionGrantedLabel = "Access granted",
+        permissionsSubtitle = "Allow notifications for playback controls and downloads",
+        allowPermissions = "Allow notifications",
+        skipPermissions = "Not now",
+        permissionGrantedLabel = "Permission granted",
         continueLabel = "Continue",
         accountTitle = "Your account",
         accountSubtitle = "Sign in with Google / YouTube Music to sync favorites and mixes, or continue in anonymous mode",
@@ -172,9 +172,7 @@ private fun onboardingCopy(language: AppLanguage): OnboardingCopy = when (langua
 
 @Composable
 internal fun VersoOnboardingScreen(
-    hasAudioPermission: Boolean,
     youTubeCatalog: YouTubeCatalogRepository,
-    onRequestAudioPermission: () -> Unit,
     onComplete: () -> Unit,
 ) {
     val language = LocalAppLanguage.current
@@ -188,7 +186,7 @@ internal fun VersoOnboardingScreen(
     val notificationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { _ ->
-        onRequestAudioPermission()
+        step = 2
     }
 
     val launchScale by animateFloatAsState(
@@ -322,32 +320,25 @@ internal fun VersoOnboardingScreen(
                         textAlign = TextAlign.Center,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    if (hasAudioPermission) {
-                        OnboardingPrimaryPill(
-                            label = "${copy.permissionGrantedLabel} • ${copy.continueLabel}",
-                            onClick = { step = 2 },
-                        )
-                    } else {
-                        OnboardingPrimaryPill(
-                            label = copy.allowPermissions,
-                            onClick = {
-                                val needsNotif = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                    ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.POST_NOTIFICATIONS,
-                                    ) != PackageManager.PERMISSION_GRANTED
-                                if (needsNotif) {
-                                    notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                } else {
-                                    onRequestAudioPermission()
-                                }
-                            },
-                        )
-                        OnboardingSecondaryPill(
-                            label = copy.skipLocalAudio,
-                            onClick = { step = 2 },
-                        )
-                    }
+                    OnboardingPrimaryPill(
+                        label = copy.allowPermissions,
+                        onClick = {
+                            val needsNotif = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.POST_NOTIFICATIONS,
+                                ) != PackageManager.PERMISSION_GRANTED
+                            if (needsNotif) {
+                                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                step = 2
+                            }
+                        },
+                    )
+                    OnboardingSecondaryPill(
+                        label = copy.skipPermissions,
+                        onClick = { step = 2 },
+                    )
                 }
 
                 2 -> Column(

@@ -99,11 +99,22 @@ internal fun ElovaireRootReadyHost(
     var previousCompassoPlayedMs by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableLongStateOf(0L)
     }
+    var trackedSongId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(-1L) }
+    var accumulatedPlayMs by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    var reportedExtraMs by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    var reportedYouTubeHistory by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var recordedCurrentTrack by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(playbackState.currentSong?.id, playbackState.currentIndex, playbackState.queue.size) {
         val current = playbackState.currentSong
         val prev = previousCompassoSong
         val prevPlayedMs = previousCompassoPlayedMs
         if (prev != null && current != null && prev.id != current.id) {
+            if (prevPlayedMs >= 15_000L && !(reportedYouTubeHistory && trackedSongId == prev.id)) {
+                val playedSeconds = (prevPlayedMs / 1000L).toInt()
+                compassoScope.launch {
+                    composition.youTubeCatalog.reportPlaybackHistory(prev, playedSeconds = playedSeconds)
+                }
+            }
             val wasSkipped = prev.durationMs <= 0L ||
                 prevPlayedMs < (prev.durationMs * 0.80f).toLong()
             previousCompassoPlayedMs = 0L
@@ -136,11 +147,6 @@ internal fun ElovaireRootReadyHost(
         composition.listeningStatsStore.recordRecentSong(song)
         composition.lastFmClient.updateNowPlaying(song)
     }
-    var trackedSongId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(-1L) }
-    var accumulatedPlayMs by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    var reportedExtraMs by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    var reportedYouTubeHistory by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    var recordedCurrentTrack by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(playbackState.currentSong?.id, isPlaybackActuallyPlaying) {
         val song = playbackState.currentSong ?: return@LaunchedEffect
         if (trackedSongId != song.id) {
@@ -155,16 +161,23 @@ internal fun ElovaireRootReadyHost(
             kotlinx.coroutines.delay(1_000L)
             accumulatedPlayMs += 1_000L
             previousCompassoPlayedMs = accumulatedPlayMs
-            if (!reportedYouTubeHistory && accumulatedPlayMs >= 15_000L) {
+            if (
+                !reportedYouTubeHistory &&
+                accumulatedPlayMs >= 15_000L &&
+                song.durationMs > 0L &&
+                composition.playback.progressState.value.positionMs >= (song.durationMs - 2_000L)
+            ) {
                 reportedYouTubeHistory = true
-                composition.youTubeCatalog.reportPlaybackHistory(song, playedSeconds = 15)
+                composition.youTubeCatalog.reportPlaybackHistory(
+                    song,
+                    playedSeconds = (accumulatedPlayMs / 1000L).toInt(),
+                )
             }
             if (!recordedCurrentTrack && accumulatedPlayMs >= 30_000L) {
                 recordedCurrentTrack = true
                 reportedExtraMs = 30_000L
                 composition.listeningStatsStore.recordSongPlayed(song, initialListenedMs = 30_000L)
                 composition.lastFmClient.scrobble(song)
-                composition.youTubeCatalog.reportPlaybackHistory(song, playedSeconds = 30)
                 if (song.genre.isBlank() || song.genre.equals("Unknown Genre", ignoreCase = true)) {
                     val resolvedGenre = composition.lastFmClient.resolveGenre(song)
                     if (!resolvedGenre.isNullOrBlank()) {

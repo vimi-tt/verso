@@ -14,6 +14,8 @@ import com.vimi.k7.innertube.legacy.NewPipeGateway
 import com.vimi.k7.innertube.stream.AudioPreference
 import com.vimi.k7.innertube.stream.AudioResolution
 import com.vimi.k7.innertube.stream.AudioStreamResolver
+import com.vimi.k7.innertube.stream.PlayerClients
+import com.vimi.k7.innertube.transport.INNER_TUBE_API_KEY
 import com.vimi.k7.innertube.transport.MusicApi
 import com.vimi.k7.innertube.transport.YouTubeHttp
 import java.io.IOException
@@ -33,6 +35,11 @@ internal data class YouTubeResolvedStreamFormat(
     val quality: String?,
 )
 
+private data class PlaybackTrackingUrls(
+    val playbackUrl: String,
+    val watchtimeUrl: String,
+)
+
 /**
  * Coordinates InnerTube catalog browsing and stream URL resolution/caching for
  * YouTube streaming inside Elovaire's playback and data layers.
@@ -43,6 +50,9 @@ internal class YouTubeStreamClient(
 ) {
     val qualityPreferences: YouTubeQualityPreferences = YouTubeQualityPreferences(context)
     private val resolvedFormats = ConcurrentHashMap<String, YouTubeResolvedStreamFormat>()
+    private val authenticatedTrackingCache = ConcurrentHashMap<String, PlaybackTrackingUrls>()
+    @Volatile
+    private var cachedSignatureTimestamp: Int? = null
     private val _resolvedFormatUpdates = MutableStateFlow(0L)
     val resolvedFormatUpdates: StateFlow<Long> = _resolvedFormatUpdates.asStateFlow()
     private val sessionManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -166,6 +176,175 @@ internal class YouTubeStreamClient(
         )
     }
 
+    private fun extractPlaybackTracking(root: JSONObject): PlaybackTrackingUrls? {
+        val pt = root.optJSONObject("playbackTracking") ?: return null
+        val playbackUrl = pt.optJSONObject("videostatsPlaybackUrl")?.optString("baseUrl").orEmpty()
+        val watchtimeUrl = pt.optJSONObject("videostatsWatchtimeUrl")?.optString("baseUrl").orEmpty()
+        if (playbackUrl.isBlank() && watchtimeUrl.isBlank()) return null
+        return PlaybackTrackingUrls(playbackUrl = playbackUrl, watchtimeUrl = watchtimeUrl)
+    }
+
+    private fun resolveSignatureTimestamp(webUserAgent: String): Int {
+        cachedSignatureTimestamp?.let { return it }
+        val resolved = runCatching {
+            val homeReq = Request.Builder()
+                .url("https://music.youtube.com/")
+                .header("User-Agent", webUserAgent)
+                .get()
+                .build()
+            val html = okHttpClient.newCall(homeReq).execute().use { resp ->
+                if (!resp.isSuccessful) return@use ""
+                resp.body?.string().orEmpty()
+            }
+            val playerJsPath = Regex("""(/s/player/[^"']+/base\.js)""").find(html)?.groupValues?.get(1)
+                ?: return@runCatching null
+            val jsReq = Request.Builder()
+                .url("https://music.youtube.com$playerJsPath")
+                .header("User-Agent", webUserAgent)
+                .get()
+                .build()
+            val js = okHttpClient.newCall(jsReq).execute().use { resp ->
+                if (!resp.isSuccessful) return@use ""
+                resp.body?.string().orEmpty()
+            }
+            Regex("""signatureTimestamp:(\d+)""").find(js)?.groupValues?.get(1)?.toIntOrNull()
+        }.getOrNull()
+        val finalSts = resolved ?: 20774
+        if (resolved != null) cachedSignatureTimestamp = resolved
+        return finalSts
+    }
+
+    private fun fetchAuthenticatedTrackingUrls(
+        videoId: String,
+        cookies: String,
+        authHeader: String?,
+        visitorData: String?,
+    ): PlaybackTrackingUrls? {
+        authenticatedTrackingCache[videoId]?.let { return it }
+        val jsonMediaType = "application/json".toMediaType()
+        val webRemixVersion = "1.20261117.06.00"
+        val webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        val hl = java.util.Locale.getDefault().language.takeIf { it.isNotBlank() } ?: "pt"
+        val gl = java.util.Locale.getDefault().country.takeIf { it.isNotBlank() && it.length == 2 } ?: "BR"
+        val sts = resolveSignatureTimestamp(webUserAgent)
+
+        // 1. Try authenticated WEB_REMIX /player so playbackTracking URLs carry the logged-in user session.
+        val webPayload = JSONObject().apply {
+            put("videoId", videoId)
+            put(
+                "context",
+                JSONObject().put(
+                    "client",
+                    JSONObject().apply {
+                        put("clientName", "WEB_REMIX")
+                        put("clientVersion", webRemixVersion)
+                        put("hl", hl)
+                        put("gl", gl)
+                        if (!visitorData.isNullOrBlank()) put("visitorData", visitorData)
+                    },
+                ),
+            )
+            put(
+                "playbackContext",
+                JSONObject().put(
+                    "contentPlaybackContext",
+                    JSONObject()
+                        .put("signatureTimestamp", sts)
+                        .put("html5Preference", "HTML5_PREF_WANTS"),
+                ),
+            )
+            put("contentCheckOk", true)
+            put("racyCheckOk", true)
+        }.toString()
+        val webReq = Request.Builder()
+            .url("https://music.youtube.com/youtubei/v1/player?prettyPrint=false")
+            .header("User-Agent", webUserAgent)
+            .header("Cookie", cookies)
+            .header("Origin", "https://music.youtube.com")
+            .header("Referer", "https://music.youtube.com/")
+            .header("X-Youtube-Client-Name", "67")
+            .header("X-Youtube-Client-Version", webRemixVersion)
+            .apply {
+                if (!visitorData.isNullOrBlank()) header("X-Goog-Visitor-Id", visitorData)
+                if (authHeader != null) {
+                    header("Authorization", authHeader)
+                    header("X-Goog-AuthUser", "0")
+                }
+            }
+            .post(webPayload.toRequestBody(jsonMediaType))
+            .build()
+        val webTracking = runCatching {
+            okHttpClient.newCall(webReq).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    android.util.Log.w("YouTubeHistory", "WEB_REMIX player HTTP ${resp.code} for $videoId")
+                    return@use null
+                }
+                val body = resp.body?.string().orEmpty()
+                if (body.isBlank()) return@use null
+                val json = JSONObject(body)
+                extractPlaybackTracking(json).also {
+                    if (it == null) {
+                        val status = json.optJSONObject("playabilityStatus")?.optString("status")
+                        android.util.Log.w("YouTubeHistory", "WEB_REMIX player had no playbackTracking (status=$status) for $videoId")
+                    }
+                }
+            }
+        }.getOrNull()
+        if (webTracking != null) {
+            android.util.Log.i("YouTubeHistory", "Resolved playbackTracking via WEB_REMIX for $videoId")
+            authenticatedTrackingCache[videoId] = webTracking
+            return webTracking
+        }
+
+        // 2. Fallback to unauthenticated IOS /player (mobile clients reject web SAPISIDHASH on /player).
+        val iosClient = PlayerClients.IOS
+        val iosPayload = JSONObject().apply {
+            put("videoId", videoId)
+            put(
+                "context",
+                JSONObject().put(
+                    "client",
+                    JSONObject().apply {
+                        put("clientName", iosClient.name)
+                        put("clientVersion", iosClient.version)
+                        put("hl", hl)
+                        put("gl", gl)
+                        if (!visitorData.isNullOrBlank()) put("visitorData", visitorData)
+                        iosClient.fields.forEach { (k, v) -> put(k, v) }
+                    },
+                ),
+            )
+            put("contentCheckOk", true)
+            put("racyCheckOk", true)
+        }.toString()
+        val iosReq = Request.Builder()
+            .url("https://music.youtube.com/youtubei/v1/player?prettyPrint=false")
+            .header("User-Agent", iosClient.userAgent)
+            .header("X-Youtube-Client-Name", iosClient.id.toString())
+            .header("X-Youtube-Client-Version", iosClient.version)
+            .apply {
+                if (!visitorData.isNullOrBlank()) header("X-Goog-Visitor-Id", visitorData)
+            }
+            .post(iosPayload.toRequestBody(jsonMediaType))
+            .build()
+        val iosTracking = runCatching {
+            okHttpClient.newCall(iosReq).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    android.util.Log.w("YouTubeHistory", "IOS player HTTP ${resp.code} for $videoId")
+                    return@use null
+                }
+                val body = resp.body?.string().orEmpty()
+                if (body.isBlank()) return@use null
+                extractPlaybackTracking(JSONObject(body))
+            }
+        }.getOrNull()
+        if (iosTracking != null) {
+            android.util.Log.i("YouTubeHistory", "Resolved playbackTracking via IOS fallback for $videoId")
+            authenticatedTrackingCache[videoId] = iosTracking
+        }
+        return iosTracking
+    }
+
     fun reportPlaybackHistory(
         videoId: String,
         playedSeconds: Int,
@@ -175,26 +354,29 @@ internal class YouTubeStreamClient(
         val cookies = sessionManager.getCookies()?.takeIf { it.isNotBlank() } ?: return
         val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://music.youtube.com")
         val clientVersion = "1.20260401.01.00"
-        val locale = java.util.Locale.getDefault()
-        val hl = locale.language.ifBlank { "en" }
-        val gl = locale.country.ifBlank { "US" }
+        val visitorData = youTubeHttp.visitorIdentity.cachedOrNull()
         runCatching {
-            val playerPayload = JSONObject()
-                .put("videoId", videoId)
-                .put(
-                    "context",
-                    JSONObject().put(
-                        "client",
-                        JSONObject()
-                            .put("clientName", "WEB_REMIX")
-                            .put("clientVersion", clientVersion)
-                            .put("hl", hl)
-                            .put("gl", gl),
-                    ),
-                )
+            val tracking = fetchAuthenticatedTrackingUrls(
+                videoId = videoId,
+                cookies = cookies,
+                authHeader = authHeader,
+                visitorData = visitorData,
+            ) ?: run {
+                android.util.Log.w("YouTubeHistory", "No authenticated playbackTracking URLs for $videoId")
+                return
+            }
+
+            val cpn = buildString(16) {
+                val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+                repeat(16) { append(chars.random()) }
+            }
             val webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-            val playerRequest = Request.Builder()
-                .url("https://music.youtube.com/youtubei/v1/player?prettyPrint=false")
+            // Route stats pings through music.youtube.com so Origin + SAPISIDHASH + cookies match YouTube Music's watch history endpoint.
+            val playbackBaseUrl = tracking.playbackUrl.replace("https://s.youtube.com/", "https://music.youtube.com/")
+            val watchtimeBaseUrl = tracking.watchtimeUrl.replace("https://s.youtube.com/", "https://music.youtube.com/")
+            val len = durationSeconds.coerceAtLeast(playedSeconds).coerceAtLeast(1)
+
+            fun Request.Builder.applyYouTubeMusicAuth(): Request.Builder = this
                 .header("User-Agent", webUserAgent)
                 .header("Cookie", cookies)
                 .header("Origin", "https://music.youtube.com")
@@ -202,55 +384,26 @@ internal class YouTubeStreamClient(
                 .header("X-Youtube-Client-Name", "67")
                 .header("X-Youtube-Client-Version", clientVersion)
                 .apply {
+                    if (!visitorData.isNullOrBlank()) {
+                        header("X-Goog-Visitor-Id", visitorData)
+                    }
                     if (authHeader != null) {
                         header("Authorization", authHeader)
                         header("X-Goog-AuthUser", "0")
                     }
                 }
-                .post(playerPayload.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-
-            val tracking = okHttpClient.newCall(playerRequest).execute().use { response ->
-                if (!response.isSuccessful) {
-                    android.util.Log.w("YouTubeHistory", "Player tracking fetch failed HTTP ${response.code} for $videoId")
-                    return@use null
-                }
-                val body = response.body?.string().orEmpty()
-                val json = JSONObject(body)
-                val pt = json.optJSONObject("playbackTracking") ?: return@use null
-                val playbackUrl = pt.optJSONObject("videostatsPlaybackUrl")?.optString("baseUrl").orEmpty()
-                val watchtimeUrl = pt.optJSONObject("videostatsWatchtimeUrl")?.optString("baseUrl").orEmpty()
-                playbackUrl to watchtimeUrl
-            } ?: return
-
-            val cpn = buildString(16) {
-                val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-                repeat(16) { append(chars.random()) }
-            }
-            val (rawPlaybackUrl, rawWatchtimeUrl) = tracking
-            // Route stats pings through music.youtube.com so Origin + SAPISIDHASH + cookies match YouTube Music's watch history endpoint.
-            val playbackBaseUrl = rawPlaybackUrl.replace("https://s.youtube.com/", "https://music.youtube.com/")
-            val watchtimeBaseUrl = rawWatchtimeUrl.replace("https://s.youtube.com/", "https://music.youtube.com/")
-            val len = durationSeconds.coerceAtLeast(playedSeconds).coerceAtLeast(1)
 
             if (playbackBaseUrl.isNotBlank()) {
                 val sep = if ('?' in playbackBaseUrl) '&' else '?'
                 val ping = Request.Builder()
                     .url("${playbackBaseUrl}${sep}ver=2&c=WEB_REMIX&cver=$clientVersion&cpn=$cpn&el=detailpage&cmt=0&len=$len&state=playing&volume=100&muted=0")
-                    .header("User-Agent", webUserAgent)
-                    .header("Cookie", cookies)
-                    .header("Origin", "https://music.youtube.com")
-                    .header("Referer", "https://music.youtube.com/")
-                    .apply {
-                        if (authHeader != null) {
-                            header("Authorization", authHeader)
-                            header("X-Goog-AuthUser", "0")
-                        }
-                    }
+                    .applyYouTubeMusicAuth()
                     .get()
                     .build()
                 okHttpClient.newCall(ping).execute().use { resp ->
-                    if (!resp.isSuccessful) {
+                    if (resp.isSuccessful) {
+                        android.util.Log.i("YouTubeHistory", "Playback ping HTTP ${resp.code} for $videoId")
+                    } else {
                         android.util.Log.w("YouTubeHistory", "Playback ping HTTP ${resp.code} for $videoId")
                     }
                 }
@@ -261,20 +414,13 @@ internal class YouTubeStreamClient(
                     .url(
                         "${watchtimeBaseUrl}${sep}ver=2&c=WEB_REMIX&cver=$clientVersion&cpn=$cpn&el=detailpage&cmt=$playedSeconds&st=0&et=$playedSeconds&rt=$playedSeconds&len=$len&state=playing&volume=100&muted=0&final=1",
                     )
-                    .header("User-Agent", webUserAgent)
-                    .header("Cookie", cookies)
-                    .header("Origin", "https://music.youtube.com")
-                    .header("Referer", "https://music.youtube.com/")
-                    .apply {
-                        if (authHeader != null) {
-                            header("Authorization", authHeader)
-                            header("X-Goog-AuthUser", "0")
-                        }
-                    }
+                    .applyYouTubeMusicAuth()
                     .get()
                     .build()
                 okHttpClient.newCall(watch).execute().use { resp ->
-                    if (!resp.isSuccessful) {
+                    if (resp.isSuccessful) {
+                        android.util.Log.i("YouTubeHistory", "Watchtime ping HTTP ${resp.code} for $videoId (${playedSeconds}s)")
+                    } else {
                         android.util.Log.w("YouTubeHistory", "Watchtime ping HTTP ${resp.code} for $videoId")
                     }
                 }

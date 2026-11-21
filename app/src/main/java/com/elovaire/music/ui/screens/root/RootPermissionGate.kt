@@ -23,9 +23,7 @@ internal fun RootPermissionGate(
     if (!onboardingDone) {
         PerformanceState("screen", "onboarding")
         VersoOnboardingScreen(
-            hasAudioPermission = permissionState.hasAudioPermission,
             youTubeCatalog = youTubeCatalog,
-            onRequestAudioPermission = onRequestAudioPermission,
             onComplete = {
                 runCatching { markerFile.writeText("1") }
                 onboardingDone = true

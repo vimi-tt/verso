@@ -811,52 +811,6 @@ internal fun SettingsScreen(
             }
 
             item {
-                SettingsSectionHeader(title = commonUiCopy(appLanguage).library, iconResId = R.drawable.ic_lucide_library)
-            }
-
-            item {
-                ModuleCard {
-                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SettingNavigationRow(
-                                title = foldersCopy.title,
-                                subtitle = foldersCopy.subtitle,
-                                onClick = onOpenLibraryFolders,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                            )
-                            SettingNavigationRow(
-                                title = copy.managePlaylistsTitle,
-                                subtitle = copy.managePlaylistsSubtitle,
-                                onClick = onOpenManagePlaylists,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                            )
-                            SettingNavigationRow(
-                                title = smartPlaylistCopy.title,
-                                subtitle = smartPlaylistCopy.subtitle,
-                                onClick = onOpenSmartPlaylistSettings,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                            )
-                        }
-                        SettingActionRow(
-                            title = copy.scanLibrary,
-                            subtitle = copy.scanLibrarySubtitle,
-                            actionLabel = copy.scan,
-                            onAction = {
-                                scanStartingContentRevision = libraryContentRevision
-                                scanStartedAtMillis = SystemClock.elapsedRealtime()
-                                scanObservedLoading = libraryScanIsLoading
-                                scanPopupDone = false
-                                scanPopupVisible = true
-                                scanRequestId += 1
-                                onScanLibrary()
-                            },
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                        )
-                    }
-                }
-            }
-
-            item {
                 SettingsSectionHeader(title = copy.otherSettings, iconResId = R.drawable.ic_lucide_settings)
             }
             item {

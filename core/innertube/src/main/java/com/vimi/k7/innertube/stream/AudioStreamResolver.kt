@@ -78,7 +78,10 @@ class AudioStreamResolver(
             }
 
             val direct = session.visionOs(videoId)
-            direct.answer?.let { pickAudioLogged(videoId, it.streamingData, preference) }?.let { pick ->
+            direct.answer?.let { answer ->
+                onResponse(videoId, answer.root)
+                pickAudioLogged(videoId, answer.streamingData, preference)
+            }?.let { pick ->
                 pick.loudnessDb?.let { onLoudness(videoId, it) }
                 return@withContext resolved(pick, "visionOS")
             }

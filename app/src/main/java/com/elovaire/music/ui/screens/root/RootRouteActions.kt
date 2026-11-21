@@ -80,8 +80,8 @@ internal class RootRouteActions(
         navigationState.navigateTo(Routes.smartPlaylistEditor(playlistId))
     }
 
-    fun openLibraryCollection(kind: LibraryCollectionKind, localOnly: Boolean = false) {
-        navigationState.navigateTo(Routes.libraryCollection(kind, localOnly))
+    fun openLibraryCollection(kind: LibraryCollectionKind) {
+        navigationState.navigateTo(Routes.libraryCollection(kind))
     }
 
     fun openRecentlyAdded() {

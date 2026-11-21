@@ -562,10 +562,7 @@ private fun SearchScreen(
         }
     }
 
-    val hasSearchResults = state.matchingAlbums.isNotEmpty() ||
-        state.matchingSongs.isNotEmpty() ||
-        state.matchingAudiobooks.isNotEmpty() ||
-        matchingArtists.isNotEmpty() ||
+    val hasSearchResults = state.matchingAudiobooks.isNotEmpty() ||
         matchingPlaylists.isNotEmpty() ||
         state.youtubeSongs.isNotEmpty() ||
         state.youtubeAlbums.isNotEmpty() ||
@@ -1229,93 +1226,6 @@ private fun SearchScreen(
                                                     )
                                                 }
                                             }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (state.selectedYouTubeFilter == YouTubeSearchFilter.All && matchingArtists.isNotEmpty()) {
-                            item(
-                                key = "search_artists",
-                                contentType = "search_history",
-                            ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                                    SearchResultsCategoryHeader(
-                                        title = commonUiCopy(language).artists,
-                                        subtitle = searchCopy(language).matchingArtists(matchingArtists.size, language),
-                                        iconResId = R.drawable.ic_lucide_mic_vocal,
-                                    )
-                                    SearchHistoryListCard(
-                                        entries = matchingArtists,
-                                        onAlbumSelected = { albumId ->
-                                            libraryState.albums.firstOrNull { it.id == albumId }?.let { album ->
-                                                selectAlbum(album, ExpandOrigin(), false)
-                                            }
-                                        },
-                                        onArtistSelected = selectArtist,
-                                    )
-                                }
-                            }
-                        }
-
-                        if (state.selectedYouTubeFilter == YouTubeSearchFilter.All && state.matchingAlbums.isNotEmpty()) {
-                            item(
-                                key = "search_albums",
-                                contentType = "search_album_module",
-                            ) {
-                                ModuleCard(
-                                    contentPadding = PaddingValues(start = 18.dp, top = 18.dp, end = 18.dp, bottom = 2.dp),
-                                ) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                                        SearchResultsCategoryHeader(
-                                            title = commonUiCopy(language).albums,
-                                            subtitle = copy.matchingAlbums(state.matchingAlbums.size, language),
-                                            iconResId = R.drawable.ic_lucide_disc_album,
-                                        )
-                                        ArtistAlbumGallery(
-                                            albums = state.matchingAlbums,
-                                            onAlbumSelected = { album, origin ->
-                                                selectAlbum(album, origin, true)
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        if (state.selectedYouTubeFilter == YouTubeSearchFilter.All && state.matchingSongs.isNotEmpty()) {
-                            item(
-                                key = "search_songs",
-                                contentType = "search_song_results",
-                            ) {
-                                val previewSongs = state.matchingSongs.take(10)
-                                Column {
-                                    SearchSongsPreviewHeader(
-                                        resultCount = state.totalSongMatchCount,
-                                        showSeeAll = state.totalSongMatchCount > 10,
-                                        onShowAll = {
-                                            dismissSearchInput()
-                                            onShowAllSongResultsChange(true)
-                                        },
-                                    )
-                                    previewSongs.forEachIndexed { index, song ->
-                                        Box(
-                                            modifier = Modifier.elovaireListReveal(
-                                                itemKey = song.id,
-                                                index = index,
-                                                registry = revealRegistry,
-                                            ),
-                                        ) {
-                                            HomeRecentSongRow(
-                                                song = song,
-                                                isFavorite = song.id in favoriteSongIds,
-                                                onClick = {
-                                                    selectSong(song, state.matchingSongs)
-                                                },
-                                                onToggleFavorite = { onToggleFavorite(song.id) },
-                                                showDivider = index != previewSongs.lastIndex,
-                                            )
                                         }
                                     }
                                 }

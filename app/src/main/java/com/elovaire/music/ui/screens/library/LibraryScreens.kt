@@ -458,22 +458,8 @@ internal fun HomeScreen(
     val hasMusic = remember(songsById) {
         songsById.values.any { it.mediaKind == AudioMediaKind.Music }
     }
-    val showInitialLoadingState = isLibraryLoading &&
-        !hasMusic &&
-        recentlyAddedAlbums.isEmpty() &&
-        favoriteAlbums.isEmpty() &&
-        playbackState.recentSongIds.isEmpty()
-    val showEmptyLibraryState = !youtubeHomeState.hasContent &&
-        !youtubeHomeState.isLoading &&
-        !youtubeHomeState.hasError &&
-        shouldShowHomeEmptyLibraryState(
-            isLibraryLoading = isLibraryLoading,
-            isLibraryAuthoritative = isLibraryAuthoritative,
-            hasMusic = hasMusic,
-            hasHomeContent = recentlyAddedAlbums.isNotEmpty() ||
-                favoriteAlbums.isNotEmpty() ||
-                recentSongs.isNotEmpty(),
-        )
+    val showInitialLoadingState = false
+    val showEmptyLibraryState = false
     val lastPlayedPlaylistSongs = remember(lastPlayedPlaylist, songsById) {
         lastPlayedPlaylist?.songIds
             ?.mapNotNull(songsById::get)
@@ -1882,25 +1868,9 @@ internal fun LibraryHubScreen(
     youTubeAlbumsCount: Int = 0,
     youTubeArtistsCount: Int = 0,
     onOpenStats: () -> Unit = {},
-    onOpenLocalCollection: (LibraryCollectionKind) -> Unit = onOpenCollection,
 ) {
     val language = LocalAppLanguage.current
     val common = remember(language) { commonUiCopy(language) }
-    val recentAlbumColumns = adaptiveGridColumnCount(2, LocalRootWindowSizeClass.current.width).coerceAtMost(4)
-    val musicSongs = remember(libraryState.songs) {
-        libraryState.songs.filter { it.mediaKind == AudioMediaKind.Music }
-    }
-    val totalSongs = musicSongs.size
-    val totalAlbums = libraryState.albums.size
-    val recentlyAddedAlbums = remember(libraryState.albums) {
-        recentlyAddedAlbumsFor(libraryState, limit = 4)
-    }
-    val totalArtists = remember(musicSongs) {
-        distinctMusicArtistCount(musicSongs)
-    }
-    val totalGenres = remember(musicSongs) {
-        distinctMusicGenreCount(musicSongs)
-    }
 
     val listState = rememberElovaireLazyListState("library_hub")
     LaunchedEffect(scrollToTopRequestVersion) {
@@ -1973,65 +1943,6 @@ internal fun LibraryHubScreen(
                         detail = statsCopy.recapTitle,
                         onClick = onOpenStats,
                     )
-                }
-            }
-
-            item {
-                ModuleCard {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MutedSectionHeader(
-                            title = elovaire.music.droidbeauty.app.ui.i18n.localMusicTitle(language),
-                            iconResId = R.drawable.ic_lucide_smartphone,
-                        )
-                        LibraryHubRow(
-                            iconResId = R.drawable.ic_lucide_music,
-                            title = common.songs,
-                            detail = "${localizedCountLabel(totalSongs, "song", language)} ${common.inYourLibrary}",
-                            onClick = { onOpenLocalCollection(LibraryCollectionKind.Songs) },
-                        )
-                        DividerLine()
-                        LibraryHubRow(
-                            iconResId = R.drawable.ic_lucide_disc_album,
-                            title = common.albums,
-                            detail = localizedCountLabel(totalAlbums, "album", language),
-                            onClick = { onOpenLocalCollection(LibraryCollectionKind.Albums) },
-                        )
-                        DividerLine()
-                        LibraryHubRow(
-                            iconResId = R.drawable.ic_lucide_mic_vocal,
-                            title = common.artists,
-                            detail = localizedCountLabel(totalArtists, "artist", language),
-                            onClick = { onOpenLocalCollection(LibraryCollectionKind.Artists) },
-                        )
-                    }
-                }
-            }
-
-            if (recentlyAddedAlbums.isNotEmpty()) {
-                item {
-                    ModuleCard {
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            MutedSectionHeader(
-                                title = miscPhrase(LocalAppLanguage.current, MiscPhrase.RecentlyAdded),
-                                iconResId = R.drawable.ic_lucide_gallery_vertical_end,
-                                onClick = onOpenRecentlyAdded,
-                            )
-                            recentlyAddedAlbums.chunked(recentAlbumColumns).take(4).forEach { rowAlbums ->
-                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    rowAlbums.forEach { album ->
-                                        AlbumGridCard(
-                                            album = album,
-                                            modifier = Modifier.weight(1f),
-                                            onOpen = { origin -> onAlbumSelected(album, origin) },
-                                        )
-                                    }
-                                    repeat((recentAlbumColumns - rowAlbums.size).coerceAtLeast(0)) {
-                                        SpacerTile(modifier = Modifier.weight(1f))
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
 
@@ -2130,7 +2041,6 @@ internal fun LibraryCollectionScreen(
     onSongSortModeChanged: (SongSortMode) -> Unit,
     onGenreSelected: (String) -> Unit,
     onArtistSelected: (String) -> Unit,
-    localOnly: Boolean = false,
     youTubeSongs: List<Song> = emptyList(),
     youTubeAlbums: List<elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary> = emptyList(),
     youTubeArtists: List<elovaire.music.droidbeauty.app.data.youtube.YouTubeArtistSummary> = emptyList(),
@@ -2142,10 +2052,9 @@ internal fun LibraryCollectionScreen(
     val musicSongs = remember(libraryState.songs) {
         libraryState.songs.filter { it.mediaKind == AudioMediaKind.Music }
     }
-    val displayedSongs = if (localOnly) musicSongs else youTubeSongs
     when (kind) {
         LibraryCollectionKind.Songs -> SongCollectionScreen(
-            songs = displayedSongs,
+            songs = youTubeSongs,
             removingSongIds = libraryState.removingSongIds,
             favoriteSongIds = favoriteSongIds,
             sortMode = songSortMode,
@@ -2160,100 +2069,68 @@ internal fun LibraryCollectionScreen(
 
         LibraryCollectionKind.Albums -> {
             Box(modifier = Modifier.fillMaxSize()) {
-                if (!localOnly) {
-                    val columns = adaptiveGridColumnCount(2, LocalRootWindowSizeClass.current.width).coerceAtMost(4)
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(columns),
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            start = 20.dp,
-                            top = detailTopBarOccupiedHeight() + 12.dp,
-                            end = 20.dp,
-                            bottom = bottomPadding + 16.dp,
-                        ),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        items(youTubeAlbums, key = { "yt_lib_album_${it.id}" }) { ytAlbum ->
-                            Column(
+                val columns = adaptiveGridColumnCount(2, LocalRootWindowSizeClass.current.width).coerceAtMost(4)
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(columns),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 20.dp,
+                        top = detailTopBarOccupiedHeight() + 12.dp,
+                        end = 20.dp,
+                        bottom = bottomPadding + 16.dp,
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    items(youTubeAlbums, key = { "yt_lib_album_${it.id}" }) { ytAlbum ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(ElovaireRadii.card))
+                                .elovaireClickable(
+                                    interactionSource = rememberElovaireInteractionSource(),
+                                    onClick = { onOpenYouTubeAlbum(ytAlbum) },
+                                ),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            ArtworkImage(
+                                uri = ytAlbum.thumbnailUri,
+                                title = ytAlbum.title,
+                                placeholderIconResId = R.drawable.ic_lucide_disc_album,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(ElovaireRadii.card))
-                                    .elovaireClickable(
-                                        interactionSource = rememberElovaireInteractionSource(),
-                                        onClick = { onOpenYouTubeAlbum(ytAlbum) },
-                                    ),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                ArtworkImage(
-                                    uri = ytAlbum.thumbnailUri,
-                                    title = ytAlbum.title,
-                                    placeholderIconResId = R.drawable.ic_lucide_disc_album,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(1f),
-                                    cornerRadius = ElovaireRadii.card,
-                                )
+                                    .aspectRatio(1f),
+                                cornerRadius = ElovaireRadii.card,
+                            )
+                            Text(
+                                text = ytAlbum.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (ytAlbum.subtitle.isNotBlank()) {
                                 Text(
-                                    text = ytAlbum.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    text = ytAlbum.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                if (ytAlbum.subtitle.isNotBlank()) {
-                                    Text(
-                                        text = ytAlbum.subtitle,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
                             }
                         }
                     }
-                } else {
-                    AlbumCollectionContent(
-                        albums = libraryState.albums,
-                        removingAlbumIds = libraryState.removingAlbumIds,
-                        playlists = playlists,
-                        layoutMode = albumCollectionLayoutMode,
-                        sortMode = albumSortMode,
-                        topPadding = detailTopBarOccupiedHeight(),
-                        bottomPadding = bottomPadding,
-                        title = common.albums,
-                        subtitle = rootUiCopy(language).allAlbumsSubtitle,
-                        onLayoutModeChanged = onAlbumCollectionLayoutModeChanged,
-                        onSortModeChanged = onAlbumSortModeChanged,
-                        onAlbumSelected = onAlbumSelected,
-                        onAddAlbumToQueue = onAddAlbumToQueue,
-                        onAddAlbumToPlaylist = onAddAlbumToPlaylist,
-                        onCreatePlaylist = onCreatePlaylist,
-                        playlistSongsById = playlistSongsById,
-                        favoriteSongIds = favoriteSongIds,
-                        onSetAlbumFavorite = onSetAlbumFavorite,
-                        onDeleteAlbumFromDevice = onDeleteAlbumFromDevice,
-                    )
                 }
                 DetailListTopBar(
                     title = common.albums,
-                    subtitle = localizedCountLabel(if (localOnly) libraryState.albums.size else youTubeAlbums.size, "album", language),
+                    subtitle = localizedCountLabel(youTubeAlbums.size, "album", language),
                     onBack = onBack,
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
             }
         }
 
-        LibraryCollectionKind.Artists -> if (localOnly) {
-            ArtistCollectionScreen(
-                songs = musicSongs,
-                artistImageRepository = artistImageRepository,
-                bottomPadding = bottomPadding,
-                onBack = onBack,
-                onArtistSelected = onArtistSelected,
-            )
-        } else {
+        LibraryCollectionKind.Artists -> {
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),

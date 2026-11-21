@@ -412,14 +412,9 @@ internal fun RootRouteGraph(
             route = RootRouteRegistry.LIBRARY_COLLECTION,
             arguments = listOf(
                 navArgument("kind") { type = NavType.StringType },
-                navArgument("localOnly") {
-                    type = NavType.BoolType
-                    defaultValue = false
-                },
             ),
         ) { backStackEntry ->
             val accountState by youTubeCatalog.accountState.collectAsStateWithLifecycle()
-            val localOnly = backStackEntry.arguments?.getBoolean("localOnly") ?: false
             AlbumTransitionContent(this) {
                 LibraryCollectionRouteHost(
                     kind = backStackEntry.libraryCollectionKindArg(),
@@ -427,7 +422,6 @@ internal fun RootRouteGraph(
                     routeActions = routeActions,
                     padding = padding,
                     artistImageRepository = artistImageRepository,
-                    localOnly = localOnly,
                     youTubeSongs = accountState.likedSongs,
                     youTubeAlbums = accountState.userAlbums,
                     youTubeArtists = accountState.userArtists,
