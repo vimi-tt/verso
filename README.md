@@ -4,7 +4,7 @@
 
 **A refined Android music player combining YouTube Music streaming, the Compasso continuous recommendation engine, fast offline downloads, word-by-word synced lyrics, Last.fm scrobbling, and a shareable Recap.**
 
-[![Version](https://img.shields.io/badge/version-v1.0--beta3-FF6E4A?style=for-the-badge)](https://github.com/vimi-tt/verso/releases)
+[![Version](https://img.shields.io/badge/version-Arcodeon%201-FF6E4A?style=for-the-badge)](https://github.com/vimi-tt/verso/releases)
 [![Android](https://img.shields.io/badge/Android-10%2B%20(API%2029%2B)-19183D?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-Compose-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 
@@ -29,14 +29,14 @@
 
 ### Streaming & Discovery
 - **Editorial Magazine Home**: Qobuz-inspired editorial Home featuring a Featured hero card, Pick up again, New releases, Essentials, numbered Trending chart, Explore by mood chips, and pull-to-refresh.
-- **YouTube Music Integration**: Browse Home shelves, mood chips, artists, albums, and playlists with dynamic artwork palette headers, or stream in anonymous mode without signing in.
+- **YouTube Music Integration**: Browse Home shelves, mood chips, artists, albums, and playlists with dynamic artwork palette headers, in-collection track search, total duration metadata, centered single-row playback controls, or stream in anonymous mode without signing in.
 - **Account Sync & Profile**: Sign in with Google / YouTube Music to sync liked songs, saved albums, followed artists, and show your profile avatar in the top bar.
-- **YouTube Watch History Sync**: Optional setting to report playback to your YouTube Music account after 30 seconds so plays count toward your official YouTube Recap.
+- **YouTube Watch History Sync**: Optional setting to report playback to your YouTube Music account when a track finishes or is skipped after at least 15 seconds so plays count toward your official YouTube Recap.
 
 ### Offline Downloads & Library
 - **High-Speed Chunked Downloads**: Parallel track queue (`4` concurrent downloads) using HTTP `Range` chunking and buffered I/O to avoid single-stream throttling.
 - **Offline Albums & Playlists**: Downloaded collections persist their metadata and tracklist locally so you can open and play them offline directly from **Library -> Downloads**.
-- **Optional Local Audio**: Local storage permission is completely optional during onboarding; you can also play local audio, audiobooks, and SMB/WebDAV network folders when granted.
+- **Focused Streaming Library**: Clean Library hub organized around your YouTube Music songs, albums, artists, offline downloads, favorites, and listening stats without local device audio clutter.
 - **Storage & Quality Controls**: Configure Wi-Fi, mobile data, and download audio quality, Wi-Fi-only downloads, and clear music cache or downloads from Settings.
 
 ### Lyrics & Now Playing
@@ -47,7 +47,7 @@
 ### Stats, Last.fm & Verso Recap
 - **30-Second Real-Time Tracking**: Plays and real active listening duration are counted only after 30 seconds of playback.
 - **Last.fm-Style Stats**: View ranked top tracks, artists, and albums with proportional play bars, filterable by **Month**, **Year**, or **All time**.
-- **Last.fm Scrobbling & Genre Discovery**: Connect your Last.fm account with username and password for automatic scrobbling, plus multi-source genre resolution (Last.fm tags + iTunes Search fallback).
+- **Last.fm Scrobbling & Genre Discovery**: Connect your Last.fm account with username and password (`auth.getMobileSession`) for live Now Playing updates and automatic 30-second scrobbling, plus multi-source genre resolution (Last.fm tags + iTunes Search fallback).
 - **Verso Recap**: Story-style tabbed Recap playing your #1 most-listened song in the background, culminating in a downloadable & shareable PNG summary card.
 
 ---
@@ -75,7 +75,7 @@ cd verso
 ./gradlew :app:assembleDebug
 ```
 
-To build the release APK:
+To build the release APK (`app/build/release/verso.apk`):
 
 ```bash
 ./gradlew :app:assembleRelease
