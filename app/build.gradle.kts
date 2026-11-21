@@ -64,6 +64,8 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        buildConfigField("String", "LASTFM_API_KEY", "\"673870dc1fe62e32ae5b53242f9ce779\"")
+        buildConfigField("String", "LASTFM_API_SECRET", "\"eff85d16b0b77256b7430663b6292371\"")
     }
 
     signingConfigs {
@@ -191,6 +193,9 @@ androidComponents {
                         target = installerDir.resolve(apkFileName),
                         overwrite = true,
                     )
+                    if (variantName == "release" && sourceApk.name != apkFileName) {
+                        sourceApk.delete()
+                    }
                 }
             }
         }

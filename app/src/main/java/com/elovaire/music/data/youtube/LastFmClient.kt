@@ -1,6 +1,8 @@
 package elovaire.music.droidbeauty.app.data.youtube
 
 import android.content.Context
+import android.util.Log
+import elovaire.music.droidbeauty.app.BuildConfig
 import elovaire.music.droidbeauty.app.domain.model.Song
 import java.io.File
 import java.net.URLEncoder
@@ -57,68 +59,52 @@ internal class LastFmClient(
             _state.update { it.copy(errorMessage = "Enter your Last.fm username and password") }
             return
         }
+        val apiKey = BuildConfig.LASTFM_API_KEY
+        val apiSecret = BuildConfig.LASTFM_API_SECRET
         _state.update { it.copy(isSigningIn = true, errorMessage = null) }
         scope.launch(ioDispatcher) {
             val result = runCatching {
-                val cookiesMap = linkedMapOf<String, String>()
-                val getLogin = Request.Builder()
-                    .url("https://www.last.fm/login")
-                    .header("User-Agent", WEB_USER_AGENT)
-                    .get()
-                    .build()
-                val csrfToken = okHttpClient.newCall(getLogin).execute().use { resp ->
-                    resp.headers("Set-Cookie").forEach { raw ->
-                        val pair = raw.substringBefore(';').split('=', limit = 2)
-                        if (pair.size == 2) cookiesMap[pair[0].trim()] = pair[1].trim()
-                    }
-                    val html = resp.body?.string().orEmpty()
-                    Regex("""name=['"]csrfmiddlewaretoken['"]\s+value=['"]([^'"]+)['"]""")
-                        .find(html)?.groupValues?.getOrNull(1)
-                        ?: cookiesMap["csrftoken"].orEmpty()
-                }
-                if (csrfToken.isBlank()) error("Could not reach Last.fm login")
-
-                val cookieHeader = cookiesMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
-                val form = FormBody.Builder()
-                    .add("csrfmiddlewaretoken", csrfToken)
-                    .add("username_or_email", cleanUser)
-                    .add("password", password)
-                    .add("next", "/home")
-                    .build()
-                val postLogin = Request.Builder()
-                    .url("https://www.last.fm/login")
-                    .header("User-Agent", WEB_USER_AGENT)
-                    .header("Referer", "https://www.last.fm/login")
-                    .header("Origin", "https://www.last.fm")
-                    .header("Cookie", cookieHeader)
+                val params = mapOf(
+                    "method" to "auth.getMobileSession",
+                    "username" to cleanUser,
+                    "password" to password,
+                    "api_key" to apiKey,
+                )
+                val sig = signParams(params, apiSecret)
+                val form = FormBody.Builder().apply {
+                    params.forEach { (k, v) -> add(k, v) }
+                    add("api_sig", sig)
+                    add("format", "json")
+                }.build()
+                val request = Request.Builder()
+                    .url(LASTFM_API_URL)
                     .post(form)
                     .build()
-                okHttpClient.newCall(postLogin).execute().use { resp ->
-                    resp.headers("Set-Cookie").forEach { raw ->
-                        val pair = raw.substringBefore(';').split('=', limit = 2)
-                        if (pair.size == 2) cookiesMap[pair[0].trim()] = pair[1].trim()
-                    }
+                okHttpClient.newCall(request).execute().use { resp ->
                     val body = resp.body?.string().orEmpty()
-                    val hasSession = cookiesMap.containsKey("sessionid") ||
-                        resp.request.url.encodedPath.contains("/home") ||
-                        resp.request.url.encodedPath.contains("/user/")
-                    if (!hasSession && body.contains("Please enter a correct", ignoreCase = true)) {
-                        error("Invalid Last.fm username or password")
+                    val json = runCatching { JSONObject(body) }.getOrNull()
+                    if (json != null && json.has("error")) {
+                        val msg = json.optString("message").ifBlank { "Last.fm authentication failed" }
+                        error(msg)
                     }
-                    if (!cookiesMap.containsKey("sessionid") && !resp.isRedirect && body.contains("id_password")) {
-                        error("Invalid Last.fm username or password")
+                    if (!resp.isSuccessful) {
+                        error("Last.fm authentication failed (HTTP ${resp.code})")
                     }
+                    val session = json?.optJSONObject("session")
+                        ?: error("Invalid Last.fm session response")
+                    val resolvedName = session.optString("name").ifBlank { cleanUser }
+                    val sk = session.optString("key")
+                    if (sk.isBlank()) error("Missing Last.fm session key")
+                    resolvedName to sk
                 }
-                val finalCookies = cookiesMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
-                cleanUser to finalCookies
             }
-            result.onSuccess { (resolvedName, sessionCookies) ->
+            result.onSuccess { (resolvedName, sk) ->
                 val updated = LastFmAccountState(
                     isLoggedIn = true,
                     username = resolvedName,
-                    sessionKey = sessionCookies,
-                    apiKey = _state.value.apiKey,
-                    apiSecret = _state.value.apiSecret,
+                    sessionKey = sk,
+                    apiKey = apiKey,
+                    apiSecret = apiSecret,
                     scrobbleEnabled = _state.value.scrobbleEnabled,
                     isSigningIn = false,
                     errorMessage = null,
@@ -126,6 +112,7 @@ internal class LastFmClient(
                 synchronized(lock) { persistStateLocked(updated) }
                 _state.value = updated
             }.onFailure { error ->
+                Log.w(TAG, "Last.fm signIn failed: ${error.message}")
                 _state.update {
                     it.copy(
                         isSigningIn = false,
@@ -238,7 +225,20 @@ internal class LastFmClient(
             add("format", "json")
         }.build()
         val request = Request.Builder().url(LASTFM_API_URL).post(form).build()
-        okHttpClient.newCall(request).execute().close()
+        okHttpClient.newCall(request).execute().use { resp ->
+            val body = resp.body?.string().orEmpty()
+            val method = params["method"].orEmpty()
+            if (!resp.isSuccessful) {
+                Log.w(TAG, "Last.fm $method HTTP ${resp.code}: $body")
+            } else {
+                val json = runCatching { JSONObject(body) }.getOrNull()
+                if (json != null && json.has("error")) {
+                    Log.w(TAG, "Last.fm $method error ${json.optInt("error")}: ${json.optString("message")}")
+                } else {
+                    Log.i(TAG, "Last.fm $method OK")
+                }
+            }
+        }
     }
 
     private fun fetchLastFmGenreTag(artist: String, track: String, apiKey: String): String? {
@@ -307,20 +307,34 @@ internal class LastFmClient(
 
     private fun loadInitialState(): LastFmAccountState {
         synchronized(lock) {
-            if (!sessionFile.isFile) return LastFmAccountState()
+            if (!sessionFile.isFile) {
+                return LastFmAccountState(
+                    apiKey = BuildConfig.LASTFM_API_KEY,
+                    apiSecret = BuildConfig.LASTFM_API_SECRET,
+                )
+            }
             return runCatching {
                 val obj = JSONObject(sessionFile.readText())
                 val username = obj.optString("username")
-                val sessionKey = obj.optString("sessionKey")
+                val rawSessionKey = obj.optString("sessionKey")
+                val isLegacyCookieSession = rawSessionKey.contains("=") || rawSessionKey.contains(";")
+                val sessionKey = if (isLegacyCookieSession) "" else rawSessionKey
+                val apiKey = obj.optString("apiKey").ifBlank { BuildConfig.LASTFM_API_KEY }
+                val apiSecret = obj.optString("apiSecret").ifBlank { BuildConfig.LASTFM_API_SECRET }
                 LastFmAccountState(
-                    isLoggedIn = username.isNotBlank() && sessionKey.isNotBlank(),
-                    username = username,
+                    isLoggedIn = username.isNotBlank() && sessionKey.isNotBlank() && apiKey.isNotBlank() && apiSecret.isNotBlank(),
+                    username = if (isLegacyCookieSession) "" else username,
                     sessionKey = sessionKey,
-                    apiKey = obj.optString("apiKey"),
-                    apiSecret = obj.optString("apiSecret"),
+                    apiKey = apiKey,
+                    apiSecret = apiSecret,
                     scrobbleEnabled = obj.optBoolean("scrobbleEnabled", true),
                 )
-            }.getOrDefault(LastFmAccountState())
+            }.getOrDefault(
+                LastFmAccountState(
+                    apiKey = BuildConfig.LASTFM_API_KEY,
+                    apiSecret = BuildConfig.LASTFM_API_SECRET,
+                ),
+            )
         }
     }
 
@@ -335,8 +349,8 @@ internal class LastFmClient(
     }
 
     private companion object {
+        const val TAG = "LastFmClient"
         const val LASTFM_API_URL = "https://ws.audioscrobbler.com/2.0/"
-        const val WEB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         val IGNORED_GENRE_TAGS = setOf(
             "seen live",
             "favorites",
