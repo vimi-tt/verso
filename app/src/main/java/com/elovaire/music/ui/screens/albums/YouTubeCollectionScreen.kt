@@ -58,8 +58,8 @@ import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
 import elovaire.music.droidbeauty.app.ui.components.rememberArtworkPaletteAccent
 import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
 import elovaire.music.droidbeauty.app.ui.i18n.commonUiCopy
+import elovaire.music.droidbeauty.app.ui.i18n.editorialHomeCopy
 import elovaire.music.droidbeauty.app.ui.i18n.localizedCountLabel
-import elovaire.music.droidbeauty.app.ui.i18n.smartPlaylistActionCopy
 import elovaire.music.droidbeauty.app.ui.i18n.youtubeCopy
 import elovaire.music.droidbeauty.app.ui.i18n.youtubeDownloadCopy
 import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
@@ -91,7 +91,7 @@ internal fun YouTubeCollectionScreen(
     val ytCopy = remember(language) { youtubeCopy(language) }
     val dlCopy = remember(language) { youtubeDownloadCopy(language) }
     val commonCopy = remember(language) { commonUiCopy(language) }
-    val shuffleLabel = remember(language) { smartPlaylistActionCopy(language).shuffle }
+    val shuffleLabel = remember(language) { editorialHomeCopy(language).shuffle }
     val scope = rememberCoroutineScope()
     val listState = rememberElovaireLazyListState("yt_collection_$collectionId")
 
@@ -232,8 +232,17 @@ internal fun YouTubeCollectionScreen(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        val cleanedSubtitle = remember(resolvedSubtitle, songs.size) {
+                            if (songs.isNotEmpty()) {
+                                resolvedSubtitle
+                                    .replace(Regex("\\s*[•·]\\s*\\d+\\s+\\p{L}+\\s*$"), "")
+                                    .trim()
+                            } else {
+                                resolvedSubtitle.trim()
+                            }
+                        }
                         val meta = buildList {
-                            resolvedSubtitle.takeIf(String::isNotBlank)?.let(::add)
+                            cleanedSubtitle.takeIf(String::isNotBlank)?.let(::add)
                             if (songs.isNotEmpty()) {
                                 add(localizedCountLabel(songs.size, "song", language))
                             }
@@ -286,7 +295,7 @@ internal fun YouTubeCollectionScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         CollectionQuickAction(
@@ -453,10 +462,11 @@ private fun CollectionQuickAction(
 ) {
     Column(
         modifier = Modifier
+            .width(68.dp)
             .clip(RoundedCornerShape(12.dp))
             .semantics(mergeDescendants = true) { role = Role.Button }
             .elovaireClickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 4.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
@@ -496,6 +506,7 @@ private fun CollectionQuickAction(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = if (highlighted) MaterialTheme.colorScheme.primary else readableSecondaryTextColor(),
+            textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
