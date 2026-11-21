@@ -291,22 +291,17 @@ internal fun YouTubeCollectionScreen(
 
             if (songs.isNotEmpty()) {
                 item(key = "yt_collection_actions") {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        CollectionQuickAction(
-                            label = shuffleLabel,
-                            iconResId = R.drawable.ic_lucide_shuffle,
-                            onClick = { onShuffleSongs(songs, resolvedTitle) },
-                        )
-                        // Signature circular Play button
+                        // Centered signature circular Play button
                         Box(
                             modifier = Modifier
-                                .size(56.dp)
+                                .size(58.dp)
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.onSurface)
                                 .semantics {
@@ -320,54 +315,67 @@ internal fun YouTubeCollectionScreen(
                                 painter = painterResource(id = R.drawable.ic_lucide_play),
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.surface,
-                                modifier = Modifier.size(22.dp),
+                                modifier = Modifier.size(23.dp),
                             )
                         }
-                        CollectionQuickAction(
-                            label = ytCopy.radioLabel,
-                            iconResId = R.drawable.ic_lucide_audio_waveform,
-                            onClick = {
-                                val seed = songs.first()
-                                val videoId = YouTubeUri.videoId(seed.uri) ?: return@CollectionQuickAction
-                                scope.launch {
-                                    val related = runCatching {
-                                        youTubeCatalog.getRelatedSongs(videoId)
-                                    }.getOrDefault(emptyList())
-                                    val queue = listOf(seed) + related.filterNot { it.id == seed.id }
-                                    onPlaySongs(seed, queue, resolvedTitle)
-                                }
-                            },
-                        )
-                        if (onDownloadCollection != null) {
+
+                        // Secondary actions side-by-side below the Play button: Shuffle, Radio, Download
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             CollectionQuickAction(
-                                label = when {
-                                    isCollectionDownloaded -> dlCopy.downloadedAction
-                                    isCollectionDownloading -> dlCopy.downloadingAction
-                                    else -> dlCopy.downloadAction
-                                },
-                                iconResId = if (isCollectionDownloaded) {
-                                    R.drawable.ic_lucide_check
-                                } else {
-                                    R.drawable.ic_lucide_download
-                                },
-                                highlighted = isCollectionDownloaded,
-                                isLoading = isCollectionDownloading && !isCollectionDownloaded,
+                                label = shuffleLabel,
+                                iconResId = R.drawable.ic_lucide_shuffle,
+                                onClick = { onShuffleSongs(songs, resolvedTitle) },
+                            )
+                            CollectionQuickAction(
+                                label = ytCopy.radioLabel,
+                                iconResId = R.drawable.ic_lucide_audio_waveform,
                                 onClick = {
-                                    if (!isCollectionDownloaded) {
-                                        onDownloadCollection(
-                                            songs,
-                                            YouTubeDownloadedCollection(
-                                                id = collectionId,
-                                                isAlbum = isAlbum,
-                                                title = resolvedTitle,
-                                                subtitle = resolvedSubtitle,
-                                                thumbnailUri = resolvedArtUri,
-                                                songs = songs,
-                                            ),
-                                        )
+                                    val seed = songs.first()
+                                    val videoId = YouTubeUri.videoId(seed.uri) ?: return@CollectionQuickAction
+                                    scope.launch {
+                                        val related = runCatching {
+                                            youTubeCatalog.getRelatedSongs(videoId)
+                                        }.getOrDefault(emptyList())
+                                        val queue = listOf(seed) + related.filterNot { it.id == seed.id }
+                                        onPlaySongs(seed, queue, resolvedTitle)
                                     }
                                 },
                             )
+                            if (onDownloadCollection != null) {
+                                CollectionQuickAction(
+                                    label = when {
+                                        isCollectionDownloaded -> dlCopy.downloadedAction
+                                        isCollectionDownloading -> dlCopy.downloadingAction
+                                        else -> dlCopy.downloadAction
+                                    },
+                                    iconResId = if (isCollectionDownloaded) {
+                                        R.drawable.ic_lucide_check
+                                    } else {
+                                        R.drawable.ic_lucide_download
+                                    },
+                                    highlighted = isCollectionDownloaded,
+                                    isLoading = isCollectionDownloading && !isCollectionDownloaded,
+                                    onClick = {
+                                        if (!isCollectionDownloaded) {
+                                            onDownloadCollection(
+                                                songs,
+                                                YouTubeDownloadedCollection(
+                                                    id = collectionId,
+                                                    isAlbum = isAlbum,
+                                                    title = resolvedTitle,
+                                                    subtitle = resolvedSubtitle,
+                                                    thumbnailUri = resolvedArtUri,
+                                                    songs = songs,
+                                                ),
+                                            )
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
