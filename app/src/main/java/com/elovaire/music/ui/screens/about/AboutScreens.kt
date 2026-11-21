@@ -438,7 +438,9 @@ internal fun AboutScreen(
                             color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
-                            text = "v${elovaire.music.droidbeauty.app.BuildConfig.VERSION_NAME}",
+                            text = elovaire.music.droidbeauty.app.BuildConfig.VERSION_NAME.let { ver ->
+                                if (ver.firstOrNull()?.isDigit() == true) "v$ver" else ver
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = readableSecondaryTextColor(),
                         )

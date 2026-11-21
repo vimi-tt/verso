@@ -33,18 +33,29 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import elovaire.music.droidbeauty.app.R
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeArtistPage
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeCatalogRepository
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeUri
 import elovaire.music.droidbeauty.app.domain.model.Song
 import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
+import elovaire.music.droidbeauty.app.ui.components.rememberArtworkPaletteAccent
 import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
 import elovaire.music.droidbeauty.app.ui.i18n.commonUiCopy
 import elovaire.music.droidbeauty.app.ui.i18n.smartPlaylistActionCopy
@@ -152,17 +163,52 @@ internal fun YouTubeArtistScreen(
             else -> {
                 val page = requireNotNull(artistPage)
                 val playableSongs = page.allSongs.ifEmpty { page.topSongs }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .ensureSingleItemRubberBand(listState),
-                    contentPadding = PaddingValues(
-                        top = topBarOccupiedHeight() + 14.dp,
-                        bottom = bottomPadding + 24.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                ) {
+                val bgColor = MaterialTheme.colorScheme.background
+                val paletteAccent by rememberArtworkPaletteAccent(page.bannerUri)
+                val headerAccent = (paletteAccent ?: MaterialTheme.colorScheme.primary)
+                    .copy(alpha = 0.62f)
+                    .compositeOver(bgColor)
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(400.dp),
+                    ) {
+                        if (page.bannerUri != null) {
+                            ArtworkImage(
+                                uri = page.bannerUri,
+                                title = page.name,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .blur(56.dp)
+                                    .alpha(0.30f),
+                                cornerRadius = 0.dp,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        0.0f to headerAccent.copy(alpha = 0.90f),
+                                        0.55f to headerAccent.copy(alpha = 0.42f),
+                                        0.86f to bgColor.copy(alpha = 0.88f),
+                                        1.0f to bgColor,
+                                    ),
+                                ),
+                        )
+                    }
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .ensureSingleItemRubberBand(listState),
+                        contentPadding = PaddingValues(
+                            top = topBarOccupiedHeight() + 14.dp,
+                            bottom = bottomPadding + 24.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
                     item(key = "yt_artist_editorial_header") {
                         Column(
                             modifier = Modifier
@@ -208,28 +254,40 @@ internal fun YouTubeArtistScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 20.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    .padding(horizontal = 20.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                ArtistActionPill(
-                                    label = ytCopy.playAll,
-                                    primary = true,
-                                    onClick = { onPlaySongs(playableSongs.first(), playableSongs, page.name) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                                ArtistActionPill(
+                                ArtistCircularQuickAction(
                                     label = shuffleLabel,
-                                    primary = false,
+                                    iconResId = R.drawable.ic_lucide_shuffle,
                                     onClick = { onShuffleSongs(playableSongs, page.name) },
-                                    modifier = Modifier.weight(1f),
                                 )
-                                ArtistActionPill(
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.onSurface)
+                                        .semantics {
+                                            role = Role.Button
+                                            contentDescription = ytCopy.playAll
+                                        }
+                                        .elovaireClickable { onPlaySongs(playableSongs.first(), playableSongs, page.name) },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    androidx.compose.material3.Icon(
+                                        painter = painterResource(id = R.drawable.ic_lucide_play),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.surface,
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
+                                ArtistCircularQuickAction(
                                     label = ytCopy.radioLabel,
-                                    primary = false,
+                                    iconResId = R.drawable.ic_lucide_audio_waveform,
                                     onClick = {
                                         val seed = playableSongs.first()
-                                        val videoId = YouTubeUri.videoId(seed.uri) ?: return@ArtistActionPill
+                                        val videoId = YouTubeUri.videoId(seed.uri) ?: return@ArtistCircularQuickAction
                                         scope.launch {
                                             val related = runCatching {
                                                 youTubeCatalog.getRelatedSongs(videoId)
@@ -238,7 +296,6 @@ internal fun YouTubeArtistScreen(
                                             onPlaySongs(seed, queue, page.name)
                                         }
                                     },
-                                    modifier = Modifier.weight(1f),
                                 )
                             }
                         }
@@ -396,6 +453,7 @@ internal fun YouTubeArtistScreen(
                         }
                     }
                 }
+                }
             }
         }
 
@@ -408,34 +466,40 @@ internal fun YouTubeArtistScreen(
 }
 
 @Composable
-private fun ArtistActionPill(
+private fun ArtistCircularQuickAction(
     label: String,
-    primary: Boolean,
+    iconResId: Int,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    val bg = if (primary) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
-    }
-    val fg = if (primary) {
-        MaterialTheme.colorScheme.surface
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(ElovaireRadii.pill))
-            .background(bg)
+    Column(
+        modifier = Modifier
+            .width(68.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .semantics(mergeDescendants = true) { role = Role.Button }
             .elovaireClickable(onClick = onClick)
-            .padding(vertical = 11.dp),
-        contentAlignment = Alignment.Center,
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            androidx.compose.material3.Icon(
+                painter = painterResource(id = iconResId),
+                contentDescription = label,
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                modifier = Modifier.size(19.dp),
+            )
+        }
         Text(
             text = label,
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-            color = fg,
+            style = MaterialTheme.typography.labelSmall,
+            color = readableSecondaryTextColor(),
+            textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

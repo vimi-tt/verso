@@ -6,6 +6,12 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
+    <release version="Arcodeon 1">
+        <item>Redesigned album and playlist detail screens with integrated in-collection track search, total duration metadata, and a centered single-row action bar</item>
+        <item>Updated artist pages with dynamic artwork palette headers and centered playback controls</item>
+        <item>Removed local device music UI from onboarding, library, search, and settings for a focused streaming experience</item>
+        <item>Fixed YouTube Music watch history syncing and Last.fm scrobbling authentication</item>
+    </release>
     <release version="1.0-beta3">
         <item>Added the Compasso continuous recommendation engine with infinite queue flow, real-time session affinity, 1-in-5 artist diversity window, and ATV studio audio purity filtering</item>
         <item>Added Familiar, 70/30, and Explore discovery modes in the queue panel with instant upcoming queue adaptation</item>

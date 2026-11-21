@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -103,6 +105,7 @@ internal fun YouTubeCollectionScreen(
     }
     var hasError by remember(collectionId, isAlbum) { mutableStateOf(false) }
     var retryNonce by remember(collectionId, isAlbum) { mutableIntStateOf(0) }
+    var searchQuery by remember(collectionId, isAlbum) { mutableStateOf("") }
 
     LaunchedEffect(collectionId, isAlbum, retryNonce) {
         val hasOfflineSongs = !offlineCollection?.songs.isNullOrEmpty()
@@ -150,6 +153,32 @@ internal fun YouTubeCollectionScreen(
     }
     val isCollectionDownloading = remember(songs, activeDownloadVideoIds) {
         songs.any { YouTubeUri.videoId(it.uri) in activeDownloadVideoIds }
+    }
+    val filteredSongs = remember(songs, searchQuery) {
+        val q = searchQuery.trim()
+        if (q.isEmpty()) {
+            songs
+        } else {
+            songs.filter { song ->
+                song.title.contains(q, ignoreCase = true) ||
+                    song.artist.contains(q, ignoreCase = true)
+            }
+        }
+    }
+    val totalDurationLabel = remember(songs) {
+        val totalSeconds = songs.sumOf { it.durationMs.coerceAtLeast(0L) } / 1000L
+        if (totalSeconds <= 0L) {
+            null
+        } else {
+            val hours = totalSeconds / 3600L
+            val minutes = (totalSeconds % 3600L) / 60L
+            val seconds = totalSeconds % 60L
+            if (hours > 0L) {
+                String.format("%02dh %02dm %02ds", hours, minutes, seconds)
+            } else {
+                String.format("%02dm %02ds", minutes, seconds)
+            }
+        }
     }
 
     val bgColor = MaterialTheme.colorScheme.background
@@ -207,6 +236,17 @@ internal fun YouTubeCollectionScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
+            if (songs.isNotEmpty()) {
+                item(key = "yt_collection_search") {
+                    CollectionFilterSearchBar(
+                        query = searchQuery,
+                        placeholder = commonCopy.search,
+                        clearCd = elovaire.music.droidbeauty.app.ui.i18n.searchCopy(language).clearSearch,
+                        onQueryChange = { searchQuery = it },
+                    )
+                }
+            }
+
             item(key = "yt_collection_header") {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -241,16 +281,26 @@ internal fun YouTubeCollectionScreen(
                                 resolvedSubtitle.trim()
                             }
                         }
-                        val meta = buildList {
-                            cleanedSubtitle.takeIf(String::isNotBlank)?.let(::add)
+                        if (cleanedSubtitle.isNotBlank()) {
+                            Text(
+                                text = cleanedSubtitle,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = readableSecondaryTextColor(),
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        val statsMeta = buildList {
                             if (songs.isNotEmpty()) {
                                 add(localizedCountLabel(songs.size, "song", language))
                             }
+                            totalDurationLabel?.let(::add)
                         }.joinToString(" • ")
-                        if (meta.isNotBlank()) {
+                        if (statsMeta.isNotBlank()) {
                             Text(
-                                text = meta,
-                                style = MaterialTheme.typography.bodyMedium,
+                                text = statsMeta,
+                                style = MaterialTheme.typography.bodySmall,
                                 color = readableSecondaryTextColor(),
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
@@ -291,13 +341,33 @@ internal fun YouTubeCollectionScreen(
 
             if (songs.isNotEmpty()) {
                 item(key = "yt_collection_actions") {
-                    Column(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 2.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        CollectionQuickAction(
+                            label = shuffleLabel,
+                            iconResId = R.drawable.ic_lucide_shuffle,
+                            onClick = { onShuffleSongs(songs, resolvedTitle) },
+                        )
+                        CollectionQuickAction(
+                            label = ytCopy.radioLabel,
+                            iconResId = R.drawable.ic_lucide_audio_waveform,
+                            onClick = {
+                                val seed = songs.first()
+                                val videoId = YouTubeUri.videoId(seed.uri) ?: return@CollectionQuickAction
+                                scope.launch {
+                                    val related = runCatching {
+                                        youTubeCatalog.getRelatedSongs(videoId)
+                                    }.getOrDefault(emptyList())
+                                    val queue = listOf(seed) + related.filterNot { it.id == seed.id }
+                                    onPlaySongs(seed, queue, resolvedTitle)
+                                }
+                            },
+                        )
                         // Centered signature circular Play button
                         Box(
                             modifier = Modifier
@@ -318,64 +388,36 @@ internal fun YouTubeCollectionScreen(
                                 modifier = Modifier.size(23.dp),
                             )
                         }
-
-                        // Secondary actions side-by-side below the Play button: Shuffle, Radio, Download
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        if (onDownloadCollection != null) {
                             CollectionQuickAction(
-                                label = shuffleLabel,
-                                iconResId = R.drawable.ic_lucide_shuffle,
-                                onClick = { onShuffleSongs(songs, resolvedTitle) },
-                            )
-                            CollectionQuickAction(
-                                label = ytCopy.radioLabel,
-                                iconResId = R.drawable.ic_lucide_audio_waveform,
+                                label = when {
+                                    isCollectionDownloaded -> dlCopy.downloadedAction
+                                    isCollectionDownloading -> dlCopy.downloadingAction
+                                    else -> dlCopy.downloadAction
+                                },
+                                iconResId = if (isCollectionDownloaded) {
+                                    R.drawable.ic_lucide_check
+                                } else {
+                                    R.drawable.ic_lucide_download
+                                },
+                                highlighted = isCollectionDownloaded,
+                                isLoading = isCollectionDownloading && !isCollectionDownloaded,
                                 onClick = {
-                                    val seed = songs.first()
-                                    val videoId = YouTubeUri.videoId(seed.uri) ?: return@CollectionQuickAction
-                                    scope.launch {
-                                        val related = runCatching {
-                                            youTubeCatalog.getRelatedSongs(videoId)
-                                        }.getOrDefault(emptyList())
-                                        val queue = listOf(seed) + related.filterNot { it.id == seed.id }
-                                        onPlaySongs(seed, queue, resolvedTitle)
+                                    if (!isCollectionDownloaded) {
+                                        onDownloadCollection(
+                                            songs,
+                                            YouTubeDownloadedCollection(
+                                                id = collectionId,
+                                                isAlbum = isAlbum,
+                                                title = resolvedTitle,
+                                                subtitle = resolvedSubtitle,
+                                                thumbnailUri = resolvedArtUri,
+                                                songs = songs,
+                                            ),
+                                        )
                                     }
                                 },
                             )
-                            if (onDownloadCollection != null) {
-                                CollectionQuickAction(
-                                    label = when {
-                                        isCollectionDownloaded -> dlCopy.downloadedAction
-                                        isCollectionDownloading -> dlCopy.downloadingAction
-                                        else -> dlCopy.downloadAction
-                                    },
-                                    iconResId = if (isCollectionDownloaded) {
-                                        R.drawable.ic_lucide_check
-                                    } else {
-                                        R.drawable.ic_lucide_download
-                                    },
-                                    highlighted = isCollectionDownloaded,
-                                    isLoading = isCollectionDownloading && !isCollectionDownloaded,
-                                    onClick = {
-                                        if (!isCollectionDownloaded) {
-                                            onDownloadCollection(
-                                                songs,
-                                                YouTubeDownloadedCollection(
-                                                    id = collectionId,
-                                                    isAlbum = isAlbum,
-                                                    title = resolvedTitle,
-                                                    subtitle = resolvedSubtitle,
-                                                    thumbnailUri = resolvedArtUri,
-                                                    songs = songs,
-                                                ),
-                                            )
-                                        }
-                                    },
-                                )
-                            }
                         }
                     }
                 }
@@ -431,9 +473,9 @@ internal fun YouTubeCollectionScreen(
                         }
                     }
                 }
-                songs.isNotEmpty() -> {
+                filteredSongs.isNotEmpty() -> {
                     itemsIndexed(
-                        items = songs,
+                        items = filteredSongs,
                         key = { index, song -> "${index}_${song.id}" },
                     ) { index, song ->
                         val trackDownloaded = isCollectionDownloaded ||
@@ -444,7 +486,7 @@ internal fun YouTubeCollectionScreen(
                             isFavorite = song.id in favoriteSongIds,
                             isDownloaded = trackDownloaded,
                             downloadedCd = dlCopy.downloadedAction,
-                            onClick = { onPlaySongs(song, songs, resolvedTitle) },
+                            onClick = { onPlaySongs(song, filteredSongs, resolvedTitle) },
                             onToggleFavorite = { onToggleFavorite(song.id) },
                         )
                     }
@@ -457,6 +499,62 @@ internal fun YouTubeCollectionScreen(
             onBack = onBack,
             modifier = Modifier.align(Alignment.TopCenter),
         )
+    }
+}
+
+@Composable
+private fun CollectionFilterSearchBar(
+    query: String,
+    placeholder: String,
+    clearCd: String,
+    onQueryChange: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(ElovaireRadii.pill))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            painter = painterResource(id = R.drawable.ic_lucide_search),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+            modifier = Modifier.size(16.dp),
+        )
+        Box(modifier = Modifier.weight(1f)) {
+            if (query.isEmpty()) {
+                Text(
+                    text = placeholder,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_lucide_x),
+                contentDescription = clearCd,
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                modifier = Modifier
+                    .size(16.dp)
+                    .elovaireClickable { onQueryChange("") },
+            )
+        }
     }
 }
 

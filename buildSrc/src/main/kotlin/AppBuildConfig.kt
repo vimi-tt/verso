@@ -14,8 +14,8 @@ object AppBuildConfig {
     object Application {
         const val packageName = "elovaire.music.droidbeauty.app"
         const val applicationId = "com.vimitt.verso"
-        const val versionCode = 261001187
-        const val versionName = "1.0-beta3"
+        const val versionCode = 261001188
+        const val versionName = "Arcodeon 1"
         const val macrobenchmarkNamespace = "elovaire.music.droidbeauty.app.macrobenchmark"
     }
 
