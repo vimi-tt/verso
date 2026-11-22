@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 /** Owns the ready-state shell after the root permission gate has granted media access. */
@@ -13,12 +14,22 @@ internal fun ElovaireRootReadyHost(
     resetHomeScrollOnColdStart: Boolean,
 ) {
     val appState by composition.rootViewModel.appState.collectAsStateWithLifecycle()
-    val derivedState = rememberRootLibraryDerivedState(
+    val rawDerivedState = rememberRootLibraryDerivedState(
         library = appState.library,
         playback = appState.playback,
         playlists = appState.playlists,
         songPlayCounts = appState.songPlayCounts,
     )
+    val importedPlaylistsSnapshot by composition.importedPlaylistStore.snapshot.collectAsStateWithLifecycle()
+    val derivedState = androidx.compose.runtime.remember(rawDerivedState, importedPlaylistsSnapshot) {
+        if (importedPlaylistsSnapshot.songsById.isEmpty()) {
+            rawDerivedState
+        } else {
+            rawDerivedState.copy(
+                songsById = importedPlaylistsSnapshot.songsById + rawDerivedState.songsById,
+            )
+        }
+    }
     val albumCollectionLayoutMode = appState.albumCollectionLayoutModeName.toAlbumLayoutMode()
     val libraryState = appState.library
     val playbackState = appState.playback
@@ -46,6 +57,7 @@ internal fun ElovaireRootReadyHost(
         }
     }
     androidx.compose.runtime.LaunchedEffect(Unit) {
+        val savedCompasso = composition.compassoEngine.restorePersistedQueueState()
         if (playbackState.queue.isEmpty() && playbackState.currentSong == null) {
             val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 composition.listeningStatsStore.loadLastPlaybackSession()
@@ -58,10 +70,23 @@ internal fun ElovaireRootReadyHost(
                     positionMs = saved.positionMs,
                     sourceLabel = activeSong.album.ifBlank { activeSong.artist },
                 )
+            } else if (savedCompasso != null && playbackState.queue.isEmpty()) {
+                val restoredSongs = elovaire.music.droidbeauty.app.data.compasso.CompassoQueueSerializer
+                    .decodeSongs(savedCompasso.queueJson)
+                if (restoredSongs.isNotEmpty()) {
+                    val idx = savedCompasso.currentIndex.coerceIn(restoredSongs.indices)
+                    val activeSong = restoredSongs[idx]
+                    composition.playback.restorePausedQueue(
+                        songs = restoredSongs,
+                        currentIndex = idx,
+                        positionMs = 0L,
+                        sourceLabel = activeSong.album.ifBlank { activeSong.artist },
+                    )
+                }
             }
         }
     }
-    androidx.compose.runtime.LaunchedEffect(playbackState.currentSong?.id, playbackState.queue.size) {
+    androidx.compose.runtime.LaunchedEffect(playbackState.currentSong?.id, playbackState.queue.size, isPlaybackActuallyPlaying) {
         val current = playbackState.currentSong ?: return@LaunchedEffect
         val queue = playbackState.queue.ifEmpty { listOf(current) }
         val index = queue.indexOfFirst { it.id == current.id }.coerceAtLeast(0)
@@ -70,9 +95,9 @@ internal fun ElovaireRootReadyHost(
             currentIndex = index,
             positionMs = composition.playback.progressState.value.positionMs,
         )
-    }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        composition.compassoEngine.restorePersistedQueueState()
+        if (composition.compassoEngine.uiState.value.isActive) {
+            composition.compassoEngine.persistQueueState(queue, index)
+        }
     }
     var previousFavoriteIds by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<Set<Long>?>(null)
@@ -80,6 +105,8 @@ internal fun ElovaireRootReadyHost(
     androidx.compose.runtime.LaunchedEffect(appState.favoriteSongIds) {
         val prev = previousFavoriteIds
         previousFavoriteIds = appState.favoriteSongIds
+        val quality = composition.youTubeCatalog.qualityState.value
+        val canAutoDownload = quality.autoDownloadLikedOnWifi && composition.youTubeDownloadManager.isOnWifi()
         if (prev != null) {
             val newlyLiked = appState.favoriteSongIds - prev
             for (likedId in newlyLiked) {
@@ -88,6 +115,22 @@ internal fun ElovaireRootReadyHost(
                     ?: playbackState.currentSong?.takeIf { it.id == likedId }
                 if (song != null) {
                     composition.compassoEngine.recordLikeSignal(song)
+                    if (canAutoDownload && elovaire.music.droidbeauty.app.data.youtube.YouTubeUri.isYouTubeUri(song.uri)) {
+                        composition.youTubeDownloadManager.enqueueDownload(song)
+                    }
+                }
+            }
+        }
+    }
+    val ytQualityState by composition.youTubeCatalog.qualityState.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(ytQualityState.autoDownloadLikedOnWifi, appState.favoriteSongIds.size) {
+        if (ytQualityState.autoDownloadLikedOnWifi && composition.youTubeDownloadManager.isOnWifi()) {
+            val downloadedIds = composition.youTubeDownloadManager.state.value.downloadedVideoIds
+            for (favId in appState.favoriteSongIds) {
+                val song = derivedState.songsById[favId] ?: continue
+                val videoId = elovaire.music.droidbeauty.app.data.youtube.YouTubeUri.videoId(song.uri) ?: continue
+                if (videoId !in downloadedIds) {
+                    composition.youTubeDownloadManager.enqueueDownload(song)
                 }
             }
         }
@@ -146,6 +189,7 @@ internal fun ElovaireRootReadyHost(
         val song = playbackState.currentSong ?: return@LaunchedEffect
         composition.listeningStatsStore.recordRecentSong(song)
         composition.lastFmClient.updateNowPlaying(song)
+        composition.listenBrainzClient.updateNowPlaying(song)
     }
     androidx.compose.runtime.LaunchedEffect(playbackState.currentSong?.id, isPlaybackActuallyPlaying) {
         val song = playbackState.currentSong ?: return@LaunchedEffect
@@ -178,6 +222,7 @@ internal fun ElovaireRootReadyHost(
                 reportedExtraMs = 30_000L
                 composition.listeningStatsStore.recordSongPlayed(song, initialListenedMs = 30_000L)
                 composition.lastFmClient.scrobble(song)
+                composition.listenBrainzClient.scrobble(song)
                 if (song.genre.isBlank() || song.genre.equals("Unknown Genre", ignoreCase = true)) {
                     val resolvedGenre = composition.lastFmClient.resolveGenre(song)
                     if (!resolvedGenre.isNullOrBlank()) {
@@ -188,6 +233,13 @@ internal fun ElovaireRootReadyHost(
                 val delta = accumulatedPlayMs - reportedExtraMs
                 reportedExtraMs = accumulatedPlayMs
                 composition.listeningStatsStore.addListenedDuration(song, delta)
+                val queue = playbackState.queue.ifEmpty { listOf(song) }
+                val index = queue.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
+                composition.listeningStatsStore.saveLastPlaybackSession(
+                    queue = queue,
+                    currentIndex = index,
+                    positionMs = composition.playback.progressState.value.positionMs,
+                )
             }
         }
     }
@@ -210,6 +262,8 @@ internal fun ElovaireRootReadyHost(
         uiRuntime = uiRuntime,
         youTubeCatalog = composition.youTubeCatalog,
         youTubeDownloadManager = composition.youTubeDownloadManager,
+        compassoEngine = composition.compassoEngine,
+        importedPlaylistStore = composition.importedPlaylistStore,
     )
 
     androidx.compose.runtime.CompositionLocalProvider(
@@ -240,6 +294,116 @@ internal fun ElovaireRootReadyHost(
                 youTubeDownloadManager = composition.youTubeDownloadManager,
                 listeningStatsStore = composition.listeningStatsStore,
                 lastFmClient = composition.lastFmClient,
+                listenBrainzClient = composition.listenBrainzClient,
+                onExportLibraryJson = {
+                    elovaire.music.droidbeauty.app.data.settings.LibraryBackupManager.exportToJson(
+                        playlists = appState.playlists,
+                        songsById = derivedState.songsById,
+                        favoriteSongIds = appState.favoriteSongIds,
+                        listeningEvents = composition.listeningStatsStore.events.value,
+                    )
+                },
+                onImportLibraryJson = { rawJson ->
+                    val parsed = elovaire.music.droidbeauty.app.data.settings.LibraryBackupManager.parseImport(rawJson)
+                        ?: return@RootRouteGraph 0
+                    val allSongs = derivedState.songsById.values
+                    var importedCount = 0
+                    val favMatched = elovaire.music.droidbeauty.app.data.settings.LibraryBackupManager
+                        .matchTracksToSongs(parsed.favoriteTracks, allSongs)
+                    val favIdsToAdd = favMatched.map { it.id }.filter { it !in appState.favoriteSongIds }
+                    if (favIdsToAdd.isNotEmpty()) {
+                        composition.favoritesStore.setFavoriteSongs(favIdsToAdd, favorite = true).await()
+                        importedCount += favIdsToAdd.size
+                    }
+                    for (pl in parsed.playlists) {
+                        val matched = elovaire.music.droidbeauty.app.data.settings.LibraryBackupManager
+                            .matchTracksToSongs(pl.tracks, allSongs)
+                        if (matched.isNotEmpty()) {
+                            val result = composition.playlistStore.createPlaylist(pl.name).await()
+                            if (result is elovaire.music.droidbeauty.app.data.settings.PlaylistMutationResult.Success) {
+                                result.playlistId?.let { newId ->
+                                    composition.playlistStore.addSongsToPlaylist(newId, matched.map { it.id }).await()
+                                    importedCount += matched.size
+                                }
+                            }
+                        }
+                    }
+                    importedCount
+                },
+                onImportPlaylistLink = { rawUrl, customName ->
+                    val parsedLink = elovaire.music.droidbeauty.app.data.settings.PlaylistLinkImporter.parseLink(rawUrl)
+                        ?: return@RootRouteGraph 0
+                    when (parsedLink) {
+                        is elovaire.music.droidbeauty.app.data.settings.ParsedPlaylistLink.YouTube -> {
+                            val songs = runCatching {
+                                composition.youTubeCatalog.getPlaylistSongs(parsedLink.playlistId)
+                            }.getOrDefault(emptyList())
+                            if (songs.isEmpty()) return@RootRouteGraph 0
+                            val targetName = customName?.trim()?.takeIf { it.isNotBlank() } ?: "YouTube Playlist"
+                            val result = composition.playlistStore.createPlaylist(targetName).await()
+                            if (result is elovaire.music.droidbeauty.app.data.settings.PlaylistMutationResult.Success) {
+                                result.playlistId?.let { newId ->
+                                    composition.importedPlaylistStore.savePlaylistData(
+                                        playlistId = newId,
+                                        coverUri = songs.firstOrNull()?.artUri?.toString(),
+                                        songs = songs,
+                                    )
+                                    composition.playlistStore.addSongsToPlaylist(newId, songs.map { it.id }).await()
+                                    songs.size
+                                } ?: 0
+                            } else {
+                                0
+                            }
+                        }
+                        is elovaire.music.droidbeauty.app.data.settings.ParsedPlaylistLink.Spotify -> {
+                            val embed = elovaire.music.droidbeauty.app.data.settings.PlaylistLinkImporter
+                                .fetchSpotifyEmbedPlaylist(parsedLink.playlistId)
+                                ?: return@RootRouteGraph 0
+                            val localByKey = derivedState.songsById.values.associateBy { song ->
+                                elovaire.music.droidbeauty.app.data.compasso.TrackNormalizer
+                                    .normalizeKey(song.title, song.artist)
+                            }
+                            val resolved = ArrayList<elovaire.music.droidbeauty.app.domain.model.Song>()
+                            val seenIds = HashSet<Long>()
+                            kotlinx.coroutines.coroutineScope {
+                                for (chunk in embed.tracks.take(50).chunked(5)) {
+                                    val batch = chunk.map { ref ->
+                                        async {
+                                            elovaire.music.droidbeauty.app.data.settings.PlaylistLinkImporter
+                                                .matchLocalOrFallback(ref, localByKey)
+                                                ?: runCatching {
+                                                    composition.youTubeCatalog.searchSongs("${ref.title} ${ref.artist}").firstOrNull()
+                                                }.getOrNull()
+                                        }
+                                    }
+                                    for (deferred in batch) {
+                                        val match = deferred.await()
+                                        if (match != null && seenIds.add(match.id)) {
+                                            resolved.add(match)
+                                        }
+                                    }
+                                }
+                            }
+                            if (resolved.isEmpty()) return@RootRouteGraph 0
+                            val targetName = customName?.trim()?.takeIf { it.isNotBlank() } ?: embed.name
+                            val result = composition.playlistStore.createPlaylist(targetName).await()
+                            if (result is elovaire.music.droidbeauty.app.data.settings.PlaylistMutationResult.Success) {
+                                result.playlistId?.let { newId ->
+                                    composition.importedPlaylistStore.savePlaylistData(
+                                        playlistId = newId,
+                                        coverUri = embed.coverArtUrl ?: resolved.firstOrNull()?.artUri?.toString(),
+                                        songs = resolved,
+                                    )
+                                    composition.playlistStore.addSongsToPlaylist(newId, resolved.map { it.id }).await()
+                                    resolved.size
+                                } ?: 0
+                            } else {
+                                0
+                            }
+                        }
+                    }
+                },
+                importedCoverUris = importedPlaylistsSnapshot.coverUrisByPlaylistId,
                 viewModelFactory = composition.viewModelFactory,
                 artistImageRepository = composition.artistImageRepository,
                 audiobookChapterReader = composition.audiobookChapterReader,

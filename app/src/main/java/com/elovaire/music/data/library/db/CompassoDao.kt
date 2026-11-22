@@ -30,6 +30,15 @@ internal interface CompassoDao {
     suspend fun removeBlockedTrack(videoId: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBlockedArtist(entry: BlockedArtistEntity)
+
+    @Query("SELECT * FROM compasso_blocked_artists ORDER BY blockedAt DESC")
+    suspend fun getAllBlockedArtists(): List<BlockedArtistEntity>
+
+    @Query("DELETE FROM compasso_blocked_artists WHERE normalizedArtist = :normalizedArtist")
+    suspend fun removeBlockedArtist(normalizedArtist: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun savePersistedQueue(state: PersistedQueueEntity)
 
     @Query("SELECT * FROM compasso_persisted_queue WHERE singletonId = 1 LIMIT 1")

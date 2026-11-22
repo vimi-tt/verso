@@ -210,6 +210,7 @@ internal class PlaybackManager internal constructor(
     ) -> Unit = { _, _, _, _ -> },
     private val clock: AppClock = AndroidAppClock,
     private val resourceTracker: BackendResourceTracker = BackendResourceRegistry,
+    private val youTubeLoudnessProvider: (String) -> Float? = { null },
 ) : NowPlayingPlayback, PlaybackIntegrationPort, PlaybackQueueMutationPort {
     private val scope = scope
     private val appContext = context.applicationContext
@@ -2522,10 +2523,15 @@ internal class PlaybackManager internal constructor(
         baseGain: Float,
         song: Song? = currentSong(),
     ): EffectiveDspState {
+        val normalizationMetadata = song?.volumeNormalization ?: run {
+            val videoId = elovaire.music.droidbeauty.app.data.youtube.YouTubeUri.videoId(song?.uri)
+            val loudnessDb = videoId?.let(youTubeLoudnessProvider)?.takeIf(Float::isFinite)
+            loudnessDb?.let { VolumeNormalizationMetadata(trackGainDb = (-it).coerceIn(-18f, 18f)) }
+        }
         return resolveEffectiveDspState(
             effectsRequested = hasSignalAlteringEffects(),
             normalizationRequested = volumeNormalizationEnabled,
-            normalizationMetadata = song?.volumeNormalization,
+            normalizationMetadata = normalizationMetadata,
             directPlaybackActive = isDirectPlaybackActive,
             softwareGainAllowed = !usbDacHardwareVolumeManager.shouldBypassSoftwareVolume(),
             baseGain = baseGain,

@@ -1,10 +1,16 @@
 package elovaire.music.droidbeauty.app.data.youtube
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.net.ConnectivityManager
+import android.net.Network
 import android.util.Log
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import elovaire.music.droidbeauty.app.BuildConfig
 import elovaire.music.droidbeauty.app.domain.model.Song
 import java.io.File
+import java.io.IOException
 import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -30,12 +36,88 @@ internal data class LastFmAccountState(
     val apiSecret: String = "",
     val scrobbleEnabled: Boolean = true,
     val isSigningIn: Boolean = false,
+    val pendingScrobbleCount: Int = 0,
     val errorMessage: String? = null,
 )
 
+internal data class StoredLastFmSession(
+    val username: String,
+    val sessionKey: String,
+    val apiKey: String,
+    val apiSecret: String,
+    val scrobbleEnabled: Boolean,
+)
+
+internal interface LastFmSessionStorage {
+    fun load(): StoredLastFmSession?
+    fun save(session: StoredLastFmSession)
+    fun clear()
+}
+
+internal class EncryptedLastFmSessionStorage(
+    context: Context,
+) : LastFmSessionStorage {
+    private val appContext = context.applicationContext
+    private val prefs: SharedPreferences? by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        runCatching {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                appContext,
+                PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }.onFailure { error ->
+            Log.e(TAG, "EncryptedSharedPreferences unavailable for Last.fm", error)
+        }.getOrNull()
+    }
+
+    override fun load(): StoredLastFmSession? {
+        val store = prefs ?: return null
+        val username = store.getString(KEY_USERNAME, null).orEmpty()
+        val sessionKey = store.getString(KEY_SESSION_KEY, null).orEmpty()
+        if (username.isBlank() || sessionKey.isBlank()) return null
+        return StoredLastFmSession(
+            username = username,
+            sessionKey = sessionKey,
+            apiKey = store.getString(KEY_API_KEY, null).orEmpty(),
+            apiSecret = store.getString(KEY_API_SECRET, null).orEmpty(),
+            scrobbleEnabled = store.getBoolean(KEY_SCROBBLE_ENABLED, true),
+        )
+    }
+
+    override fun save(session: StoredLastFmSession) {
+        val store = prefs ?: return
+        store.edit()
+            .putString(KEY_USERNAME, session.username)
+            .putString(KEY_SESSION_KEY, session.sessionKey)
+            .putString(KEY_API_KEY, session.apiKey)
+            .putString(KEY_API_SECRET, session.apiSecret)
+            .putBoolean(KEY_SCROBBLE_ENABLED, session.scrobbleEnabled)
+            .apply()
+    }
+
+    override fun clear() {
+        prefs?.edit()?.clear()?.apply()
+    }
+
+    private companion object {
+        const val TAG = "LastFmSessionStorage"
+        const val PREFS_NAME = "lastfm_session_encrypted"
+        const val KEY_USERNAME = "username"
+        const val KEY_SESSION_KEY = "session_key"
+        const val KEY_API_KEY = "api_key"
+        const val KEY_API_SECRET = "api_secret"
+        const val KEY_SCROBBLE_ENABLED = "scrobble_enabled"
+    }
+}
+
 /**
- * Handles Last.fm mobile session authentication, Now Playing updates,
- * 30-second scrobbling, and multi-source genre resolution (Last.fm tags + iTunes Search).
+ * Handles Last.fm mobile session authentication (session key stored encrypted, password never persisted),
+ * Now Playing updates, 30-second scrobbling with an offline retry queue, and multi-source genre resolution.
  */
 internal class LastFmClient(
     context: Context,
@@ -43,12 +125,26 @@ internal class LastFmClient(
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val nowMs: () -> Long,
+    private val sessionStorage: LastFmSessionStorage = EncryptedLastFmSessionStorage(context),
+    pendingQueueFile: File = File(context.applicationContext.filesDir, "lastfm_pending_scrobbles.json"),
+    registerNetworkCallback: Boolean = true,
 ) {
-    private val sessionFile = File(context.applicationContext.filesDir, "lastfm_session.json")
+    private val legacySessionFile = File(context.applicationContext.filesDir, "lastfm_session.json")
     private val lock = Any()
+    private val pendingQueue = PendingScrobbleQueue(pendingQueueFile)
     private val genreCache = ConcurrentHashMap<String, String>()
     private val _state = MutableStateFlow(loadInitialState())
     val state: StateFlow<LastFmAccountState> = _state.asStateFlow()
+
+    init {
+        if (registerNetworkCallback) {
+            registerConnectivityFlush(context.applicationContext)
+        }
+        val initial = _state.value
+        if (initial.isLoggedIn && initial.scrobbleEnabled && initial.pendingScrobbleCount > 0) {
+            scope.launch(ioDispatcher) { flushPendingScrobbles() }
+        }
+    }
 
     fun signIn(
         username: String,
@@ -107,12 +203,14 @@ internal class LastFmClient(
                     apiSecret = apiSecret,
                     scrobbleEnabled = _state.value.scrobbleEnabled,
                     isSigningIn = false,
+                    pendingScrobbleCount = _state.value.pendingScrobbleCount,
                     errorMessage = null,
                 )
                 synchronized(lock) { persistStateLocked(updated) }
                 _state.value = updated
+                flushPendingScrobbles()
             }.onFailure { error ->
-                Log.w(TAG, "Last.fm signIn failed: ${error.message}")
+                runCatching { Log.w(TAG, "Last.fm signIn failed: ${error.message}") }
                 _state.update {
                     it.copy(
                         isSigningIn = false,
@@ -129,12 +227,20 @@ internal class LastFmClient(
             synchronized(lock) { persistStateLocked(updated) }
             updated
         }
+        if (enabled && _state.value.isLoggedIn) {
+            scope.launch(ioDispatcher) { flushPendingScrobbles() }
+        }
     }
 
     fun signOut() {
-        val cleared = LastFmAccountState()
+        val cleared = LastFmAccountState(
+            apiKey = BuildConfig.LASTFM_API_KEY,
+            apiSecret = BuildConfig.LASTFM_API_SECRET,
+        )
         synchronized(lock) {
-            if (sessionFile.exists()) sessionFile.delete()
+            sessionStorage.clear()
+            pendingQueue.clear()
+            if (legacySessionFile.exists()) legacySessionFile.delete()
         }
         _state.value = cleared
     }
@@ -172,21 +278,67 @@ internal class LastFmClient(
         if (artist.isBlank() || song.title.isBlank()) return
 
         withContext(ioDispatcher) {
-            runCatching {
-                val timestampSeconds = (nowMs() / 1000L).toString()
-                val params = buildMap {
-                    put("method", "track.scrobble")
-                    put("artist", artist)
-                    put("track", song.title)
-                    put("timestamp", timestampSeconds)
-                    if (song.album.isNotBlank()) put("album", song.album)
-                    if (song.durationMs > 0L) put("duration", (song.durationMs / 1000L).toString())
-                    put("api_key", current.apiKey)
-                    put("sk", current.sessionKey)
+            val timestampSeconds = (nowMs() / 1000L).coerceAtLeast(1L)
+            val entry = PendingScrobble(
+                artist = artist,
+                track = song.title,
+                album = song.album,
+                durationMs = song.durationMs,
+                timestampSeconds = timestampSeconds,
+            )
+            val params = buildScrobbleParams(entry, current)
+            when (postSignedLastFm(params, current.apiSecret)) {
+                ScrobblePostResult.Success -> flushPendingScrobblesLocked(current)
+                ScrobblePostResult.RetryableFailure -> {
+                    val count = synchronized(lock) { pendingQueue.enqueue(entry) }
+                    _state.update { it.copy(pendingScrobbleCount = count) }
                 }
-                postSignedLastFm(params, current.apiSecret)
+                ScrobblePostResult.PermanentFailure -> Unit
             }
         }
+    }
+
+    suspend fun flushPendingScrobbles() {
+        val current = _state.value
+        if (!current.isLoggedIn || !current.scrobbleEnabled) return
+        withContext(ioDispatcher) {
+            flushPendingScrobblesLocked(current)
+        }
+    }
+
+    private fun flushPendingScrobblesLocked(current: LastFmAccountState) {
+        val snapshot = synchronized(lock) { pendingQueue.snapshot() }
+        if (snapshot.isEmpty()) return
+
+        var stopOnNetwork = false
+        for (entry in snapshot) {
+            if (stopOnNetwork) break
+            val params = buildScrobbleParams(entry, current)
+            when (postSignedLastFm(params, current.apiSecret)) {
+                ScrobblePostResult.Success,
+                ScrobblePostResult.PermanentFailure -> {
+                    val remaining = synchronized(lock) { pendingQueue.remove(entry) }
+                    _state.update { it.copy(pendingScrobbleCount = remaining) }
+                }
+                ScrobblePostResult.RetryableFailure -> {
+                    stopOnNetwork = true
+                }
+            }
+        }
+    }
+
+    private fun buildScrobbleParams(
+        entry: PendingScrobble,
+        current: LastFmAccountState,
+    ): Map<String, String> = buildMap {
+        put("method", "track.scrobble")
+        put("artist", entry.artist)
+        put("track", entry.track)
+        put("timestamp", entry.timestampSeconds.toString())
+        if (entry.album.isNotBlank()) put("album", entry.album)
+        if (entry.durationMs > 0L) put("duration", (entry.durationMs / 1000L).toString())
+        put("api_key", current.apiKey)
+        put("sk", current.sessionKey)
     }
 
     /**
@@ -217,27 +369,47 @@ internal class LastFmClient(
         }
     }
 
-    private fun postSignedLastFm(params: Map<String, String>, apiSecret: String) {
-        val sig = signParams(params, apiSecret)
-        val form = FormBody.Builder().apply {
-            params.forEach { (k, v) -> add(k, v) }
-            add("api_sig", sig)
-            add("format", "json")
-        }.build()
-        val request = Request.Builder().url(LASTFM_API_URL).post(form).build()
-        okHttpClient.newCall(request).execute().use { resp ->
-            val body = resp.body?.string().orEmpty()
-            val method = params["method"].orEmpty()
-            if (!resp.isSuccessful) {
-                Log.w(TAG, "Last.fm $method HTTP ${resp.code}: $body")
-            } else {
-                val json = runCatching { JSONObject(body) }.getOrNull()
-                if (json != null && json.has("error")) {
-                    Log.w(TAG, "Last.fm $method error ${json.optInt("error")}: ${json.optString("message")}")
+    private fun postSignedLastFm(params: Map<String, String>, apiSecret: String): ScrobblePostResult {
+        return try {
+            val sig = signParams(params, apiSecret)
+            val form = FormBody.Builder().apply {
+                params.forEach { (k, v) -> add(k, v) }
+                add("api_sig", sig)
+                add("format", "json")
+            }.build()
+            val request = Request.Builder().url(LASTFM_API_URL).post(form).build()
+            okHttpClient.newCall(request).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                val method = params["method"].orEmpty()
+                if (!resp.isSuccessful) {
+                    runCatching { Log.w(TAG, "Last.fm $method HTTP ${resp.code}: $body") }
+                    if (resp.code == 429 || resp.code >= 500) {
+                        ScrobblePostResult.RetryableFailure
+                    } else {
+                        ScrobblePostResult.PermanentFailure
+                    }
                 } else {
-                    Log.i(TAG, "Last.fm $method OK")
+                    val json = runCatching { JSONObject(body) }.getOrNull()
+                    if (json != null && json.has("error")) {
+                        val code = json.optInt("error")
+                        runCatching { Log.w(TAG, "Last.fm $method error $code: ${json.optString("message")}") }
+                        if (code in RETRYABLE_LASTFM_ERRORS) {
+                            ScrobblePostResult.RetryableFailure
+                        } else {
+                            ScrobblePostResult.PermanentFailure
+                        }
+                    } else {
+                        runCatching { Log.i(TAG, "Last.fm $method OK") }
+                        ScrobblePostResult.Success
+                    }
                 }
             }
+        } catch (io: IOException) {
+            runCatching { Log.w(TAG, "Last.fm network error (queued): ${io.message}") }
+            ScrobblePostResult.RetryableFailure
+        } catch (t: RuntimeException) {
+            runCatching { Log.w(TAG, "Last.fm unexpected error: ${t.message}") }
+            ScrobblePostResult.PermanentFailure
         }
     }
 
@@ -307,50 +479,117 @@ internal class LastFmClient(
 
     private fun loadInitialState(): LastFmAccountState {
         synchronized(lock) {
-            if (!sessionFile.isFile) {
+            val pendingCount = pendingQueue.size()
+            val encrypted = sessionStorage.load()
+            if (encrypted != null) {
+                if (legacySessionFile.exists()) {
+                    runCatching { legacySessionFile.delete() }
+                }
+                val apiKey = encrypted.apiKey.ifBlank { BuildConfig.LASTFM_API_KEY }
+                val apiSecret = encrypted.apiSecret.ifBlank { BuildConfig.LASTFM_API_SECRET }
+                return LastFmAccountState(
+                    isLoggedIn = encrypted.username.isNotBlank() &&
+                        encrypted.sessionKey.isNotBlank() &&
+                        apiKey.isNotBlank() &&
+                        apiSecret.isNotBlank(),
+                    username = encrypted.username,
+                    sessionKey = encrypted.sessionKey,
+                    apiKey = apiKey,
+                    apiSecret = apiSecret,
+                    scrobbleEnabled = encrypted.scrobbleEnabled,
+                    pendingScrobbleCount = pendingCount,
+                )
+            }
+
+            if (!legacySessionFile.isFile) {
                 return LastFmAccountState(
                     apiKey = BuildConfig.LASTFM_API_KEY,
                     apiSecret = BuildConfig.LASTFM_API_SECRET,
+                    pendingScrobbleCount = pendingCount,
                 )
             }
-            return runCatching {
-                val obj = JSONObject(sessionFile.readText())
+
+            val migrated = runCatching {
+                val obj = JSONObject(legacySessionFile.readText())
                 val username = obj.optString("username")
                 val rawSessionKey = obj.optString("sessionKey")
                 val isLegacyCookieSession = rawSessionKey.contains("=") || rawSessionKey.contains(";")
                 val sessionKey = if (isLegacyCookieSession) "" else rawSessionKey
                 val apiKey = obj.optString("apiKey").ifBlank { BuildConfig.LASTFM_API_KEY }
                 val apiSecret = obj.optString("apiSecret").ifBlank { BuildConfig.LASTFM_API_SECRET }
+                val scrobbleEnabled = obj.optBoolean("scrobbleEnabled", true)
+                val cleanUser = if (isLegacyCookieSession) "" else username
+                if (cleanUser.isNotBlank() && sessionKey.isNotBlank()) {
+                    sessionStorage.save(
+                        StoredLastFmSession(
+                            username = cleanUser,
+                            sessionKey = sessionKey,
+                            apiKey = apiKey,
+                            apiSecret = apiSecret,
+                            scrobbleEnabled = scrobbleEnabled,
+                        ),
+                    )
+                }
                 LastFmAccountState(
-                    isLoggedIn = username.isNotBlank() && sessionKey.isNotBlank() && apiKey.isNotBlank() && apiSecret.isNotBlank(),
-                    username = if (isLegacyCookieSession) "" else username,
+                    isLoggedIn = cleanUser.isNotBlank() && sessionKey.isNotBlank() && apiKey.isNotBlank() && apiSecret.isNotBlank(),
+                    username = cleanUser,
                     sessionKey = sessionKey,
                     apiKey = apiKey,
                     apiSecret = apiSecret,
-                    scrobbleEnabled = obj.optBoolean("scrobbleEnabled", true),
+                    scrobbleEnabled = scrobbleEnabled,
+                    pendingScrobbleCount = pendingCount,
                 )
             }.getOrDefault(
                 LastFmAccountState(
                     apiKey = BuildConfig.LASTFM_API_KEY,
                     apiSecret = BuildConfig.LASTFM_API_SECRET,
+                    pendingScrobbleCount = pendingCount,
                 ),
             )
+            runCatching { legacySessionFile.delete() }
+            return migrated
         }
     }
 
     private fun persistStateLocked(state: LastFmAccountState) {
-        val obj = JSONObject()
-            .put("username", state.username)
-            .put("sessionKey", state.sessionKey)
-            .put("apiKey", state.apiKey)
-            .put("apiSecret", state.apiSecret)
-            .put("scrobbleEnabled", state.scrobbleEnabled)
-        sessionFile.writeText(obj.toString())
+        if (state.username.isBlank() || state.sessionKey.isBlank()) {
+            sessionStorage.clear()
+        } else {
+            sessionStorage.save(
+                StoredLastFmSession(
+                    username = state.username,
+                    sessionKey = state.sessionKey,
+                    apiKey = state.apiKey,
+                    apiSecret = state.apiSecret,
+                    scrobbleEnabled = state.scrobbleEnabled,
+                ),
+            )
+        }
+        if (legacySessionFile.exists()) {
+            runCatching { legacySessionFile.delete() }
+        }
+    }
+
+    private fun registerConnectivityFlush(appContext: Context) {
+        runCatching {
+            val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+            cm.registerDefaultNetworkCallback(
+                object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        val current = _state.value
+                        if (current.isLoggedIn && current.scrobbleEnabled && current.pendingScrobbleCount > 0) {
+                            scope.launch(ioDispatcher) { flushPendingScrobbles() }
+                        }
+                    }
+                },
+            )
+        }
     }
 
     private companion object {
         const val TAG = "LastFmClient"
         const val LASTFM_API_URL = "https://ws.audioscrobbler.com/2.0/"
+        val RETRYABLE_LASTFM_ERRORS = setOf(11, 16, 29)
         val IGNORED_GENRE_TAGS = setOf(
             "seen live",
             "favorites",

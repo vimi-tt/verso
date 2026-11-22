@@ -157,11 +157,7 @@ android {
 androidComponents {
     onVariants(selector().all()) { variant ->
         val buildLabel = variant.buildType ?: variant.name
-        val apkFileName = if (variant.name == "release") {
-            "verso.apk"
-        } else {
-            "${AppBuildConfig.Application.packageName}-$buildLabel.apk"
-        }
+        val apkFileName = "${AppBuildConfig.Application.packageName}-$buildLabel.apk"
         val variantName = variant.name
         val buildDirPath = layout.buildDirectory.asFile.get().absolutePath
         val apkArtifact = variant.artifacts.get(SingleArtifact.APK)
@@ -169,7 +165,7 @@ androidComponents {
             if (char.isLowerCase()) char.titlecase() else char.toString()
         }
 
-        if (variantName == "debug" || variantName == "release") {
+        if (variantName == "debug") {
             val installerOutput = layout.buildDirectory.file("$variantName/$apkFileName")
             tasks.matching { task -> task.name == "assemble$variantTaskSuffix" }.configureEach {
                 outputs.file(installerOutput)
@@ -193,9 +189,6 @@ androidComponents {
                         target = installerDir.resolve(apkFileName),
                         overwrite = true,
                     )
-                    if (variantName == "release" && sourceApk.name != apkFileName) {
-                        sourceApk.delete()
-                    }
                 }
             }
         }
@@ -298,6 +291,7 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.work.runtime)
+    implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.glance)
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.haze)
@@ -323,6 +317,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.json.unit.test)
     androidTestImplementation(libs.androidx.glance.testing)
     androidTestImplementation(libs.androidx.glance.appwidget.testing)
     androidTestImplementation(libs.androidx.test.uiautomator)

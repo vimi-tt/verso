@@ -718,15 +718,19 @@ internal fun PlaylistSelectionDialog(
     onPlaylistSelected: suspend (Long) -> PlaylistMutationResult,
     onCreatePlaylist: PlaylistCreateAction?,
     hazeState: HazeState? = null,
+    youTubePlaylists: List<elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary> = emptyList(),
+    onYouTubePlaylistSelected: (suspend (String) -> Boolean)? = null,
 ) {
     val revealRegistry = rememberMotionRevealRegistry()
     val language = LocalAppLanguage.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val motionSpecs = rememberMotionSpecs()
     val listState = rememberElovaireLazyListState(title, subtitle, "playlist_picker")
     val createPlaylist = onCreatePlaylist
     var showPlaylistCreator by rememberSaveable(title, subtitle) { mutableStateOf(false) }
     var playlistCreatorMounted by remember { mutableStateOf(false) }
     var selectedPlaylistId by rememberSaveable(title, subtitle) { mutableStateOf<Long?>(null) }
+    var selectedYouTubePlaylistId by rememberSaveable(title, subtitle) { mutableStateOf<String?>(null) }
     var isAddingToPlaylist by rememberSaveable(title, subtitle) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val visibleRows = 4
@@ -808,7 +812,8 @@ internal fun PlaylistSelectionDialog(
                             .fillMaxWidth()
                             .height(listHeight),
                     ) {
-                        if (displayedRows.isEmpty()) {
+                        val hasYouTubeChoices = youTubePlaylists.isNotEmpty() && onYouTubePlaylistSelected != null
+                        if (displayedRows.isEmpty() && !hasYouTubeChoices) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center,
@@ -829,6 +834,74 @@ internal fun PlaylistSelectionDialog(
                                     .ensureSingleItemRubberBand(listState),
                                 verticalArrangement = Arrangement.spacedBy(rowSpacing),
                             ) {
+                                if (hasYouTubeChoices) {
+                                    item(key = "yt_picker_header") {
+                                        Text(
+                                            text = "YouTube Music",
+                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        )
+                                    }
+                                    items(
+                                        items = youTubePlaylists,
+                                        key = { "yt_pick_${it.id}" },
+                                    ) { ytPl ->
+                                        val isYtSelected = selectedYouTubePlaylistId == ytPl.id
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(ElovaireRadii.tile))
+                                                .background(
+                                                    if (isYtSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
+                                                )
+                                                .elovaireClickable {
+                                                    selectedPlaylistId = null
+                                                    selectedYouTubePlaylistId = if (isYtSelected) null else ytPl.id
+                                                }
+                                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                ArtworkImage(
+                                                    uri = ytPl.thumbnailUri,
+                                                    title = ytPl.title,
+                                                    placeholderIconResId = R.drawable.ic_lucide_list_music,
+                                                    modifier = Modifier.size(62.dp),
+                                                    cornerRadius = ElovaireRadii.artworkSmall,
+                                                )
+                                                Column(
+                                                    modifier = Modifier.weight(1f),
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                ) {
+                                                    Text(
+                                                        text = ytPl.title,
+                                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                    )
+                                                    if (ytPl.subtitle.isNotBlank()) {
+                                                        Text(
+                                                            text = ytPl.subtitle,
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            color = readableSecondaryTextColor().copy(alpha = 0.8f),
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                        )
+                                                    }
+                                                }
+                                                SelectionIndicatorIcon(
+                                                    selected = isYtSelected,
+                                                    modifier = Modifier.padding(end = 6.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                                 items(
                                     items = displayedRows,
                                     key = { it.playlist.id },
@@ -846,6 +919,7 @@ internal fun PlaylistSelectionDialog(
                                                 registry = revealRegistry,
                                             ),
                                         onClick = {
+                                            selectedYouTubePlaylistId = null
                                             selectedPlaylistId = if (selectedPlaylistId == row.playlist.id) null else row.playlist.id
                                         },
                                     )
@@ -904,35 +978,50 @@ internal fun PlaylistSelectionDialog(
                             )
                         }
                         Spacer(modifier = Modifier.width(10.dp))
+                        val hasSelection = selectedPlaylistId != null || selectedYouTubePlaylistId != null
                         val addToPlaylistInteractionSource = rememberElovaireInteractionSource()
                         Surface(
                             modifier = Modifier.elovaireActionBump(
-                                enabled = selectedPlaylistId != null && !isAddingToPlaylist,
+                                enabled = hasSelection && !isAddingToPlaylist,
                                 interactionSource = addToPlaylistInteractionSource,
                                 label = "playlist_add_to_playlist_bump",
                             ),
                             onClick = {
-                                val playlistId = selectedPlaylistId ?: return@Surface
-                                if (!isAddingToPlaylist) {
+                                val ytId = selectedYouTubePlaylistId
+                                val playlistId = selectedPlaylistId
+                                if (!isAddingToPlaylist && (ytId != null || playlistId != null)) {
                                     isAddingToPlaylist = true
                                     scope.launch {
-                                        when (onPlaylistSelected(playlistId)) {
-                                            is PlaylistMutationResult.Success -> onDismiss()
-                                            else -> Unit
+                                        if (ytId != null && onYouTubePlaylistSelected != null) {
+                                            val ok = onYouTubePlaylistSelected(ytId)
+                                            val isPt = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese
+                                            val isEs = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish
+                                            val msg = if (ok) {
+                                                if (isPt) "Adicionada à playlist do YouTube" else if (isEs) "Añadida a la playlist de YouTube" else "Added to YouTube playlist"
+                                            } else {
+                                                if (isPt) "Não foi possível adicionar à playlist" else if (isEs) "No se pudo añadir a la playlist" else "Could not add to playlist"
+                                            }
+                                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                            if (ok) onDismiss()
+                                        } else if (playlistId != null) {
+                                            when (onPlaylistSelected(playlistId)) {
+                                                is PlaylistMutationResult.Success -> onDismiss()
+                                                else -> Unit
+                                            }
                                         }
                                         isAddingToPlaylist = false
                                     }
                                 }
                             },
-                            enabled = selectedPlaylistId != null && !isAddingToPlaylist,
+                            enabled = hasSelection && !isAddingToPlaylist,
                             interactionSource = addToPlaylistInteractionSource,
                             shape = RoundedCornerShape(ElovaireRadii.pill),
-                            color = if (selectedPlaylistId != null) {
+                            color = if (hasSelection) {
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
                             } else {
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
                             },
-                            contentColor = if (selectedPlaylistId != null) {
+                            contentColor = if (hasSelection) {
                                 MaterialTheme.colorScheme.onPrimary
                             } else {
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.52f)
@@ -1058,6 +1147,8 @@ internal fun AddToPlaylistPickerDialog(
     onPlaylistSelected: suspend (Long) -> PlaylistMutationResult,
     onCreatePlaylist: PlaylistCreateAction? = null,
     hazeState: HazeState? = null,
+    youTubePlaylists: List<elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary> = emptyList(),
+    onYouTubePlaylistSelected: (suspend (String) -> Boolean)? = null,
 ) {
     val language = LocalAppLanguage.current
     PlaylistSelectionDialog(
@@ -1070,5 +1161,7 @@ internal fun AddToPlaylistPickerDialog(
         onPlaylistSelected = onPlaylistSelected,
         onCreatePlaylist = onCreatePlaylist,
         hazeState = hazeState,
+        youTubePlaylists = youTubePlaylists,
+        onYouTubePlaylistSelected = onYouTubePlaylistSelected,
     )
 }

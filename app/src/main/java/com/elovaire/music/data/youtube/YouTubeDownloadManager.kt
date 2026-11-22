@@ -80,6 +80,8 @@ internal class YouTubeDownloadManager(
     private val _state = MutableStateFlow(loadInitialState())
     val state: StateFlow<YouTubeDownloadsState> = _state.asStateFlow()
 
+    fun isOnWifi(): Boolean = streamClient.qualityPreferences.isOnWifi()
+
     fun localFileFor(videoId: String): File? {
         val file = audioFileFor(videoId)
         return file.takeIf { it.isFile && it.length() > 0L }

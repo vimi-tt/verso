@@ -50,6 +50,7 @@ internal class YouTubeStreamClient(
 ) {
     val qualityPreferences: YouTubeQualityPreferences = YouTubeQualityPreferences(context)
     private val resolvedFormats = ConcurrentHashMap<String, YouTubeResolvedStreamFormat>()
+    private val resolvedLoudnessDb = ConcurrentHashMap<String, Float>()
     private val authenticatedTrackingCache = ConcurrentHashMap<String, PlaybackTrackingUrls>()
     @Volatile
     private var cachedSignatureTimestamp: Int? = null
@@ -75,6 +76,11 @@ internal class YouTubeStreamClient(
         AudioStreamResolver.create(
             http = youTubeHttp,
             newPipeGateway = newPipeGateway,
+            onLoudness = { videoId, loudnessDb ->
+                if (loudnessDb.isFinite()) {
+                    resolvedLoudnessDb[videoId] = loudnessDb
+                }
+            },
         )
     }
 
@@ -124,6 +130,8 @@ internal class YouTubeStreamClient(
 
     fun resolvedStreamFormat(videoId: String): YouTubeResolvedStreamFormat? = resolvedFormats[videoId]
 
+    fun resolvedLoudnessDb(videoId: String): Float? = resolvedLoudnessDb[videoId]
+
     fun resolvePlaybackUrlBlocking(
         videoId: String,
         preference: AudioPreference = qualityPreferences.currentStreamingPreference(),
@@ -156,6 +164,46 @@ internal class YouTubeStreamClient(
     fun signOut() {
         sessionManager.clearSession()
         streamCache.invalidateAll()
+    }
+
+    fun renameYouTubePlaylist(playlistId: String, newName: String): Boolean {
+        val cleanName = newName.trim()
+        if (cleanName.isBlank()) return false
+        val action = org.json.JSONObject()
+            .put("action", "ACTION_SET_PLAYLIST_NAME")
+            .put("playlistName", cleanName)
+        return editYouTubePlaylist(playlistId, org.json.JSONArray().put(action))
+    }
+
+    fun addVideoToYouTubePlaylist(playlistId: String, videoId: String): Boolean {
+        if (videoId.isBlank()) return false
+        val action = org.json.JSONObject()
+            .put("action", "ACTION_ADD_VIDEO")
+            .put("addedVideoId", videoId)
+        return editYouTubePlaylist(playlistId, org.json.JSONArray().put(action))
+    }
+
+    fun removeVideoFromYouTubePlaylist(playlistId: String, videoId: String): Boolean {
+        if (videoId.isBlank()) return false
+        val action = org.json.JSONObject()
+            .put("action", "ACTION_REMOVE_VIDEO_BY_VIDEO_ID")
+            .put("removedVideoId", videoId)
+        return editYouTubePlaylist(playlistId, org.json.JSONArray().put(action))
+    }
+
+    private fun editYouTubePlaylist(playlistId: String, actions: org.json.JSONArray): Boolean {
+        val cleanId = playlistId.removePrefix("VL").trim()
+        if (cleanId.isBlank()) return false
+        val client = org.json.JSONObject()
+            .put("clientName", "WEB_REMIX")
+            .put("clientVersion", "1.20250101.01.00")
+        val body = org.json.JSONObject()
+            .put("context", org.json.JSONObject().put("client", client))
+            .put("playlistId", cleanId)
+            .put("actions", actions)
+        val response = musicApi.postMusicApi("browse/edit_playlist", body) ?: return false
+        val status = runCatching { org.json.JSONObject(response).optString("status") }.getOrDefault("")
+        return status.isBlank() || status.equals("STATUS_SUCCEEDED", ignoreCase = true)
     }
 
     fun fetchAndStoreAccountProfile(): Triple<String?, String?, String?> {

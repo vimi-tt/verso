@@ -33,6 +33,11 @@ internal fun RootRouteGraph(
     youTubeDownloadManager: YouTubeDownloadManager,
     listeningStatsStore: elovaire.music.droidbeauty.app.data.youtube.ListeningStatsStore,
     lastFmClient: elovaire.music.droidbeauty.app.data.youtube.LastFmClient,
+    listenBrainzClient: elovaire.music.droidbeauty.app.data.youtube.ListenBrainzClient,
+    onExportLibraryJson: () -> String = { "{}" },
+    onImportLibraryJson: suspend (String) -> Int = { 0 },
+    onImportPlaylistLink: suspend (String, String?) -> Int = { _, _ -> 0 },
+    importedCoverUris: Map<Long, String> = emptyMap(),
     viewModelFactory: ElovaireViewModelFactory,
     artistImageRepository: ArtistImageReader,
     audiobookChapterReader: AudiobookChapterReader,
@@ -339,6 +344,7 @@ internal fun RootRouteGraph(
                 isYouTubeSyncing = accountState.isSyncing,
                 onSyncYouTube = { scope.launch { youTubeCatalog.syncAccountLibrary(force = true) } },
                 onOpenSettings = { navState.navigateTo(SETTINGS_ROUTE) },
+                importedCoverUris = importedCoverUris,
             )
         }
         composable(RootRouteRegistry.SEARCH) {
@@ -371,7 +377,19 @@ internal fun RootRouteGraph(
             route = RootRouteRegistry.PLAYLIST,
             arguments = listOf(navArgument("playlistId") { type = NavType.LongType }),
         ) { backStackEntry ->
-            PlaylistDetailRouteHost(backStackEntry.playlistRouteId(), routeState, routeActions, padding)
+            val detailId = backStackEntry.playlistRouteId()
+            val downloadsState by youTubeDownloadManager.state.collectAsStateWithLifecycle()
+            PlaylistDetailRouteHost(
+                playlistId = detailId,
+                state = routeState,
+                routeActions = routeActions,
+                padding = padding,
+                coverUriOverride = detailId?.let { importedCoverUris[it] },
+                downloadedVideoIds = downloadsState.downloadedVideoIds,
+                onDownloadPlaylist = { songs, collection ->
+                    youTubeDownloadManager.enqueueCollection(songs, collection)
+                },
+            )
         }
         composable(
             route = RootRouteRegistry.SMART_PLAYLIST,
@@ -695,6 +713,7 @@ internal fun RootRouteGraph(
             val qualityState by youTubeCatalog.qualityState.collectAsStateWithLifecycle()
             val downloadsState by youTubeDownloadManager.state.collectAsStateWithLifecycle()
             val lastFmState by lastFmClient.state.collectAsStateWithLifecycle()
+            val listenBrainzState by listenBrainzClient.state.collectAsStateWithLifecycle()
             val context = androidx.compose.ui.platform.LocalContext.current
             val scope = androidx.compose.runtime.rememberCoroutineScope()
             var musicCacheSizeBytes by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
@@ -726,6 +745,7 @@ internal fun RootRouteGraph(
                 onCellularStreamingQualitySelected = youTubeCatalog::setCellularStreamingQuality,
                 onDownloadQualitySelected = youTubeCatalog::setDownloadQuality,
                 onWifiOnlyDownloadsChanged = youTubeCatalog::setWifiOnlyDownloads,
+                onAutoDownloadLikedOnWifiChanged = youTubeCatalog::setAutoDownloadLikedOnWifi,
                 onPreferredLyricsProviderSelected = youTubeCatalog::setPreferredLyricsProvider,
                 musicCacheSizeBytes = musicCacheSizeBytes,
                 downloadsSizeBytes = downloadsSizeBytes,
@@ -747,7 +767,15 @@ internal fun RootRouteGraph(
                 onToggleLastFmScrobble = lastFmClient::setScrobbleEnabled,
                 onSignOutLastFm = lastFmClient::signOut,
                 onClearLastFmError = lastFmClient::clearError,
+                listenBrainzState = listenBrainzState,
+                onSignInListenBrainz = listenBrainzClient::signIn,
+                onToggleListenBrainzScrobble = listenBrainzClient::setScrobbleEnabled,
+                onSignOutListenBrainz = listenBrainzClient::signOut,
+                onClearListenBrainzError = listenBrainzClient::clearError,
                 onSyncYouTubeHistoryChanged = youTubeCatalog::setSyncPlaybackHistoryToYouTube,
+                onExportLibraryJson = onExportLibraryJson,
+                onImportLibraryJson = onImportLibraryJson,
+                onImportPlaylistLink = onImportPlaylistLink,
                 scrollToAccounts = true,
             )
         }
@@ -756,6 +784,7 @@ internal fun RootRouteGraph(
             val qualityState by youTubeCatalog.qualityState.collectAsStateWithLifecycle()
             val downloadsState by youTubeDownloadManager.state.collectAsStateWithLifecycle()
             val lastFmState by lastFmClient.state.collectAsStateWithLifecycle()
+            val listenBrainzState by listenBrainzClient.state.collectAsStateWithLifecycle()
             val context = androidx.compose.ui.platform.LocalContext.current
             val scope = androidx.compose.runtime.rememberCoroutineScope()
             var musicCacheSizeBytes by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
@@ -787,6 +816,7 @@ internal fun RootRouteGraph(
                 onCellularStreamingQualitySelected = youTubeCatalog::setCellularStreamingQuality,
                 onDownloadQualitySelected = youTubeCatalog::setDownloadQuality,
                 onWifiOnlyDownloadsChanged = youTubeCatalog::setWifiOnlyDownloads,
+                onAutoDownloadLikedOnWifiChanged = youTubeCatalog::setAutoDownloadLikedOnWifi,
                 onPreferredLyricsProviderSelected = youTubeCatalog::setPreferredLyricsProvider,
                 musicCacheSizeBytes = musicCacheSizeBytes,
                 downloadsSizeBytes = downloadsSizeBytes,
@@ -808,7 +838,15 @@ internal fun RootRouteGraph(
                 onToggleLastFmScrobble = lastFmClient::setScrobbleEnabled,
                 onSignOutLastFm = lastFmClient::signOut,
                 onClearLastFmError = lastFmClient::clearError,
+                listenBrainzState = listenBrainzState,
+                onSignInListenBrainz = listenBrainzClient::signIn,
+                onToggleListenBrainzScrobble = listenBrainzClient::setScrobbleEnabled,
+                onSignOutListenBrainz = listenBrainzClient::signOut,
+                onClearListenBrainzError = listenBrainzClient::clearError,
                 onSyncYouTubeHistoryChanged = youTubeCatalog::setSyncPlaybackHistoryToYouTube,
+                onExportLibraryJson = onExportLibraryJson,
+                onImportLibraryJson = onImportLibraryJson,
+                onImportPlaylistLink = onImportPlaylistLink,
             )
         }
         composable(RootRouteRegistry.YOUTUBE_LOGIN) {

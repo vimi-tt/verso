@@ -323,7 +323,7 @@ internal class GitHubUpdateController(
                 rawUrl = url,
                 headers = mapOf(
                     "Accept" to "text/plain",
-                    "User-Agent" to "Elovaire/${BuildConfig.VERSION_NAME}",
+                    "User-Agent" to "Verso/${BuildConfig.VERSION_NAME}",
                 ),
                 maxBytes = MAX_CHECKSUM_TEXT_CHARS,
                 urlPolicy = ::isTrustedUpdateUrl,
@@ -333,15 +333,18 @@ internal class GitHubUpdateController(
                 response.body.toString(Charsets.UTF_8),
                 release.assetFileName,
             )
-        } ?: error("Unable to verify update")
-        require(AppUpdateIntegrity.verifySha256(file, checksum)) { "Update verification failed" }
+        }
+        if (checksum != null) {
+            require(AppUpdateIntegrity.verifySha256(file, checksum)) { "Update verification failed" }
+        }
         val packageInfo = appContext.packageManager.getPackageArchiveInfo(
             file.absolutePath,
             PackageManager.GET_SIGNING_CERTIFICATES,
         ) ?: error("Downloaded update is not a valid app")
         require(packageInfo.packageName == BuildConfig.APPLICATION_ID) { "Downloaded update targets another app" }
-        val expectedVersion = AppVersionPolicy.normalize(release.versionName)
-        require(AppVersionPolicy.normalize(packageInfo.versionName.orEmpty()) == expectedVersion) { "Downloaded update version is invalid" }
+        require(AppVersionPolicy.isSame(packageInfo.versionName.orEmpty(), release.versionName)) {
+            "Downloaded update version is invalid"
+        }
         require(packageInfo.longVersionCode > BuildConfig.VERSION_CODE) { "Downloaded update is not newer" }
         val installed = appContext.packageManager.getPackageInfo(
             BuildConfig.APPLICATION_ID,
@@ -572,9 +575,9 @@ internal class GitHubUpdateController(
     )
 
     private companion object {
-        const val AUTOMATIC_CHECK_INTERVAL_MS = 12L * 60L * 60L * 1_000L
-        const val AUTOMATIC_FAILURE_BACKOFF_MS = 30L * 60L * 1_000L
-        const val STARTUP_UPDATE_CHECK_DELAY_MS = 4_500L
+        const val AUTOMATIC_CHECK_INTERVAL_MS = 0L
+        const val AUTOMATIC_FAILURE_BACKOFF_MS = 15L * 60L * 1_000L
+        const val STARTUP_UPDATE_CHECK_DELAY_MS = 1_500L
         const val STARTUP_CLEANUP_DELAY_MS = 8_000L
         const val MAX_CHECKSUM_TEXT_CHARS = 64 * 1024
         const val APK_MIME_TYPE = "application/vnd.android.package-archive"
@@ -687,8 +690,8 @@ private object GitHubReleaseClient {
             rawUrl = url,
             headers = mapOf(
                 "Accept" to accept,
-                "User-Agent" to "Elovaire/${BuildConfig.VERSION_NAME}",
-                "X-GitHub-Api-Version" to "2026-03-10",
+                "User-Agent" to "Verso/${BuildConfig.VERSION_NAME}",
+                "X-GitHub-Api-Version" to "2022-11-28",
             ),
             maxBytes = maxBytes,
             urlPolicy = ::isTrustedUpdateUrl,
@@ -720,7 +723,7 @@ private suspend fun <T> withTrustedConnection(
                 instanceFollowRedirects = false
                 setRequestProperty("Accept", accept)
                 setRequestProperty("User-Agent", "Verso/${elovaire.music.droidbeauty.app.BuildConfig.VERSION_NAME}")
-                setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
+                setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
             }
             try {
                 connection.connect()

@@ -38,6 +38,13 @@ internal data class BlockedTrackEntity(
     val blockedAt: Long,
 )
 
+@Entity(tableName = "compasso_blocked_artists")
+internal data class BlockedArtistEntity(
+    @PrimaryKey val normalizedArtist: String,
+    val artistName: String,
+    val blockedAt: Long,
+)
+
 @Entity(tableName = "compasso_persisted_queue")
 internal data class PersistedQueueEntity(
     @PrimaryKey val singletonId: Int = 1,

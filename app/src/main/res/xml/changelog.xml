@@ -6,6 +6,16 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
+    <release version="Arcodeon 2">
+        <item>Encrypted Last.fm session storage with Android Keystore, added a persistent offline scrobble queue, and added ListenBrainz integration</item>
+        <item>Added full YouTube Music playlist editing (rename, search and add songs, remove tracks) and YouTube playlist selection in Add to Playlist</item>
+        <item>Added library JSON export/import (Verso, Spotify, Last.fm), playlist import by YouTube Music or Spotify link with cover art, and offline download for created and imported playlists</item>
+        <item>Added offline romanization (Japanese, Korean, Cyrillic) and on-demand translation to the lyrics view</item>
+        <item>Added Wi-Fi auto-download for liked tracks, artist blocking in Compasso, and improved queue and playback position persistence</item>
+        <item>Redesigned home screen widgets with Verso branding, compact sizing, blue playback controls, live synced lyrics in Nova, and fixed widget buttons in release builds</item>
+        <item>Upgraded Share Cards with live highlighted lyrics, richer song metadata, and Stories 9:16 export</item>
+        <item>Updated GitHub update checker API header for reliable automatic update checks</item>
+    </release>
     <release version="Arcodeon 1">
         <item>Redesigned album and playlist detail screens with integrated in-collection track search, total duration metadata, and a centered single-row action bar</item>
         <item>Updated artist pages with dynamic artwork palette headers and centered playback controls</item>

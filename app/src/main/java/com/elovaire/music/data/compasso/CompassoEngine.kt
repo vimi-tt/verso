@@ -2,6 +2,7 @@ package elovaire.music.droidbeauty.app.data.compasso
 
 import android.net.Uri
 import androidx.compose.runtime.Immutable
+import elovaire.music.droidbeauty.app.data.library.db.BlockedArtistEntity
 import elovaire.music.droidbeauty.app.data.library.db.BlockedTrackEntity
 import elovaire.music.droidbeauty.app.data.library.db.PersistedQueueEntity
 import elovaire.music.droidbeauty.app.data.library.db.PlaybackHistoryEntity
@@ -323,6 +324,42 @@ internal class CompassoEngine(
         onRemovedFromQueue()
     }
 
+    /**
+     * Permanently blocks [artistName] in Room, removes matching tracks from the waiting buffer,
+     * and invokes [onRemovedFromQueue] so the player removes upcoming tracks by that artist.
+     */
+    suspend fun blockArtist(
+        artistName: String,
+        onRemovedFromQueue: () -> Unit,
+    ) {
+        val normalizedArtist = TrackNormalizer.normalizePrimaryArtist(artistName)
+        if (normalizedArtist.isBlank()) return
+        waitingBuffer.removeAll {
+            TrackNormalizer.normalizePrimaryArtist(it.song.artist) == normalizedArtist
+        }
+        affinityTracker.recordEarlySkip(artistName)
+        withContext(ioDispatcher) {
+            runCatching {
+                store.insertBlockedArtist(
+                    BlockedArtistEntity(
+                        normalizedArtist = normalizedArtist,
+                        artistName = artistName.trim(),
+                        blockedAt = nowMs(),
+                    ),
+                )
+            }
+        }
+        onRemovedFromQueue()
+    }
+
+    suspend fun unblockArtist(artistName: String) {
+        val normalizedArtist = TrackNormalizer.normalizePrimaryArtist(artistName)
+        if (normalizedArtist.isBlank()) return
+        withContext(ioDispatcher) {
+            runCatching { store.removeBlockedArtist(normalizedArtist) }
+        }
+    }
+
     suspend fun persistQueueState(
         queue: List<Song>,
         currentIndex: Int,
@@ -351,7 +388,7 @@ internal class CompassoEngine(
         activeSeedVideoId = saved.seedVideoId
         _uiState.update {
             it.copy(
-                isActive = true,
+                isActive = saved.isActive,
                 discoveryRatio = saved.discoveryRatio.coerceIn(0f, 1f),
             )
         }
@@ -372,16 +409,22 @@ internal class CompassoEngine(
 
         _uiState.update { it.copy(isLoadingMore = true) }
         try {
-            val (recentHistory, positiveHistory, blockedTracks) = withContext(ioDispatcher) {
-                Triple(
-                    runCatching { store.getRecentHistory(HISTORY_DEDUP_LIMIT) }.getOrDefault(emptyList()),
-                    runCatching { store.getPositiveHistory(200) }.getOrDefault(emptyList()),
-                    runCatching { store.getAllBlockedTracks() }.getOrDefault(emptyList()),
-                )
+            val recentHistory = withContext(ioDispatcher) {
+                runCatching { store.getRecentHistory(HISTORY_DEDUP_LIMIT) }.getOrDefault(emptyList())
+            }
+            val positiveHistory = withContext(ioDispatcher) {
+                runCatching { store.getPositiveHistory(200) }.getOrDefault(emptyList())
+            }
+            val blockedTracks = withContext(ioDispatcher) {
+                runCatching { store.getAllBlockedTracks() }.getOrDefault(emptyList())
+            }
+            val blockedArtists = withContext(ioDispatcher) {
+                runCatching { store.getAllBlockedArtists() }.getOrDefault(emptyList())
             }
 
             val blockedIds = blockedTracks.mapTo(HashSet()) { it.videoId }
             val blockedKeys = blockedTracks.mapTo(HashSet()) { it.normalizedKey }
+            val blockedArtistKeys = blockedArtists.mapTo(HashSet()) { it.normalizedArtist }
             val recentIds = recentHistory.mapTo(HashSet()) { it.videoId }
             val recentKeys = recentHistory.mapTo(HashSet()) { it.normalizedKey }
             val queueIds = currentQueue.mapNotNullTo(HashSet()) { videoIdExtractor(it) }
@@ -455,7 +498,10 @@ internal class CompassoEngine(
                     if (!seenFreshIds.add(candidate.videoId)) continue
                     freshCandidates.add(candidate)
                     val key = TrackNormalizer.normalizeKey(candidate.song.title, candidate.song.artist)
-                    if (candidate.videoId !in excludedIds && key !in excludedKeys &&
+                    val artistKey = TrackNormalizer.normalizePrimaryArtist(candidate.song.artist)
+                    if (candidate.videoId !in excludedIds &&
+                        key !in excludedKeys &&
+                        artistKey !in blockedArtistKeys &&
                         (candidate.song.durationMs <= 0L || candidate.song.durationMs <= MAX_TRACK_DURATION_MS)
                     ) {
                         validFreshCount += 1
@@ -471,16 +517,37 @@ internal class CompassoEngine(
                 if (continuationToken.isNullOrBlank() || addedValidThisPage == 0) {
                     // Rotate to another seed: current song, another queue track, newly discovered
                     // candidate, session affinity, or positive history.
-                    val fallback = currentQueue.getOrNull(currentIndex)?.let { videoIdExtractor(it) }
-                        ?.takeIf { it !in usedFallbackSeeds && it !in blockedIds }
-                        ?: currentQueue.asReversed().firstNotNullOfOrNull { song ->
-                            videoIdExtractor(song)?.takeIf { it !in usedFallbackSeeds && it !in blockedIds }
+                    val fallback = currentQueue.getOrNull(currentIndex)?.let { song ->
+                        videoIdExtractor(song)?.takeIf {
+                            it !in usedFallbackSeeds &&
+                                it !in blockedIds &&
+                                TrackNormalizer.normalizePrimaryArtist(song.artist) !in blockedArtistKeys
                         }
-                        ?: freshCandidates.firstOrNull { it.videoId !in usedFallbackSeeds && it.videoId !in blockedIds }?.videoId
+                    }
+                        ?: currentQueue.asReversed().firstNotNullOfOrNull { song ->
+                            videoIdExtractor(song)?.takeIf {
+                                it !in usedFallbackSeeds &&
+                                    it !in blockedIds &&
+                                    TrackNormalizer.normalizePrimaryArtist(song.artist) !in blockedArtistKeys
+                            }
+                        }
+                        ?: freshCandidates.firstOrNull {
+                            it.videoId !in usedFallbackSeeds &&
+                                it.videoId !in blockedIds &&
+                                TrackNormalizer.normalizePrimaryArtist(it.song.artist) !in blockedArtistKeys
+                        }?.videoId
                         ?: affinityTracker.bestFallbackSeed(excludingVideoIds = usedFallbackSeeds)
-                        ?: positiveHistory.firstOrNull { it.videoId !in usedFallbackSeeds && it.videoId !in blockedIds }?.videoId
+                        ?: positiveHistory.firstOrNull {
+                            it.videoId !in usedFallbackSeeds &&
+                                it.videoId !in blockedIds &&
+                                TrackNormalizer.normalizePrimaryArtist(it.artistName) !in blockedArtistKeys
+                        }?.videoId
                         ?: radioSource.likedSongsSnapshot().firstNotNullOfOrNull { song ->
-                            videoIdExtractor(song)?.takeIf { it !in usedFallbackSeeds && it !in blockedIds }
+                            videoIdExtractor(song)?.takeIf {
+                                it !in usedFallbackSeeds &&
+                                    it !in blockedIds &&
+                                    TrackNormalizer.normalizePrimaryArtist(song.artist) !in blockedArtistKeys
+                            }
                         }
                     if (fallback != null) {
                         usedFallbackSeeds.add(fallback)
@@ -504,6 +571,7 @@ internal class CompassoEngine(
                 currentPeriod = currentPeriod,
                 blockedIds = blockedIds,
                 blockedKeys = blockedKeys,
+                blockedArtistKeys = blockedArtistKeys,
                 queueIds = queueIds,
                 queueKeys = queueKeys,
                 recentIds = recentIds,
@@ -514,6 +582,7 @@ internal class CompassoEngine(
                 candidates = discoveryPool,
                 excludedIds = excludedIds,
                 excludedKeys = excludedKeys,
+                blockedArtistKeys = blockedArtistKeys,
             )
 
             // Score and reorder candidates using real-time session affinity + discoveryRatio + 1-in-5 artist window
@@ -546,6 +615,7 @@ internal class CompassoEngine(
                     candidates = discoveryPool,
                     excludedIds = strictOnlyIds,
                     excludedKeys = strictOnlyKeys,
+                    blockedArtistKeys = blockedArtistKeys,
                 )
                 selected = selectAndInterleave(
                     discoveryCandidates = filteredDiscovery,
@@ -725,11 +795,14 @@ internal class CompassoEngine(
         candidates: List<CompassoCandidate>,
         excludedIds: Set<String>,
         excludedKeys: Set<String>,
+        blockedArtistKeys: Set<String> = emptySet(),
     ): List<CompassoCandidate> {
         val localIds = HashSet<String>()
         val localKeys = HashSet<String>()
         return candidates.filter { candidate ->
             if (candidate.song.durationMs > MAX_TRACK_DURATION_MS) return@filter false
+            val artistKey = TrackNormalizer.normalizePrimaryArtist(candidate.song.artist)
+            if (artistKey in blockedArtistKeys) return@filter false
             val key = TrackNormalizer.normalizeKey(candidate.song.title, candidate.song.artist)
             if (candidate.videoId in excludedIds || key in excludedKeys) return@filter false
             if (!localIds.add(candidate.videoId) || !localKeys.add(key)) return@filter false
@@ -743,6 +816,7 @@ internal class CompassoEngine(
         currentPeriod: DayPeriod,
         blockedIds: Set<String>,
         blockedKeys: Set<String>,
+        blockedArtistKeys: Set<String>,
         queueIds: Set<String>,
         queueKeys: Set<String>,
         recentIds: Set<String>,
@@ -753,6 +827,7 @@ internal class CompassoEngine(
         // Older positive history entries (outside the last 50 recent dedup window) with time-of-day match boost
         for (entry in positiveHistory) {
             if (entry.videoId in blockedIds || entry.normalizedKey in blockedKeys) continue
+            if (TrackNormalizer.normalizePrimaryArtist(entry.artistName) in blockedArtistKeys) continue
             if (entry.videoId in queueIds || entry.normalizedKey in queueKeys) continue
             if (entry.videoId in recentIds) continue
             if (!seenIds.add(entry.videoId)) continue
@@ -773,6 +848,7 @@ internal class CompassoEngine(
             val videoId = videoIdExtractor(song) ?: continue
             val key = TrackNormalizer.normalizeKey(song.title, song.artist)
             if (videoId in blockedIds || key in blockedKeys) continue
+            if (TrackNormalizer.normalizePrimaryArtist(song.artist) in blockedArtistKeys) continue
             if (videoId in queueIds || key in queueKeys) continue
             if (videoId in recentIds) continue
             if (!seenIds.add(videoId)) continue

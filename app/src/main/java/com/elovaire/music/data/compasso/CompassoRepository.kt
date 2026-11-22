@@ -1,6 +1,7 @@
 package elovaire.music.droidbeauty.app.data.compasso
 
 import android.net.Uri
+import elovaire.music.droidbeauty.app.data.library.db.BlockedArtistEntity
 import elovaire.music.droidbeauty.app.data.library.db.BlockedTrackEntity
 import elovaire.music.droidbeauty.app.data.library.db.CompassoDao
 import elovaire.music.droidbeauty.app.data.library.db.PersistedQueueEntity
@@ -44,6 +45,9 @@ internal interface CompassoStore {
     suspend fun getAllBlockedTracks(): List<BlockedTrackEntity>
     fun observeBlockedVideoIds(): Flow<List<String>>
     suspend fun removeBlockedTrack(videoId: String)
+    suspend fun insertBlockedArtist(entry: BlockedArtistEntity)
+    suspend fun getAllBlockedArtists(): List<BlockedArtistEntity>
+    suspend fun removeBlockedArtist(normalizedArtist: String)
     suspend fun savePersistedQueue(state: PersistedQueueEntity)
     suspend fun getPersistedQueue(): PersistedQueueEntity?
     suspend fun clearPersistedQueue()
@@ -59,6 +63,9 @@ internal class RoomCompassoStore(
     override suspend fun getAllBlockedTracks(): List<BlockedTrackEntity> = dao.getAllBlockedTracks()
     override fun observeBlockedVideoIds(): Flow<List<String>> = dao.observeBlockedVideoIds()
     override suspend fun removeBlockedTrack(videoId: String) = dao.removeBlockedTrack(videoId)
+    override suspend fun insertBlockedArtist(entry: BlockedArtistEntity) = dao.insertBlockedArtist(entry)
+    override suspend fun getAllBlockedArtists(): List<BlockedArtistEntity> = dao.getAllBlockedArtists()
+    override suspend fun removeBlockedArtist(normalizedArtist: String) = dao.removeBlockedArtist(normalizedArtist)
     override suspend fun savePersistedQueue(state: PersistedQueueEntity) = dao.savePersistedQueue(state)
     override suspend fun getPersistedQueue(): PersistedQueueEntity? = dao.getPersistedQueue()
     override suspend fun clearPersistedQueue() = dao.clearPersistedQueue()

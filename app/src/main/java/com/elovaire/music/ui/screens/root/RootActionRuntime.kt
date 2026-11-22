@@ -40,6 +40,8 @@ internal fun rememberRootActionRuntime(
     uiRuntime: RootUiRuntime,
     youTubeCatalog: YouTubeCatalogRepository? = null,
     youTubeDownloadManager: YouTubeDownloadManager? = null,
+    compassoEngine: elovaire.music.droidbeauty.app.data.compasso.CompassoEngine? = null,
+    importedPlaylistStore: elovaire.music.droidbeauty.app.data.settings.ImportedPlaylistStore? = null,
 ): RootActionRuntime {
     val downloadsState = youTubeDownloadManager?.state?.collectAsStateWithLifecycle()?.value
     val songMenuActions = rememberRootSongMenuActions(
@@ -53,6 +55,8 @@ internal fun rememberRootActionRuntime(
         navigateToAlbumId = { albumId -> uiRuntime.navigationState.navigateTo(Routes.album(albumId)) },
         youTubeCatalog = youTubeCatalog,
         youTubeDownloadManager = youTubeDownloadManager,
+        compassoEngine = compassoEngine,
+        importedPlaylistStore = importedPlaylistStore,
         downloadedVideoIds = downloadsState?.downloadedVideoIds.orEmpty(),
         activeDownloadVideoIds = downloadsState?.activeVideoIds.orEmpty(),
     )

@@ -115,6 +115,9 @@ internal fun PlaylistDetailScreen(
     onUpdateSongOrder: (List<Long>) -> PlaylistMutationRequest,
     onRenamePlaylist: (Long, String) -> PlaylistMutationRequest,
     onToggleFavorite: (Long) -> Unit,
+    coverUriOverride: String? = null,
+    downloadedVideoIds: Set<String> = emptySet(),
+    onDownloadPlaylist: ((List<Song>, elovaire.music.droidbeauty.app.data.youtube.YouTubeDownloadedCollection) -> Unit)? = null,
 ) {
     val revealRegistry = rememberMotionRevealRegistry()
     val motionTransitions = rememberMotionTransitions()
@@ -283,7 +286,10 @@ internal fun PlaylistDetailScreen(
     }
     CompositionLocalProvider(LocalSongMenuActions provides playlistSongMenuActions) {
         val bgColor = MaterialTheme.colorScheme.background
-        val paletteAccent by rememberArtworkPaletteAccent(playlistSongs.firstOrNull()?.artUri)
+        val headerArtworkUri = remember(coverUriOverride, playlistSongs) {
+            coverUriOverride?.let(android.net.Uri::parse) ?: playlistSongs.firstOrNull()?.artUri
+        }
+        val paletteAccent by rememberArtworkPaletteAccent(headerArtworkUri)
         val headerTint = paletteAccent ?: MaterialTheme.colorScheme.primary
         Box(
             modifier = Modifier
@@ -329,13 +335,23 @@ internal fun PlaylistDetailScreen(
                                 horizontalArrangement = Arrangement.spacedBy(18.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                PlaylistArtworkPreview(
-                                    songs = playlistSongs,
-                                    title = playlistState.name,
-                                    modifier = Modifier.width(artworkWidth),
-                                    placeholderIconSize = 30.dp,
-                                    cornerRadius = 8.dp,
-                                )
+                                if (!coverUriOverride.isNullOrBlank()) {
+                                    ArtworkImage(
+                                        uri = android.net.Uri.parse(coverUriOverride),
+                                        title = playlistState.name,
+                                        placeholderIconResId = R.drawable.ic_lucide_list_music,
+                                        modifier = Modifier.size(artworkWidth),
+                                        cornerRadius = ElovaireRadii.card,
+                                    )
+                                } else {
+                                    PlaylistArtworkPreview(
+                                        songs = playlistSongs,
+                                        title = playlistState.name,
+                                        modifier = Modifier.width(artworkWidth),
+                                        placeholderIconSize = 30.dp,
+                                        cornerRadius = 8.dp,
+                                    )
+                                }
                                 Column(
                                     modifier = Modifier.weight(1f),
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -398,6 +414,48 @@ internal fun PlaylistDetailScreen(
                                 iconSize = 18.dp,
                                 onClick = { onShufflePlaylist(playlistSongs, playlistState.name) },
                             )
+                            val downloadableYouTubeSongs = remember(playlistSongs) {
+                                playlistSongs.filter { elovaire.music.droidbeauty.app.data.youtube.YouTubeUri.isYouTubeUri(it.uri) }
+                            }
+                            if (onDownloadPlaylist != null && downloadableYouTubeSongs.isNotEmpty()) {
+                                val allDownloaded = remember(downloadableYouTubeSongs, downloadedVideoIds) {
+                                    downloadableYouTubeSongs.all { song ->
+                                        elovaire.music.droidbeauty.app.data.youtube.YouTubeUri.videoId(song.uri) in downloadedVideoIds
+                                    }
+                                }
+                                val context = androidx.compose.ui.platform.LocalContext.current
+                                val dlCopy = remember(language) { elovaire.music.droidbeauty.app.ui.i18n.youtubeDownloadCopy(language) }
+                                AlbumHeaderActionButton(
+                                    iconResId = if (allDownloaded) R.drawable.ic_lucide_check else R.drawable.ic_lucide_download,
+                                    contentDescription = if (allDownloaded) dlCopy.downloadedAction else dlCopy.downloadAction,
+                                    tint = Color.White,
+                                    backgroundColor = if (allDownloaded) MaterialTheme.colorScheme.primary else RoseAccent,
+                                    iconSize = 18.dp,
+                                    onClick = {
+                                        if (!allDownloaded) {
+                                            onDownloadPlaylist(
+                                                downloadableYouTubeSongs,
+                                                elovaire.music.droidbeauty.app.data.youtube.YouTubeDownloadedCollection(
+                                                    id = "local_pl_${playlistState.id}",
+                                                    isAlbum = false,
+                                                    title = playlistState.name,
+                                                    subtitle = formatCountLabel(downloadableYouTubeSongs.size, "track", language),
+                                                    thumbnailUri = headerArtworkUri,
+                                                    songs = downloadableYouTubeSongs,
+                                                ),
+                                            )
+                                            val isPt = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese
+                                            val isEs = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish
+                                            val msg = when {
+                                                isPt -> "Baixando ${downloadableYouTubeSongs.size} faixas"
+                                                isEs -> "Descargando ${downloadableYouTubeSongs.size} canciones"
+                                                else -> "Downloading ${downloadableYouTubeSongs.size} tracks"
+                                            }
+                                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                 }

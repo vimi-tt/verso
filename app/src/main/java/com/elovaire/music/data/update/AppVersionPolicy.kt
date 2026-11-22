@@ -1,9 +1,28 @@
 package elovaire.music.droidbeauty.app.data.update
 
 internal object AppVersionPolicy {
-    fun normalize(raw: String): String = raw.trim().removePrefix("v").removePrefix("V")
+    fun normalize(raw: String): String {
+        val trimmed = raw.trim().removePrefix("v").removePrefix("V").trim()
+        val codenameMatch = CODENAME_REGEX.matchEntire(trimmed)
+        if (codenameMatch != null) {
+            val instrument = codenameMatch.groupValues[1].lowercase().replaceFirstChar { it.titlecase() }
+            val number = codenameMatch.groupValues[2].trimLeadingZeros()
+            return "$instrument $number"
+        }
+        return trimmed
+    }
 
     fun resolve(tagName: String, releaseName: String, assetFileName: String): String {
+        sequenceOf(releaseName, tagName, assetFileName)
+            .mapNotNull { candidate ->
+                CODENAME_CANDIDATE_REGEX.find(candidate.trim())?.let { match ->
+                    "${match.groupValues[1]} ${match.groupValues[2]}"
+                }
+            }
+            .firstOrNull()
+            ?.let(::normalize)
+            ?.let { return it }
+
         sequenceOf(tagName, releaseName, assetFileName)
             .map { VERSION_CANDIDATE_REGEX.find(it.trim())?.groups?.get(1)?.value }
             .firstOrNull { !it.isNullOrBlank() }
@@ -12,9 +31,30 @@ internal object AppVersionPolicy {
         return ""
     }
 
-    fun isNewer(candidate: String, installed: String): Boolean = compare(candidate, installed) > 0
+    fun isNewer(candidate: String, installed: String): Boolean {
+        val candidateCodename = parseCodename(candidate)
+        val installedCodename = parseCodename(installed)
+        if (candidateCodename != null && installedCodename != null) {
+            return if (candidateCodename.instrument.equals(installedCodename.instrument, ignoreCase = true)) {
+                compareNumeric(candidateCodename.number, installedCodename.number) > 0
+            } else {
+                // Instrument codename changed for a new major release family.
+                true
+            }
+        }
+        if (candidateCodename != null && parse(installed) != null) {
+            return true
+        }
+        return compare(candidate, installed) > 0
+    }
 
     fun isSame(left: String, right: String): Boolean {
+        val leftCodename = parseCodename(left)
+        val rightCodename = parseCodename(right)
+        if (leftCodename != null && rightCodename != null) {
+            return leftCodename.instrument.equals(rightCodename.instrument, ignoreCase = true) &&
+                compareNumeric(leftCodename.number, rightCodename.number) == 0
+        }
         val leftVersion = parse(left) ?: return false
         val rightVersion = parse(right) ?: return false
         return leftVersion.compareTo(rightVersion) == 0
@@ -30,9 +70,33 @@ internal object AppVersionPolicy {
     }
 
     fun compare(left: String, right: String): Int {
+        val leftCodename = parseCodename(left)
+        val rightCodename = parseCodename(right)
+        if (leftCodename != null && rightCodename != null) {
+            if (leftCodename.instrument.equals(rightCodename.instrument, ignoreCase = true)) {
+                return compareNumeric(leftCodename.number, rightCodename.number)
+            }
+            return leftCodename.instrument.compareTo(rightCodename.instrument, ignoreCase = true)
+        }
+        if (leftCodename != null && parse(right) != null) return 1
+        if (parse(left) != null && rightCodename != null) return -1
         val leftVersion = parse(left) ?: return 0
         val rightVersion = parse(right) ?: return 0
         return leftVersion.compareTo(rightVersion)
+    }
+
+    private data class CodenameVersion(
+        val instrument: String,
+        val number: String,
+    )
+
+    private fun parseCodename(raw: String): CodenameVersion? {
+        val trimmed = raw.trim().removePrefix("v").removePrefix("V").trim()
+        val match = CODENAME_REGEX.matchEntire(trimmed) ?: return null
+        return CodenameVersion(
+            instrument = match.groupValues[1],
+            number = match.groupValues[2].trimLeadingZeros(),
+        )
     }
 
     private fun parse(raw: String): ComparableVersion? {
@@ -86,6 +150,12 @@ internal object AppVersionPolicy {
         else -> left.compareTo(right)
     }
 
+    private val CODENAME_REGEX = Regex(
+        """^([A-Za-z]+)[-_ ]+(\d+)$""",
+    )
+    private val CODENAME_CANDIDATE_REGEX = Regex(
+        """\b([A-Za-z]{3,})[-_ ]+(\d+)\b""",
+    )
     private val VERSION_REGEX = Regex(
         """(?i)^v?(\d+(?:\.\d+){0,2})(?:-([0-9a-z-]+(?:\.[0-9a-z-]+)*))?(?:\+[0-9a-z-]+(?:\.[0-9a-z-]+)*)?$""",
     )

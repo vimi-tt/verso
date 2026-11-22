@@ -1,6 +1,7 @@
 package elovaire.music.droidbeauty.app.data.compasso
 
 import android.net.TestUri
+import elovaire.music.droidbeauty.app.data.library.db.BlockedArtistEntity
 import elovaire.music.droidbeauty.app.data.library.db.BlockedTrackEntity
 import elovaire.music.droidbeauty.app.data.library.db.PersistedQueueEntity
 import elovaire.music.droidbeauty.app.data.library.db.PlaybackHistoryEntity
@@ -329,6 +330,115 @@ class CompassoEngineTest {
         assertEquals("AUTOMIX_SETTING_FAMILIAR", radio.lastTunerSetting)
     }
 
+    @Test
+    fun `restorePersistedQueueState respects saved isActive flag`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store = FakeCompassoStore()
+        store.savePersistedQueue(
+            PersistedQueueEntity(
+                queueJson = CompassoQueueSerializer.encodeSongs(listOf(testSong(1L, "Saved", "Artist"))),
+                currentIndex = 0,
+                continuationToken = "cont_1",
+                discoveryRatio = 0.3f,
+                isActive = false,
+                seedVideoId = "vid_1",
+                updatedAt = 1_000L,
+            ),
+        )
+        val engine = createEngine(store = store, dispatcher = dispatcher)
+        val restored = engine.restorePersistedQueueState()
+        assertEquals(false, restored?.isActive)
+        assertFalse(engine.uiState.value.isActive)
+        assertEquals(0.3f, engine.uiState.value.discoveryRatio, 0.001f)
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. Artist blocking & Time-of-Day (DayPeriod) weighting
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `blockArtist filters all tracks by that artist from discovery and familiarity pools`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store = FakeCompassoStore()
+        val radio = FakeRadioSource(
+            pages = mapOf(
+                ("vid_1" to null) to CompassoRadioPage(
+                    candidates = listOf(
+                        candidate("b1", "Bad Track 1", "Blocked Band"),
+                        candidate("b2", "Bad Track 2", "Blocked Band feat. Guest"),
+                        candidate("g1", "Good Track 1", "Good Band 1"),
+                        candidate("g2", "Good Track 2", "Good Band 2"),
+                        candidate("g3", "Good Track 3", "Good Band 3"),
+                    ),
+                    continuationToken = null,
+                ),
+            ),
+            liked = listOf(
+                testSong(id = 901L, title = "Liked Blocked", artist = "Blocked Band"),
+                testSong(id = 902L, title = "Liked Good", artist = "Good Band 4"),
+            ),
+        )
+        val engine = createEngine(radioSource = radio, store = store, dispatcher = dispatcher)
+        var callbackInvoked = false
+        engine.blockArtist("Blocked Band") { callbackInvoked = true }
+        assertTrue(callbackInvoked)
+
+        val appended = mutableListOf<Song>()
+        val seed = testSong(id = 1L, title = "Seed", artist = "Seed Artist")
+        engine.startFromSeed(
+            seedSong = seed,
+            currentQueue = listOf(seed),
+            onAppendTracks = { appended.addAll(it) },
+        )
+
+        val artists = appended.map { TrackNormalizer.normalizePrimaryArtist(it.artist) }
+        assertFalse(artists.contains("blocked band"))
+        assertTrue(appended.any { it.title == "Good Track 1" })
+    }
+
+    @Test
+    fun `DayPeriod fromHour maps all day periods accurately`() {
+        assertEquals(DayPeriod.Dawn, DayPeriod.fromHour(0))
+        assertEquals(DayPeriod.Dawn, DayPeriod.fromHour(5))
+        assertEquals(DayPeriod.Morning, DayPeriod.fromHour(6))
+        assertEquals(DayPeriod.Morning, DayPeriod.fromHour(11))
+        assertEquals(DayPeriod.Afternoon, DayPeriod.fromHour(12))
+        assertEquals(DayPeriod.Afternoon, DayPeriod.fromHour(17))
+        assertEquals(DayPeriod.Night, DayPeriod.fromHour(18))
+        assertEquals(DayPeriod.Night, DayPeriod.fromHour(23))
+    }
+
+    @Test
+    fun `time-of-day weighting boosts familiar tracks played in the same DayPeriod`() {
+        val engine = createEngine()
+        val samePeriodCandidate = CompassoCandidate(
+            videoId = "fam_same",
+            song = testSong(id = 201L, title = "Morning Vibe", artist = "Artist Morning"),
+            musicVideoType = CompassoEngine.MUSIC_VIDEO_TYPE_ATV,
+            isFamiliar = true,
+            familiarTimeMatch = true,
+        )
+        val offPeriodCandidate = CompassoCandidate(
+            videoId = "fam_other",
+            song = testSong(id = 202L, title = "Late Night Vibe", artist = "Artist Night"),
+            musicVideoType = CompassoEngine.MUSIC_VIDEO_TYPE_ATV,
+            isFamiliar = true,
+            familiarTimeMatch = false,
+        )
+
+        val selected = engine.selectAndInterleave(
+            discoveryCandidates = emptyList(),
+            familiarCandidates = listOf(offPeriodCandidate, samePeriodCandidate),
+            discoveryRatio = 0.0f,
+            targetCount = 2,
+            initialRecentArtists = emptyList(),
+            excludedIds = mutableSetOf(),
+            excludedKeys = mutableSetOf(),
+        )
+
+        assertEquals(listOf("fam_same", "fam_other"), selected.map { it.videoId })
+    }
+
     // -------------------------------------------------------------------------
     // Test helpers
     // -------------------------------------------------------------------------
@@ -409,6 +519,7 @@ class CompassoEngineTest {
     private class FakeCompassoStore : CompassoStore {
         val history = mutableListOf<PlaybackHistoryEntity>()
         val blocked = mutableListOf<BlockedTrackEntity>()
+        private val blockedArtists = mutableListOf<BlockedArtistEntity>()
         private val blockedFlow = MutableStateFlow<List<BlockedTrackEntity>>(emptyList())
         private var persistedQueue: PersistedQueueEntity? = null
 
@@ -437,6 +548,17 @@ class CompassoEngineTest {
         override suspend fun removeBlockedTrack(videoId: String) {
             blocked.removeAll { it.videoId == videoId }
             blockedFlow.value = blocked.toList()
+        }
+
+        override suspend fun insertBlockedArtist(entry: BlockedArtistEntity) {
+            blockedArtists.removeAll { it.normalizedArtist == entry.normalizedArtist }
+            blockedArtists.add(entry)
+        }
+
+        override suspend fun getAllBlockedArtists(): List<BlockedArtistEntity> = blockedArtists.toList()
+
+        override suspend fun removeBlockedArtist(normalizedArtist: String) {
+            blockedArtists.removeAll { it.normalizedArtist == normalizedArtist }
         }
 
         override suspend fun savePersistedQueue(state: PersistedQueueEntity) {

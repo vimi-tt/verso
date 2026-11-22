@@ -21,6 +21,7 @@ internal data class YouTubeQualitySettings(
     val cellularStreamingQuality: AudioPreference = AudioPreference.BALANCED,
     val downloadQuality: AudioPreference = AudioPreference.HIGHEST,
     val wifiOnlyDownloads: Boolean = false,
+    val autoDownloadLikedOnWifi: Boolean = false,
     val preferredLyricsProvider: LyricsProviderPreference = LyricsProviderPreference.BetterLyrics,
     val syncPlaybackHistoryToYouTube: Boolean = true,
 )
@@ -48,6 +49,10 @@ internal class YouTubeQualityPreferences(context: Context) {
 
     fun setWifiOnlyDownloads(enabled: Boolean) {
         updateAndPersist { it.copy(wifiOnlyDownloads = enabled) }
+    }
+
+    fun setAutoDownloadLikedOnWifi(enabled: Boolean) {
+        updateAndPersist { it.copy(autoDownloadLikedOnWifi = enabled) }
     }
 
     fun setPreferredLyricsProvider(provider: LyricsProviderPreference) {
@@ -89,6 +94,7 @@ internal class YouTubeQualityPreferences(context: Context) {
                 cellularStreamingQuality = parsePreference(json.optString(KEY_CELLULAR_STREAMING), AudioPreference.BALANCED),
                 downloadQuality = parsePreference(json.optString(KEY_DOWNLOAD_QUALITY), AudioPreference.HIGHEST),
                 wifiOnlyDownloads = json.optBoolean(KEY_WIFI_ONLY_DOWNLOADS, false),
+                autoDownloadLikedOnWifi = json.optBoolean(KEY_AUTO_DOWNLOAD_LIKED_ON_WIFI, false),
                 preferredLyricsProvider = parseLyricsProvider(json.optString(KEY_LYRICS_PROVIDER)),
                 syncPlaybackHistoryToYouTube = json.optBoolean(KEY_SYNC_YOUTUBE_HISTORY, true),
             )
@@ -102,6 +108,7 @@ internal class YouTubeQualityPreferences(context: Context) {
                 .put(KEY_CELLULAR_STREAMING, settings.cellularStreamingQuality.name)
                 .put(KEY_DOWNLOAD_QUALITY, settings.downloadQuality.name)
                 .put(KEY_WIFI_ONLY_DOWNLOADS, settings.wifiOnlyDownloads)
+                .put(KEY_AUTO_DOWNLOAD_LIKED_ON_WIFI, settings.autoDownloadLikedOnWifi)
                 .put(KEY_LYRICS_PROVIDER, settings.preferredLyricsProvider.name)
                 .put(KEY_SYNC_YOUTUBE_HISTORY, settings.syncPlaybackHistoryToYouTube)
             settingsFile.writeText(json.toString())
@@ -124,6 +131,7 @@ internal class YouTubeQualityPreferences(context: Context) {
         const val KEY_CELLULAR_STREAMING = "cellular_streaming_quality"
         const val KEY_DOWNLOAD_QUALITY = "download_quality"
         const val KEY_WIFI_ONLY_DOWNLOADS = "wifi_only_downloads"
+        const val KEY_AUTO_DOWNLOAD_LIKED_ON_WIFI = "auto_download_liked_on_wifi"
         const val KEY_LYRICS_PROVIDER = "preferred_lyrics_provider"
         const val KEY_SYNC_YOUTUBE_HISTORY = "sync_playback_history_yt"
     }

@@ -20,6 +20,7 @@ internal fun PlaylistsRouteHost(
     isYouTubeSyncing: Boolean = false,
     onSyncYouTube: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    importedCoverUris: Map<Long, String> = emptyMap(),
 ) {
     val smartSummaries = remember(
         state.appState.smartPlaylists,
@@ -51,6 +52,7 @@ internal fun PlaylistsRouteHost(
         isYouTubeSyncing = isYouTubeSyncing,
         onSyncYouTube = onSyncYouTube,
         onOpenSettings = onOpenSettings,
+        importedCoverUris = importedCoverUris,
     )
 }
 
@@ -139,12 +141,18 @@ internal fun PlaylistDetailRouteHost(
     state: RootRouteState,
     routeActions: RootRouteActions,
     padding: RootRoutePadding,
+    coverUriOverride: String? = null,
+    downloadedVideoIds: Set<String> = emptySet(),
+    onDownloadPlaylist: ((List<elovaire.music.droidbeauty.app.domain.model.Song>, elovaire.music.droidbeauty.app.data.youtube.YouTubeDownloadedCollection) -> Unit)? = null,
 ) {
     val playlist = playlistId?.let { id -> state.appState.playlists.firstOrNull { it.id == id } }
     PlaylistDetailScreen(
         playlist = playlist,
         librarySongs = state.appState.library.songs,
         songsById = state.libraryDerivedState.songsById,
+        coverUriOverride = coverUriOverride,
+        downloadedVideoIds = downloadedVideoIds,
+        onDownloadPlaylist = onDownloadPlaylist,
         favoriteSongIds = state.appState.favoriteSongIds,
         currentSongId = state.appState.playback.currentSong?.id,
         isCurrentSongPlaying = state.isPlaybackActuallyPlaying,

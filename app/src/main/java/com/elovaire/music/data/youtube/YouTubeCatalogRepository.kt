@@ -151,6 +151,10 @@ internal class YouTubeCatalogRepository(
         streamClient.qualityPreferences.setWifiOnlyDownloads(enabled)
     }
 
+    fun setAutoDownloadLikedOnWifi(enabled: Boolean) {
+        streamClient.qualityPreferences.setAutoDownloadLikedOnWifi(enabled)
+    }
+
     fun setPreferredLyricsProvider(provider: LyricsProviderPreference) {
         streamClient.qualityPreferences.setPreferredLyricsProvider(provider)
     }
@@ -374,6 +378,22 @@ internal class YouTubeCatalogRepository(
 
     suspend fun getPlaylistSongs(playlistId: String): List<Song> = withContext(ioDispatcher) {
         streamClient.catalog.getPlaylist(playlistId).map { it.toElovaireSong() }
+    }
+
+    suspend fun renameYouTubePlaylist(playlistId: String, newName: String): Boolean = withContext(ioDispatcher) {
+        val ok = streamClient.renameYouTubePlaylist(playlistId, newName)
+        if (ok) {
+            syncAccountLibrary(force = true)
+        }
+        ok
+    }
+
+    suspend fun addVideoToYouTubePlaylist(playlistId: String, videoId: String): Boolean = withContext(ioDispatcher) {
+        streamClient.addVideoToYouTubePlaylist(playlistId, videoId)
+    }
+
+    suspend fun removeVideoFromYouTubePlaylist(playlistId: String, videoId: String): Boolean = withContext(ioDispatcher) {
+        streamClient.removeVideoFromYouTubePlaylist(playlistId, videoId)
     }
 
     suspend fun getAlbumSongs(browseId: String): List<Song> = withContext(ioDispatcher) {

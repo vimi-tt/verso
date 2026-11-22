@@ -54,6 +54,8 @@ internal class RootComposition(
     val youTubeDownloadManager: YouTubeDownloadManager,
     val listeningStatsStore: elovaire.music.droidbeauty.app.data.youtube.ListeningStatsStore,
     val lastFmClient: elovaire.music.droidbeauty.app.data.youtube.LastFmClient,
+    val listenBrainzClient: elovaire.music.droidbeauty.app.data.youtube.ListenBrainzClient,
+    val importedPlaylistStore: elovaire.music.droidbeauty.app.data.settings.ImportedPlaylistStore,
     val compassoEngine: elovaire.music.droidbeauty.app.data.compasso.CompassoEngine,
 )
 
@@ -100,6 +102,8 @@ internal fun rememberRootComposition(container: AppContainer): RootComposition {
         youTubeDownloadManager = container.youTubeDownloadManager,
         listeningStatsStore = container.listeningStatsStore,
         lastFmClient = container.lastFmClient,
+        listenBrainzClient = container.listenBrainzClient,
+        importedPlaylistStore = container.importedPlaylistStore,
         compassoEngine = container.compassoEngine,
     )
 }

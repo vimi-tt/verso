@@ -225,6 +225,24 @@ internal class AppServices(
     val lastFmClient: elovaire.music.droidbeauty.app.data.youtube.LastFmClient
         get() = lastFmClientDelegate.value
 
+    private val listenBrainzClientDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        elovaire.music.droidbeauty.app.data.youtube.ListenBrainzClient(
+            context = applicationContext,
+            okHttpClient = youTubeStreamClientDelegate.value.okHttpClient,
+            scope = optionalScope,
+            ioDispatcher = appDispatchers.io,
+            nowMs = AndroidAppClock::wallTimeMs,
+        )
+    }
+    val listenBrainzClient: elovaire.music.droidbeauty.app.data.youtube.ListenBrainzClient
+        get() = listenBrainzClientDelegate.value
+
+    private val importedPlaylistStoreDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        elovaire.music.droidbeauty.app.data.settings.ImportedPlaylistStore(applicationContext)
+    }
+    val importedPlaylistStore: elovaire.music.droidbeauty.app.data.settings.ImportedPlaylistStore
+        get() = importedPlaylistStoreDelegate.value
+
     private val compassoEngineDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         elovaire.music.droidbeauty.app.data.compasso.CompassoEngine(
             radioSource = elovaire.music.droidbeauty.app.data.compasso.YouTubeCompassoRadioSource(
@@ -315,6 +333,13 @@ internal class AppServices(
         onRecentPlaybackChanged = userDataStore::setRecentPlaybackIds,
         playbackDataSourceFactory = networkDataSourceFactory,
         resourceTracker = backendDiagnostics.resources,
+        youTubeLoudnessProvider = { videoId ->
+            if (youTubeStreamClientDelegate.isInitialized()) {
+                youTubeStreamClientDelegate.value.resolvedLoudnessDb(videoId)
+            } else {
+                null
+            }
+        },
     ).apply {
         onEndOfQueueReached = { currentSong, currentQueue, currentIndex ->
             compassoEngine.fetchTracksForEndOfQueue(
@@ -332,6 +357,10 @@ internal class AppServices(
             providers = WidgetProviderRegistry.productionProviders(applicationContext),
             diagnostics = backendDiagnostics,
             language = preferenceStore.appLanguage,
+            lyricsFetcher = { song ->
+                (lyricsService.fetchLyrics(song) as? elovaire.music.droidbeauty.app.data.lyrics.LyricsResult.Found)?.payload
+            },
+            positionMsProvider = { playbackManager.progressState.value.positionMs },
         )
     }
     val playbackSessionStore = PlaybackSessionStore(applicationContext)

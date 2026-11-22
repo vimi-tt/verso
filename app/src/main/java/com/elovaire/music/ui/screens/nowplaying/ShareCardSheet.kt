@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -76,6 +78,11 @@ private enum class ShareCardMode {
     Lyrics,
 }
 
+private enum class ShareCardAspectRatio {
+    Card,
+    Stories,
+}
+
 private data class ShareCardThemePreset(
     val gradient: List<Color>,
     val accent: Color,
@@ -94,6 +101,7 @@ internal fun ShareCardSheet(
     song: Song,
     language: AppLanguage,
     lyricsSnippet: List<String>,
+    activeLyricIndex: Int = 0,
     positionMs: Long,
     durationMs: Long,
     onDismiss: () -> Unit,
@@ -103,6 +111,7 @@ internal fun ShareCardSheet(
     val scope = rememberCoroutineScope()
     var isLightMode by rememberSaveable { mutableStateOf(false) }
     var cardMode by rememberSaveable { mutableStateOf(ShareCardMode.Song) }
+    var aspectRatio by rememberSaveable { mutableStateOf(ShareCardAspectRatio.Card) }
     var selectedThemeIndex by rememberSaveable { mutableIntStateOf(0) }
     val cardGraphicsLayer = rememberGraphicsLayer()
 
@@ -117,6 +126,9 @@ internal fun ShareCardSheet(
     val darkLabel = if (isPt) "Escuro" else if (isEs) "Oscuro" else "Dark"
     val songTabLabel = if (isPt) "Card da música" else if (isEs) "Tarjeta" else "Song Card"
     val lyricsTabLabel = if (isPt) "Card da letra" else if (isEs) "Letra" else "Lyrics Card"
+    val cardRatioLabel = if (isPt) "Card" else if (isEs) "Tarjeta" else "Card"
+    val storiesRatioLabel = "Stories 9:16"
+    val nowPlayingTag = if (isPt) "Tocando agora" else if (isEs) "Sonando ahora" else "Now Playing"
     val themeLabel = if (isPt) "Tema do card" else if (isEs) "Tema" else "Card Theme"
     val savePngLabel = if (isPt) "Baixar PNG" else if (isEs) "Guardar PNG" else "Save Card"
     val sharePngLabel = if (isPt) "Compartilhar" else if (isEs) "Compartir" else "Share PNG"
@@ -240,21 +252,65 @@ internal fun ShareCardSheet(
                     }
                 }
 
-                // Capturable Preview Canvas
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(320.dp)
-                        .clip(RoundedCornerShape(22.dp))
-                        .drawWithContent {
-                            cardGraphicsLayer.record {
-                                this@drawWithContent.drawContent()
+                // Aspect Ratio toggle (Card vs Stories 9:16)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(ElovaireRadii.pill))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        listOf(
+                            ShareCardAspectRatio.Card to cardRatioLabel,
+                            ShareCardAspectRatio.Stories to storiesRatioLabel,
+                        ).forEach { (ratio, label) ->
+                            val selected = aspectRatio == ratio
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                    .background(if (selected) sheetOnSurface else Color.Transparent)
+                                    .elovaireClickable { aspectRatio = ratio }
+                                    .padding(horizontal = 14.dp, vertical = 5.dp),
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (selected) sheetSurface else sheetOnSurface,
+                                )
                             }
-                            drawLayer(cardGraphicsLayer)
                         }
-                        .background(Brush.verticalGradient(preset.gradient)),
+                    }
+                }
+
+                // Capturable Preview Canvas
+                val isStories = aspectRatio == ShareCardAspectRatio.Stories
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center,
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .then(
+                                if (isStories) {
+                                    Modifier.height(356.dp).aspectRatio(9f / 16f)
+                                } else {
+                                    Modifier.fillMaxWidth().height(320.dp)
+                                },
+                            )
+                            .clip(RoundedCornerShape(22.dp))
+                            .drawWithContent {
+                                cardGraphicsLayer.record {
+                                    this@drawWithContent.drawContent()
+                                }
+                                drawLayer(cardGraphicsLayer)
+                            }
+                            .background(Brush.verticalGradient(preset.gradient)),
+                        contentAlignment = Alignment.Center,
+                    ) {
                     if (song.artUri != null) {
                         ArtworkImage(
                             uri = song.artUri,
@@ -267,13 +323,14 @@ internal fun ShareCardSheet(
                         )
                     }
 
+                    val isStoriesMode = aspectRatio == ShareCardAspectRatio.Stories
                     Column(
                         modifier = Modifier
-                            .fillMaxWidth(0.76f)
+                            .fillMaxWidth(if (isStoriesMode) 0.88f else 0.78f)
                             .clip(RoundedCornerShape(22.dp))
                             .background(cardBg.copy(alpha = 0.94f))
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                            .padding(if (isStoriesMode) 14.dp else 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (isStoriesMode) 10.dp else 12.dp),
                     ) {
                         if (cardMode == ShareCardMode.Song) {
                             Box(
@@ -283,7 +340,7 @@ internal fun ShareCardSheet(
                                 ArtworkImage(
                                     uri = song.artUri,
                                     title = song.title,
-                                    modifier = Modifier.size(152.dp),
+                                    modifier = Modifier.size(if (isStoriesMode) 138.dp else 148.dp),
                                     cornerRadius = 14.dp,
                                 )
                             }
@@ -297,31 +354,83 @@ internal fun ShareCardSheet(
                                 )
                                 Text(
                                     text = song.artist,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                                     color = cardSub,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
+                                val albumLine = buildString {
+                                    if (song.album.isNotBlank()) append(song.album)
+                                    song.releaseYear?.let { year ->
+                                        if (isNotEmpty()) append(" • ")
+                                        append(year)
+                                    }
+                                }
+                                if (albumLine.isNotBlank()) {
+                                    Text(
+                                        text = albumLine,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = cardSub.copy(alpha = 0.78f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                            val qualityBadge = song.audioQuality?.takeIf { it.isNotBlank() }
+                                ?: song.audioFormat.takeIf { it.isNotBlank() }
+                            if (!qualityBadge.isNullOrBlank()) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                        .background(preset.accent.copy(alpha = 0.16f))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                                ) {
+                                    Text(
+                                        text = qualityBadge,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                        color = preset.accent,
+                                        maxLines = 1,
+                                    )
+                                }
                             }
                             val progress = if (durationMs > 0L) {
-                                (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0.05f, 1f)
+                                (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0.03f, 1f)
                             } else {
                                 0.35f
                             }
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(ElovaireRadii.pill))
-                                    .background(cardSub.copy(alpha = 0.25f)),
-                            ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Box(
                                     modifier = Modifier
-                                        .fillMaxWidth(progress)
-                                        .fillMaxHeight()
+                                        .fillMaxWidth()
+                                        .height(4.dp)
                                         .clip(RoundedCornerShape(ElovaireRadii.pill))
-                                        .background(preset.accent),
-                                )
+                                        .background(cardSub.copy(alpha = 0.25f)),
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(progress)
+                                            .fillMaxHeight()
+                                            .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                            .background(preset.accent),
+                                    )
+                                }
+                                if (durationMs > 0L) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(
+                                            text = formatCardDuration(positionMs),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = cardSub,
+                                        )
+                                        Text(
+                                            text = formatCardDuration(durationMs),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = cardSub,
+                                        )
+                                    }
+                                }
                             }
                         } else {
                             Row(
@@ -354,20 +463,40 @@ internal fun ShareCardSheet(
                             val lines = lyricsSnippet.ifEmpty {
                                 listOf(song.title, song.artist)
                             }.take(4)
+                            val clampedActive = activeLyricIndex.coerceIn(0, (lines.size - 1).coerceAtLeast(0))
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 10.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    .padding(vertical = if (isStoriesMode) 14.dp else 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                lines.forEach { line ->
-                                    Text(
-                                        text = line,
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = cardFg,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
+                                lines.forEachIndexed { idx, line ->
+                                    val isCurrent = idx == clampedActive
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        if (isCurrent) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(3.dp)
+                                                    .height(22.dp)
+                                                    .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                                    .background(preset.accent),
+                                            )
+                                        }
+                                        Text(
+                                            text = line,
+                                            style = if (isCurrent) {
+                                                MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                            } else {
+                                                MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                                            },
+                                            color = if (isCurrent) cardFg else cardSub.copy(alpha = 0.6f),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -388,14 +517,13 @@ internal fun ShareCardSheet(
                                     color = cardFg,
                                 )
                             }
-                            if (durationMs > 0L) {
-                                Text(
-                                    text = formatCardDuration(durationMs),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = cardSub,
-                                )
-                            }
+                            Text(
+                                text = nowPlayingTag,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = cardSub,
+                            )
                         }
+                    }
                     }
                 }
 

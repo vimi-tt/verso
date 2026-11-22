@@ -577,12 +577,20 @@ internal fun UpdateAvailableDialog(
                         .fillMaxSize()
                         .padding(
                             start = 20.dp,
-                            top = 18.dp,
+                            top = 12.dp,
                             end = 20.dp,
                             bottom = navigationBarInsetDp() + 20.dp,
                         ),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .width(36.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(ElovaireRadii.pill))
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f)),
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,

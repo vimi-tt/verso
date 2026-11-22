@@ -21,3 +21,10 @@
 }
 
 -dontwarn java.beans.**
+
+# Glance AppWidget ActionCallback classes are instantiated reflectively by
+# ActionCallbackBroadcastReceiver at runtime when widget buttons are tapped.
+-keep class * implements androidx.glance.appwidget.action.ActionCallback {
+    public <init>();
+}
+-keep class elovaire.music.droidbeauty.app.widget.** { *; }

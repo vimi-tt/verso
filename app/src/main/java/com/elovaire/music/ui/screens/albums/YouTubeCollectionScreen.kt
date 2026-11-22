@@ -106,6 +106,15 @@ internal fun YouTubeCollectionScreen(
     var hasError by remember(collectionId, isAlbum) { mutableStateOf(false) }
     var retryNonce by remember(collectionId, isAlbum) { mutableIntStateOf(0) }
     var searchQuery by remember(collectionId, isAlbum) { mutableStateOf("") }
+    var editMode by remember(collectionId, isAlbum) { mutableStateOf(false) }
+    var showRenameDialog by remember(collectionId) { mutableStateOf(false) }
+    var showAddTrackDialog by remember(collectionId) { mutableStateOf(false) }
+    var editedTitle by remember(collectionId, initialTitle) { mutableStateOf<String?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isPt = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese
+    val isEs = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish
+    val canEditYouTubePlaylist = !isAlbum && youTubeCatalog.accountState.value.isLoggedIn &&
+        collectionId != "LM" && collectionId != "VLLM"
 
     LaunchedEffect(collectionId, isAlbum, retryNonce) {
         val hasOfflineSongs = !offlineCollection?.songs.isNullOrEmpty()
@@ -132,9 +141,11 @@ internal fun YouTubeCollectionScreen(
         }
     }
 
-    val resolvedTitle = initialTitle
-        .ifBlank { offlineCollection?.title.orEmpty() }
-        .ifBlank { if (isAlbum) commonCopy.albums else commonCopy.playlists }
+    val resolvedTitle = editedTitle
+        ?.takeIf(String::isNotBlank)
+        ?: initialTitle
+            .ifBlank { offlineCollection?.title.orEmpty() }
+            .ifBlank { if (isAlbum) commonCopy.albums else commonCopy.playlists }
     val resolvedSubtitle = initialSubtitle.ifBlank { offlineCollection?.subtitle.orEmpty() }
     val resolvedArtUri = remember(initialArtUri, offlineCollection, songs) {
         initialArtUri?.takeIf(String::isNotBlank)?.let(Uri::parse)
@@ -419,6 +430,65 @@ internal fun YouTubeCollectionScreen(
                                 },
                             )
                         }
+                        if (canEditYouTubePlaylist) {
+                            CollectionQuickAction(
+                                label = when {
+                                    editMode && isPt -> "Concluir"
+                                    editMode && isEs -> "Listo"
+                                    editMode -> "Done"
+                                    isPt -> "Editar"
+                                    isEs -> "Editar"
+                                    else -> "Edit"
+                                },
+                                iconResId = if (editMode) R.drawable.ic_lucide_check else R.drawable.ic_lucide_square_pen,
+                                highlighted = editMode,
+                                onClick = { editMode = !editMode },
+                            )
+                        }
+                    }
+                }
+                if (canEditYouTubePlaylist && editMode) {
+                    item(key = "yt_collection_edit_bar") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                                    .elovaireClickable { showRenameDialog = true }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                            ) {
+                                Text(
+                                    text = when {
+                                        isPt -> "Renomear"
+                                        isEs -> "Renombrar"
+                                        else -> "Rename"
+                                    },
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                                    .elovaireClickable { showAddTrackDialog = true }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                            ) {
+                                Text(
+                                    text = when {
+                                        isPt -> "+ Adicionar música"
+                                        isEs -> "+ Añadir canción"
+                                        else -> "+ Add song"
+                                    },
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -488,10 +558,182 @@ internal fun YouTubeCollectionScreen(
                             downloadedCd = dlCopy.downloadedAction,
                             onClick = { onPlaySongs(song, filteredSongs, resolvedTitle) },
                             onToggleFavorite = { onToggleFavorite(song.id) },
+                            onRemoveTrack = if (canEditYouTubePlaylist && editMode) {
+                                {
+                                    val videoId = YouTubeUri.videoId(song.uri)
+                                    if (!videoId.isNullOrBlank()) {
+                                        scope.launch {
+                                            val ok = youTubeCatalog.removeVideoFromYouTubePlaylist(collectionId, videoId)
+                                            if (ok) {
+                                                songs = songs.filterNot { it.id == song.id }
+                                                val msg = if (isPt) "Faixa removida" else if (isEs) "Canción eliminada" else "Track removed"
+                                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
             }
+        }
+
+        if (showRenameDialog) {
+            var draftName by remember(resolvedTitle) { mutableStateOf(resolvedTitle) }
+            var savingRename by remember { mutableStateOf(false) }
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { if (!savingRename) showRenameDialog = false },
+                title = {
+                    Text(
+                        when {
+                            isPt -> "Renomear playlist"
+                            isEs -> "Renombrar playlist"
+                            else -> "Rename playlist"
+                        },
+                    )
+                },
+                text = {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = draftName,
+                        onValueChange = { draftName = it },
+                        singleLine = true,
+                        enabled = !savingRename,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(
+                        enabled = !savingRename && draftName.isNotBlank(),
+                        onClick = {
+                            savingRename = true
+                            scope.launch {
+                                val ok = youTubeCatalog.renameYouTubePlaylist(collectionId, draftName.trim())
+                                savingRename = false
+                                showRenameDialog = false
+                                if (ok) {
+                                    editedTitle = draftName.trim()
+                                    val msg = if (isPt) "Playlist renomeada" else if (isEs) "Playlist renombrada" else "Playlist renamed"
+                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                    ) {
+                        Text(if (savingRename) "..." else if (isPt) "Salvar" else if (isEs) "Guardar" else "Save")
+                    }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(
+                        enabled = !savingRename,
+                        onClick = { showRenameDialog = false },
+                    ) {
+                        Text(if (isPt) "Cancelar" else "Cancel")
+                    }
+                },
+            )
+        }
+
+        if (showAddTrackDialog) {
+            var addQuery by remember { mutableStateOf("") }
+            var searchResults by remember { mutableStateOf<List<Song>>(emptyList()) }
+            var isSearching by remember { mutableStateOf(false) }
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showAddTrackDialog = false },
+                title = {
+                    Text(
+                        when {
+                            isPt -> "Adicionar música"
+                            isEs -> "Añadir canción"
+                            else -> "Add song"
+                        },
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.OutlinedTextField(
+                                value = addQuery,
+                                onValueChange = { addQuery = it },
+                                placeholder = { Text(commonCopy.search) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                            androidx.compose.material3.TextButton(
+                                enabled = addQuery.isNotBlank() && !isSearching,
+                                onClick = {
+                                    isSearching = true
+                                    scope.launch {
+                                        searchResults = runCatching {
+                                            youTubeCatalog.searchSongs(addQuery.trim()).take(6)
+                                        }.getOrDefault(emptyList())
+                                        isSearching = false
+                                    }
+                                },
+                            ) {
+                                Text(if (isSearching) "..." else commonCopy.search)
+                            }
+                        }
+                        searchResults.forEach { candidate ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .elovaireClickable {
+                                        val vid = YouTubeUri.videoId(candidate.uri) ?: return@elovaireClickable
+                                        scope.launch {
+                                            val ok = youTubeCatalog.addVideoToYouTubePlaylist(collectionId, vid)
+                                            if (ok) {
+                                                if (songs.none { it.id == candidate.id }) {
+                                                    songs = songs + candidate
+                                                }
+                                                val msg = if (isPt) "Adicionada à playlist" else if (isEs) "Añadida a la playlist" else "Added to playlist"
+                                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                                showAddTrackDialog = false
+                                            }
+                                        }
+                                    }
+                                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                ArtworkImage(
+                                    uri = candidate.artUri,
+                                    title = candidate.title,
+                                    modifier = Modifier.size(38.dp),
+                                    cornerRadius = 6.dp,
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = candidate.title,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = candidate.artist,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = readableSecondaryTextColor(),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(
+                        onClick = { showAddTrackDialog = false },
+                    ) {
+                        Text(if (isPt) "Fechar" else if (isEs) "Cerrar" else "Close")
+                    }
+                },
+            )
         }
 
         PinnedBackTopBar(
@@ -628,6 +870,7 @@ private fun NumberedCollectionTrackRow(
     downloadedCd: String,
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onRemoveTrack: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -677,14 +920,25 @@ private fun NumberedCollectionTrackRow(
                 )
             }
         }
-        InlineFavoriteSongButton(
-            isFavorite = isFavorite,
-            tint = MaterialTheme.colorScheme.onSurface,
-            onClick = onToggleFavorite,
-        )
-        SongOverflowMenuButton(
-            song = song,
-            tint = MaterialTheme.colorScheme.onSurface,
-        )
+        if (onRemoveTrack != null) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_lucide_trash_2),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .size(20.dp)
+                    .elovaireClickable(onClick = onRemoveTrack),
+            )
+        } else {
+            InlineFavoriteSongButton(
+                isFavorite = isFavorite,
+                tint = MaterialTheme.colorScheme.onSurface,
+                onClick = onToggleFavorite,
+            )
+            SongOverflowMenuButton(
+                song = song,
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
     }
 }

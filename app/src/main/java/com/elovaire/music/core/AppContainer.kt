@@ -99,6 +99,8 @@ class AppContainer internal constructor(
     internal val youTubeDownloadManager get() = services.youTubeDownloadManager
     internal val listeningStatsStore get() = services.listeningStatsStore
     internal val lastFmClient get() = services.lastFmClient
+    internal val listenBrainzClient get() = services.listenBrainzClient
+    internal val importedPlaylistStore get() = services.importedPlaylistStore
     internal val compassoEngine get() = services.compassoEngine
     internal val lyricsService get() = services.lyricsService
     internal val albumTagEditorService get() = services.albumTagEditorService

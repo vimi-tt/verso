@@ -1908,21 +1908,26 @@ internal fun NowPlayingScreen(
         ) {
             currentSong?.let { song ->
                 val readyLyrics = lyricsUiState as? LyricsUiState.Ready
-                val currentPosMs = playbackManager.progressState.value.positionMs
-                val snippetLines = remember(readyLyrics, currentPosMs) {
+                val progressState by playbackManager.progressState.collectAsStateWithLifecycle()
+                val currentPosMs = progressState.positionMs
+                val (snippetLines, activeInSnippet) = remember(readyLyrics, currentPosMs) {
                     val payload = readyLyrics?.payload
                     val lines = payload?.lines.orEmpty()
                     if (lines.isEmpty()) {
-                        emptyList()
+                        emptyList<String>() to 0
                     } else {
                         val activeIdx = (payload?.currentLineIndexAt(currentPosMs) ?: 0).coerceAtLeast(0)
-                        lines.drop(activeIdx).take(4).map { it.text }.filter { it.isNotBlank() }
+                        val start = (activeIdx - 1).coerceAtLeast(0)
+                        val window = lines.drop(start).take(4).map { it.text }.filter { it.isNotBlank() }
+                        val relActive = (activeIdx - start).coerceIn(0, (window.size - 1).coerceAtLeast(0))
+                        window to relActive
                     }
                 }
                 ShareCardSheet(
                     song = song,
                     language = language,
                     lyricsSnippet = snippetLines,
+                    activeLyricIndex = activeInSnippet,
                     positionMs = currentPosMs,
                     durationMs = song.durationMs,
                     onDismiss = { showShareCardSheet = false },
@@ -1968,6 +1973,7 @@ internal fun NowPlayingScreen(
             }
         }
     }
+    val currentSongMenuActions = LocalSongMenuActions.current
     AddToPlaylistPickerDialog(
         visible = showAddToPlaylistDialog,
         playlists = playlists,
@@ -1979,6 +1985,10 @@ internal fun NowPlayingScreen(
                 ?: PlaylistMutationResult.InvalidInput
         },
         onCreatePlaylist = onCreatePlaylist,
+        youTubePlaylists = currentSongMenuActions.youTubePlaylists,
+        onYouTubePlaylistSelected = currentSongMenuActions.onAddToYouTubePlaylist?.let { fn ->
+            { ytId -> currentSong?.let { fn(ytId, it) } ?: false }
+        },
     )
     ElovaireAnimatedVisibility(
         visible = showSleepTimerDialog,
@@ -2306,6 +2316,7 @@ private fun QueueSheet(
         }
     }
     val targetSong = playlistTargetSong
+    val queueSongMenuActions = LocalSongMenuActions.current
     AddToPlaylistPickerDialog(
         visible = targetSong != null,
         playlists = playlists,
@@ -2316,6 +2327,10 @@ private fun QueueSheet(
                 ?: PlaylistMutationResult.InvalidInput
         },
         onCreatePlaylist = onCreatePlaylist,
+        youTubePlaylists = queueSongMenuActions.youTubePlaylists,
+        onYouTubePlaylistSelected = queueSongMenuActions.onAddToYouTubePlaylist?.let { fn ->
+            { ytId -> targetSong?.let { fn(ytId, it) } ?: false }
+        },
     )
 }
 
@@ -4101,6 +4116,38 @@ internal fun SongOverflowMenuButton(
                             },
                         )
                     }
+                    if (actions.onBlockTrack != null) {
+                        val blockTrackLabel = when (language) {
+                            AppLanguage.Portuguese -> "Não recomendar música"
+                            AppLanguage.Spanish -> "No recomendar canción"
+                            else -> "Don't recommend track"
+                        }
+                        SongContextMenuItem(
+                            iconResId = R.drawable.ic_lucide_ban,
+                            text = blockTrackLabel,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            onClick = {
+                                expanded = false
+                                actions.onBlockTrack.invoke(song)
+                            },
+                        )
+                    }
+                    if (actions.onBlockArtist != null && song.artist.isNotBlank()) {
+                        val blockArtistLabel = when (language) {
+                            AppLanguage.Portuguese -> "Não recomendar artista"
+                            AppLanguage.Spanish -> "No recomendar artista"
+                            else -> "Don't recommend artist"
+                        }
+                        SongContextMenuItem(
+                            iconResId = R.drawable.ic_lucide_ban,
+                            text = blockArtistLabel,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            onClick = {
+                                expanded = false
+                                actions.onBlockArtist.invoke(song)
+                            },
+                        )
+                    }
                     val showDeleteAction = !YouTubeUri.isYouTubeUri(song.uri) ||
                         actions.deletePhrase != UiPhrase.DeleteFromLibrary
                     if (showDeleteAction) {
@@ -4131,6 +4178,10 @@ internal fun SongOverflowMenuButton(
             actions.onAddToPlaylist(playlistId, song).await()
         },
         onCreatePlaylist = actions.onCreatePlaylist,
+        youTubePlaylists = actions.youTubePlaylists,
+        onYouTubePlaylistSelected = actions.onAddToYouTubePlaylist?.let { fn ->
+            { ytId -> fn(ytId, song) }
+        },
     )
 }
 
@@ -4493,6 +4544,27 @@ internal fun LyricsOverlay(
                     .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 18.dp),
             ) {
+                var showRomanization by remember(songKey) { mutableStateOf(true) }
+                var showTranslation by remember(songKey) { mutableStateOf(false) }
+                val readyLines = (currentLyricsState as? LyricsUiState.Ready)?.payload?.lines.orEmpty()
+                val hasNonLatinLyrics = remember(readyLines) {
+                    readyLines.any { elovaire.music.droidbeauty.app.data.lyrics.LyricsTransliterator.hasNonLatinScript(it.text) }
+                }
+                var translatedLines by remember(songKey) { mutableStateOf<List<String>?>(null) }
+                LaunchedEffect(showTranslation, songKey, readyLines, language) {
+                    if (showTranslation && readyLines.isNotEmpty() && translatedLines == null) {
+                        val targetLang = when (language) {
+                            AppLanguage.Portuguese -> "pt"
+                            AppLanguage.Spanish -> "es"
+                            else -> "en"
+                        }
+                        translatedLines = elovaire.music.droidbeauty.app.data.lyrics.LyricsTranslator.translateLines(
+                            cacheKey = songKey.orEmpty(),
+                            lines = readyLines.map { it.text },
+                            targetLanguageCode = targetLang,
+                        )
+                    }
+                }
                 Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -4550,6 +4622,49 @@ internal fun LyricsOverlay(
                                     color = secondaryContentColor,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                    if (!isEditingLyrics && readyLines.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (hasNonLatinLyrics) {
+                                val romLabel = when (language) {
+                                    AppLanguage.Portuguese -> "Romaji"
+                                    AppLanguage.Spanish -> "Romaji"
+                                    else -> "Romanize"
+                                }
+                                Surface(
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    color = if (showRomanization) contentColor.copy(alpha = 0.22f) else contentColor.copy(alpha = 0.08f),
+                                    modifier = Modifier.clickable { showRomanization = !showRomanization },
+                                ) {
+                                    Text(
+                                        text = romLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = contentColor,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    )
+                                }
+                            }
+                            val transLabel = when (language) {
+                                AppLanguage.Portuguese -> "Traduzir"
+                                AppLanguage.Spanish -> "Traducir"
+                                else -> "Translate"
+                            }
+                            Surface(
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                color = if (showTranslation) contentColor.copy(alpha = 0.22f) else contentColor.copy(alpha = 0.08f),
+                                modifier = Modifier.clickable { showTranslation = !showTranslation },
+                            ) {
+                                Text(
+                                    text = transLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = contentColor,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                 )
                             }
                         }
@@ -4695,6 +4810,8 @@ internal fun LyricsOverlay(
                                         topSoftEdgeHeight = lyricsTopSoftEdgeHeight,
                                         lyricsBottomBlurArea = lyricsBottomBlurArea,
                                         contentColor = contentColor,
+                                        showRomanization = showRomanization,
+                                        translatedLines = if (showTranslation) translatedLines else null,
                                         onSeekTo = { position ->
                                             if (content.songKey == songKey && currentLyricsState == state && !isEditingLyrics) {
                                                 onSeekTo(position)
@@ -5376,6 +5493,8 @@ private fun LyricsReadyContent(
     topSoftEdgeHeight: Dp,
     lyricsBottomBlurArea: Dp,
     contentColor: Color,
+    showRomanization: Boolean = false,
+    translatedLines: List<String>? = null,
     onSeekTo: (Long) -> Unit,
 ) {
     val motionSpecs = rememberMotionSpecs()
@@ -5526,33 +5645,69 @@ private fun LyricsReadyContent(
                         latestOnSeekTo(seekPositionMs)
                     }
                 }
-            androidx.compose.animation.Crossfade(
-                targetState = isActive,
-                animationSpec = motionSpecs.tween(220, easing = MotionEasing.RefinedDecelerate),
+            val romanizedSubtitle = if (showRomanization) {
+                remember(line.text) {
+                    elovaire.music.droidbeauty.app.data.lyrics.LyricsTransliterator.romanizeOrNull(line.text)
+                }
+            } else {
+                null
+            }
+            val translatedSubtitle = translatedLines?.getOrNull(index)?.takeIf {
+                it.isNotBlank() && !it.equals(line.text.trim(), ignoreCase = true)
+            }
+            Column(
                 modifier = lineModifier,
-                label = "lyrics_line_active_crossfade_$index",
-            ) { active ->
-                if (active) {
-                    ActiveKaraokeLyricLineText(
-                        line = line,
-                        nextLineStartMs = nextLineStartMs,
-                        playbackManager = playbackManager,
-                        isPlaying = isPlaying,
-                        contentColor = contentColor,
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                androidx.compose.animation.Crossfade(
+                    targetState = isActive,
+                    animationSpec = motionSpecs.tween(220, easing = MotionEasing.RefinedDecelerate),
+                    label = "lyrics_line_active_crossfade_$index",
+                ) { active ->
+                    if (active) {
+                        ActiveKaraokeLyricLineText(
+                            line = line,
+                            nextLineStartMs = nextLineStartMs,
+                            playbackManager = playbackManager,
+                            isPlaying = isPlaying,
+                            contentColor = contentColor,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        Text(
+                            text = line.text,
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Medium,
+                                lineHeight = 29.sp,
+                            ),
+                            color = contentColor,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+                            softWrap = true,
+                            maxLines = Int.MAX_VALUE,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                if (!romanizedSubtitle.isNullOrBlank()) {
+                    Text(
+                        text = romanizedSubtitle,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 19.sp,
+                        ),
+                        color = contentColor.copy(alpha = 0.68f),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                } else {
+                }
+                if (!translatedSubtitle.isNullOrBlank()) {
                     Text(
-                        text = line.text,
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeight = 29.sp,
+                        text = translatedSubtitle,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 19.sp,
                         ),
-                        color = contentColor,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Start,
-                        softWrap = true,
-                        maxLines = Int.MAX_VALUE,
+                        color = contentColor.copy(alpha = 0.78f),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }

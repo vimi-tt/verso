@@ -92,6 +92,7 @@ internal fun PlaylistsScreen(
     isYouTubeSyncing: Boolean = false,
     onSyncYouTube: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    importedCoverUris: Map<Long, String> = emptyMap(),
 ) {
     val motionTransitions = rememberMotionTransitions()
     val motionSpecs = rememberMotionSpecs()
@@ -288,6 +289,7 @@ internal fun PlaylistsScreen(
                     PlaylistGridTile(
                         playlist = row.playlist,
                         previewSongs = row.previewSongs,
+                        coverUriOverride = importedCoverUris[row.playlist.id],
                         selected = row.playlist.id in selectedPlaylistIds,
                         selectionMode = editMode,
                         onClick = { origin ->
@@ -497,6 +499,7 @@ internal fun PlaylistGridTile(
     selectionMode: Boolean,
     onClick: (ExpandOrigin) -> Unit,
     onLongPress: () -> Unit,
+    coverUriOverride: String? = null,
 ) {
     val screenSizePx = screenContainerSizePx()
     val screenWidthPx = screenSizePx.width.toFloat()
@@ -515,11 +518,23 @@ internal fun PlaylistGridTile(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box {
-            PlaylistArtworkPreview(
-                songs = previewSongs,
-                title = playlist.name,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (!coverUriOverride.isNullOrBlank()) {
+                ArtworkImage(
+                    uri = android.net.Uri.parse(coverUriOverride),
+                    title = playlist.name,
+                    placeholderIconResId = R.drawable.ic_lucide_list_music,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f),
+                    cornerRadius = ElovaireRadii.card,
+                )
+            } else {
+                PlaylistArtworkPreview(
+                    songs = previewSongs,
+                    title = playlist.name,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             if (selectionMode && !playlist.isSystem) {
                 PlaylistSelectionIndicator(
                     selected = selected,
@@ -531,13 +546,22 @@ internal fun PlaylistGridTile(
         }
         Text(
             text = playlist.name,
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            style = if (!coverUriOverride.isNullOrBlank()) {
+                MaterialTheme.typography.titleMedium
+            } else {
+                MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
+            },
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         Text(
             text = localizedCountLabel(playlist.songIds.size, "song", language),
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+            style = if (!coverUriOverride.isNullOrBlank()) {
+                MaterialTheme.typography.bodySmall
+            } else {
+                MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium)
+            },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

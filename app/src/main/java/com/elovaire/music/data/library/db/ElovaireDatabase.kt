@@ -27,9 +27,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AudiobookProgressEntity::class,
         PlaybackHistoryEntity::class,
         BlockedTrackEntity::class,
+        BlockedArtistEntity::class,
         PersistedQueueEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 internal abstract class ElovaireDatabase : RoomDatabase() {
@@ -64,6 +65,7 @@ internal abstract class ElovaireDatabase : RoomDatabase() {
                     MIGRATION_10_11,
                     MIGRATION_11_12,
                     MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .build()
         }
@@ -268,6 +270,16 @@ internal abstract class ElovaireDatabase : RoomDatabase() {
                         "`discoveryRatio` REAL NOT NULL, `isActive` INTEGER NOT NULL, " +
                         "`seedVideoId` TEXT, `updatedAt` INTEGER NOT NULL, " +
                         "PRIMARY KEY(`singletonId`))",
+                )
+            }
+        }
+
+        internal val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `compasso_blocked_artists` (" +
+                        "`normalizedArtist` TEXT NOT NULL, `artistName` TEXT NOT NULL, " +
+                        "`blockedAt` INTEGER NOT NULL, PRIMARY KEY(`normalizedArtist`))",
                 )
             }
         }

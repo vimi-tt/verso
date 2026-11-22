@@ -124,6 +124,57 @@ internal class Media3WidgetPlaybackCommandGateway(context: Context) : WidgetPlay
     }
 }
 
+internal class InProcessWidgetPlaybackCommandGateway(context: Context) : WidgetPlaybackCommandGateway {
+    private val applicationContext = context.applicationContext
+
+    override suspend fun dispatch(action: WidgetPlaybackAction) {
+        val app = applicationContext as? ElovaireApp
+        if (app == null) {
+            Media3WidgetPlaybackCommandGateway(applicationContext).dispatch(action)
+            return
+        }
+        val playback = app.container.playbackManager
+        if (playback.queueState.value.queue.isEmpty()) {
+            val saved = withContext(Dispatchers.IO) {
+                app.container.listeningStatsStore.loadLastPlaybackSession()
+            }
+            if (saved != null && saved.queue.isNotEmpty()) {
+                val activeSong = saved.queue[saved.currentIndex]
+                withContext(Dispatchers.Main.immediate) {
+                    playback.restorePausedQueue(
+                        songs = saved.queue,
+                        currentIndex = saved.currentIndex,
+                        positionMs = saved.positionMs,
+                        sourceLabel = activeSong.album.ifBlank { activeSong.artist },
+                    )
+                }
+            }
+        }
+        withContext(Dispatchers.Main.immediate) {
+            when (action) {
+                WidgetPlaybackAction.TogglePlayback -> playback.togglePlayback()
+                WidgetPlaybackAction.SkipPrevious -> playback.skipPrevious()
+                WidgetPlaybackAction.SkipNext -> playback.skipNext()
+            }
+        }
+        val snapshotStore = AtomicWidgetSnapshotStore(applicationContext)
+        val previous = snapshotStore.readLatest()
+        val updatedSnapshot = projectWidgetPlaybackSnapshot(
+            nowPlaying = playback.nowPlayingState.value,
+            transport = playback.transportState.value,
+            queue = playback.queueState.value,
+            previous = previous,
+            elapsedRealtimeMs = android.os.SystemClock.elapsedRealtime(),
+        )
+        snapshotStore.writeIfChanged(updatedSnapshot)
+        WidgetRenderUpdates.notifyChanged()
+        WidgetProviderRegistry.productionProviders(applicationContext).forEach { provider ->
+            runCatching { provider.updateAll() }
+        }
+        app.onWidgetProvidersChanged()
+    }
+}
+
 internal fun recordWidgetPlaybackFailure(context: Context, failure: Exception) {
     val app = context.applicationContext as ElovaireApp
     app.diagnosticsRuntime.recordWorkerFailure("widget-playback-action", failure)
@@ -137,7 +188,7 @@ class WidgetPlaybackActionCallback : ActionCallback {
         parameters: ActionParameters,
     ) {
         val result = try {
-            WidgetPlaybackActionDispatcher(Media3WidgetPlaybackCommandGateway(context))
+            WidgetPlaybackActionDispatcher(InProcessWidgetPlaybackCommandGateway(context))
                 .dispatch(parameters[WIDGET_PLAYBACK_ACTION_PARAMETER])
         } catch (cancelled: CancellationException) {
             throw cancelled

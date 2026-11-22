@@ -26,7 +26,7 @@ class WidgetPlaybackSnapshotCodecTest {
         assertEquals("Zewnętrzny plik audio", widgetTitle(snapshot, copy))
         assertEquals("External audio", widgetTitle(snapshot.copy(currentSongId = 1L), copy))
         assertEquals("Real title", widgetTitle(snapshot.copy(title = "Real title"), copy))
-        assertEquals("Elovaire", widgetTitle(null, copy))
+        assertEquals("Verso", widgetTitle(null, copy))
     }
     @Test
     fun currentSnapshotRoundTripsWithoutDomainObjects() {

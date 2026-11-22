@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import kotlinx.coroutines.launch
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -165,6 +166,7 @@ internal fun SettingsScreen(
     onCellularStreamingQualitySelected: (com.vimi.k7.innertube.stream.AudioPreference) -> Unit = {},
     onDownloadQualitySelected: (com.vimi.k7.innertube.stream.AudioPreference) -> Unit = {},
     onWifiOnlyDownloadsChanged: (Boolean) -> Unit = {},
+    onAutoDownloadLikedOnWifiChanged: (Boolean) -> Unit = {},
     onPreferredLyricsProviderSelected: (elovaire.music.droidbeauty.app.data.youtube.LyricsProviderPreference) -> Unit = {},
     musicCacheSizeBytes: Long = 0L,
     downloadsSizeBytes: Long = 0L,
@@ -175,7 +177,15 @@ internal fun SettingsScreen(
     onToggleLastFmScrobble: (Boolean) -> Unit = {},
     onSignOutLastFm: () -> Unit = {},
     onClearLastFmError: () -> Unit = {},
+    listenBrainzState: elovaire.music.droidbeauty.app.data.youtube.ListenBrainzAccountState = elovaire.music.droidbeauty.app.data.youtube.ListenBrainzAccountState(),
+    onSignInListenBrainz: (String) -> Unit = {},
+    onToggleListenBrainzScrobble: (Boolean) -> Unit = {},
+    onSignOutListenBrainz: () -> Unit = {},
+    onClearListenBrainzError: () -> Unit = {},
     onSyncYouTubeHistoryChanged: (Boolean) -> Unit = {},
+    onExportLibraryJson: () -> String = { "{}" },
+    onImportLibraryJson: suspend (String) -> Int = { 0 },
+    onImportPlaylistLink: suspend (String, String?) -> Int = { _, _ -> 0 },
     scrollToAccounts: Boolean = false,
 ) {
     val listState = rememberElovaireLazyListState("settings_screen")
@@ -445,6 +455,121 @@ internal fun SettingsScreen(
             }
 
             item {
+                var showListenBrainzDialog by remember { mutableStateOf(false) }
+                val isPt = appLanguage == AppLanguage.Portuguese
+                val isEs = appLanguage == AppLanguage.Spanish
+                val connectLabel = when {
+                    isPt -> "Conectar"
+                    isEs -> "Conectar"
+                    else -> "Connect"
+                }
+                val scrobbleTitle = when {
+                    isPt -> "Scrobbling automático"
+                    isEs -> "Scrobbling automático"
+                    else -> "Automatic scrobbling"
+                }
+                val scrobbleSubtitle = when {
+                    isPt -> "Registra músicas após 30s de reprodução"
+                    isEs -> "Registra canciones tras 30s de reproducción"
+                    else -> "Scrobble tracks after 30s of playback"
+                }
+                val lbSubtitle = when {
+                    listenBrainzState.isLoggedIn -> "@${listenBrainzState.username}"
+                    isPt -> "Alternativa aberta de scrobbling com token"
+                    isEs -> "Alternativa abierta de scrobbling con token"
+                    else -> "Open scrobbling alternative with user token"
+                }
+                ModuleCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (!listenBrainzState.isLoggedIn) {
+                            SettingActionRow(
+                                title = "ListenBrainz",
+                                subtitle = lbSubtitle,
+                                actionLabel = connectLabel,
+                                onAction = {
+                                    onClearListenBrainzError()
+                                    showListenBrainzDialog = true
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                        } else {
+                            SettingToggleRow(
+                                title = "ListenBrainz (${listenBrainzState.username})",
+                                subtitle = "$scrobbleTitle • $scrobbleSubtitle",
+                                enabled = listenBrainzState.scrobbleEnabled,
+                                onEnabledChanged = onToggleListenBrainzScrobble,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                            val signOutLabel = when {
+                                isPt -> "Sair"
+                                isEs -> "Cerrar sesión"
+                                else -> "Sign out"
+                            }
+                            SettingActionRow(
+                                title = signOutLabel,
+                                subtitle = "",
+                                actionLabel = signOutLabel,
+                                onAction = onSignOutListenBrainz,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                            )
+                        }
+                    }
+                }
+
+                if (showListenBrainzDialog && !listenBrainzState.isLoggedIn) {
+                    var token by remember { mutableStateOf("") }
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showListenBrainzDialog = false },
+                        title = { Text(text = "ListenBrainz") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                androidx.compose.material3.OutlinedTextField(
+                                    value = token,
+                                    onValueChange = { token = it },
+                                    label = {
+                                        Text(
+                                            when {
+                                                isPt -> "Token de usuário"
+                                                isEs -> "Token de usuario"
+                                                else -> "User token"
+                                            },
+                                        )
+                                    },
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                if (!listenBrainzState.errorMessage.isNullOrBlank()) {
+                                    Text(
+                                        text = listenBrainzState.errorMessage,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(
+                                enabled = !listenBrainzState.isSigningIn,
+                                onClick = {
+                                    onSignInListenBrainz(token)
+                                },
+                            ) {
+                                Text(if (listenBrainzState.isSigningIn) "..." else connectLabel)
+                            }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(
+                                onClick = { showListenBrainzDialog = false },
+                            ) {
+                                Text(if (isPt) "Cancelar" else "Cancel")
+                            }
+                        },
+                    )
+                }
+            }
+
+            item {
                 val qualityCopy = remember(appLanguage) {
                     elovaire.music.droidbeauty.app.ui.i18n.youtubeQualityCopy(appLanguage)
                 }
@@ -502,6 +627,21 @@ internal fun SettingsScreen(
                             subtitle = qualityCopy.wifiOnlyDownloadsSubtitle,
                             enabled = youTubeQualityState.wifiOnlyDownloads,
                             onEnabledChanged = onWifiOnlyDownloadsChanged,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                        SettingToggleRow(
+                            title = when {
+                                isPt -> "Baixar curtidas no Wi-Fi"
+                                isEs -> "Descargar favoritos en Wi-Fi"
+                                else -> "Auto-download liked on Wi-Fi"
+                            },
+                            subtitle = when {
+                                isPt -> "Salva faixas curtidas automaticamente no Wi-Fi"
+                                isEs -> "Guarda canciones favoritas automáticamente en Wi-Fi"
+                                else -> "Save liked tracks automatically on Wi-Fi"
+                            },
+                            enabled = youTubeQualityState.autoDownloadLikedOnWifi,
+                            onEnabledChanged = onAutoDownloadLikedOnWifiChanged,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
                         )
                         val currentProviderLabel = when (youTubeQualityState.preferredLyricsProvider) {
@@ -675,6 +815,296 @@ internal fun SettingsScreen(
             }
 
             item {
+                val isPt = appLanguage == AppLanguage.Portuguese
+                val isEs = appLanguage == AppLanguage.Spanish
+                SectionTitleRow(
+                    title = when {
+                        isPt -> "Backup e importação"
+                        isEs -> "Copia de seguridad e importación"
+                        else -> "Backup & import"
+                    },
+                )
+            }
+
+            item {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val isPt = appLanguage == AppLanguage.Portuguese
+                val isEs = appLanguage == AppLanguage.Spanish
+                val backupScope = androidx.compose.runtime.rememberCoroutineScope()
+                var backupStatusMessage by remember { mutableStateOf<String?>(null) }
+                var backupStatusIsError by remember { mutableStateOf(false) }
+                val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                    contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json"),
+                ) { uri ->
+                    if (uri != null) {
+                        backupScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            val json = onExportLibraryJson()
+                            val ok = runCatching {
+                                context.contentResolver.openOutputStream(uri)?.use { out ->
+                                    out.write(json.toByteArray(Charsets.UTF_8))
+                                }
+                            }.isSuccess
+                            val msg = if (ok) {
+                                when {
+                                    isPt -> "Biblioteca exportada em JSON"
+                                    isEs -> "Biblioteca exportada en JSON"
+                                    else -> "Library exported as JSON"
+                                }
+                            } else {
+                                when {
+                                    isPt -> "Falha ao exportar biblioteca"
+                                    isEs -> "Error al exportar biblioteca"
+                                    else -> "Failed to export library"
+                                }
+                            }
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                backupStatusIsError = !ok
+                                backupStatusMessage = msg
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }
+                val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                    contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        backupScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            val raw = runCatching {
+                                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                            }.getOrNull().orEmpty()
+                            val count = if (raw.isNotBlank()) onImportLibraryJson(raw) else 0
+                            val msg = if (count > 0) {
+                                when {
+                                    isPt -> "$count faixas importadas"
+                                    isEs -> "$count canciones importadas"
+                                    else -> "$count tracks imported"
+                                }
+                            } else {
+                                when {
+                                    isPt -> "Nenhuma faixa encontrada no arquivo"
+                                    isEs -> "No se encontraron canciones en el archivo"
+                                    else -> "No tracks found in file"
+                                }
+                            }
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                backupStatusIsError = count == 0
+                                backupStatusMessage = msg
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }
+                ModuleCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (!backupStatusMessage.isNullOrBlank()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (backupStatusIsError) {
+                                            MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
+                                        } else {
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                                        },
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    painter = painterResource(
+                                        id = if (backupStatusIsError) R.drawable.ic_lucide_ban else R.drawable.ic_lucide_check,
+                                    ),
+                                    contentDescription = null,
+                                    tint = if (backupStatusIsError) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    },
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Text(
+                                    text = backupStatusMessage.orEmpty(),
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                    color = if (backupStatusIsError) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                )
+                            }
+                        }
+                        SettingActionRow(
+                            title = when {
+                                isPt -> "Exportar biblioteca (JSON)"
+                                isEs -> "Exportar biblioteca (JSON)"
+                                else -> "Export library (JSON)"
+                            },
+                            subtitle = when {
+                                isPt -> "Playlists, curtidas e estatísticas"
+                                isEs -> "Playlists, favoritos y estadísticas"
+                                else -> "Playlists, likes, and stats"
+                            },
+                            actionLabel = when {
+                                isPt -> "Exportar"
+                                isEs -> "Exportar"
+                                else -> "Export"
+                            },
+                            onAction = { exportLauncher.launch("verso-library-backup.json") },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                        SettingActionRow(
+                            title = when {
+                                isPt -> "Importar biblioteca"
+                                isEs -> "Importar biblioteca"
+                                else -> "Import library"
+                            },
+                            subtitle = when {
+                                isPt -> "Verso JSON, Spotify ou Last.fm"
+                                isEs -> "Verso JSON, Spotify o Last.fm"
+                                else -> "Verso JSON, Spotify, or Last.fm"
+                            },
+                            actionLabel = when {
+                                isPt -> "Importar"
+                                isEs -> "Importar"
+                                else -> "Import"
+                            },
+                            onAction = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                        var showLinkImportDialog by remember { mutableStateOf(false) }
+                        var isImportingLink by remember { mutableStateOf(false) }
+                        SettingActionRow(
+                            title = when {
+                                isPt -> "Importar playlist por link"
+                                isEs -> "Importar playlist por enlace"
+                                else -> "Import playlist by link"
+                            },
+                            subtitle = when {
+                                isPt -> "YouTube Music ou Spotify"
+                                isEs -> "YouTube Music o Spotify"
+                                else -> "YouTube Music or Spotify"
+                            },
+                            actionLabel = when {
+                                isPt -> "Importar"
+                                isEs -> "Importar"
+                                else -> "Import"
+                            },
+                            onAction = { showLinkImportDialog = true },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        )
+                        if (showLinkImportDialog) {
+                            var linkUrl by remember { mutableStateOf("") }
+                            var customPlaylistName by remember { mutableStateOf("") }
+                            androidx.compose.material3.AlertDialog(
+                                onDismissRequest = { if (!isImportingLink) showLinkImportDialog = false },
+                                title = {
+                                    Text(
+                                        when {
+                                            isPt -> "Importar playlist por link"
+                                            isEs -> "Importar playlist por enlace"
+                                            else -> "Import playlist by link"
+                                        },
+                                    )
+                                },
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        androidx.compose.material3.OutlinedTextField(
+                                            value = linkUrl,
+                                            onValueChange = { linkUrl = it },
+                                            label = {
+                                                Text(
+                                                    when {
+                                                        isPt -> "Link da playlist"
+                                                        isEs -> "Enlace de la playlist"
+                                                        else -> "Playlist link"
+                                                    },
+                                                )
+                                            },
+                                            placeholder = { Text("https://music.youtube.com/playlist?list=...") },
+                                            singleLine = true,
+                                            enabled = !isImportingLink,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                        androidx.compose.material3.OutlinedTextField(
+                                            value = customPlaylistName,
+                                            onValueChange = { customPlaylistName = it },
+                                            label = {
+                                                Text(
+                                                    when {
+                                                        isPt -> "Nome da playlist (opcional)"
+                                                        isEs -> "Nombre de la playlist (opcional)"
+                                                        else -> "Playlist name (optional)"
+                                                    },
+                                                )
+                                            },
+                                            singleLine = true,
+                                            enabled = !isImportingLink,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    }
+                                },
+                                confirmButton = {
+                                    androidx.compose.material3.TextButton(
+                                        enabled = !isImportingLink && linkUrl.isNotBlank(),
+                                        onClick = {
+                                            isImportingLink = true
+                                            backupScope.launch {
+                                                val count = onImportPlaylistLink(
+                                                    linkUrl,
+                                                    customPlaylistName.takeIf { it.isNotBlank() },
+                                                )
+                                                isImportingLink = false
+                                                showLinkImportDialog = false
+                                                val msg = if (count > 0) {
+                                                    when {
+                                                        isPt -> "Playlist importada ($count faixas)"
+                                                        isEs -> "Playlist importada ($count canciones)"
+                                                        else -> "Playlist imported ($count tracks)"
+                                                    }
+                                                } else {
+                                                    when {
+                                                        isPt -> "Link inválido ou playlist vazia"
+                                                        isEs -> "Enlace inválido o playlist vacía"
+                                                        else -> "Invalid link or empty playlist"
+                                                    }
+                                                }
+                                                backupStatusIsError = count == 0
+                                                backupStatusMessage = msg
+                                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                        },
+                                    ) {
+                                        Text(
+                                            if (isImportingLink) {
+                                                "..."
+                                            } else {
+                                                when {
+                                                    isPt -> "Importar"
+                                                    isEs -> "Importar"
+                                                    else -> "Import"
+                                                }
+                                            },
+                                        )
+                                    }
+                                },
+                                dismissButton = {
+                                    androidx.compose.material3.TextButton(
+                                        enabled = !isImportingLink,
+                                        onClick = { showLinkImportDialog = false },
+                                    ) {
+                                        Text(if (isPt) "Cancelar" else "Cancel")
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
                 SettingsSectionHeader(
                     title = copy.appearance,
                     iconResId = R.drawable.ic_lucide_palette,
@@ -796,14 +1226,6 @@ internal fun SettingsScreen(
                                 },
                                 onClick = onOpenUpscaler,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                            )
-                            SettingNavigationRow(
-                                title = audiobookCopy.title,
-                                subtitle = audiobookCopy.subtitle,
-                                onClick = onOpenAudiobookSettings,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 2.dp),
                             )
                         }
                     }

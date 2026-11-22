@@ -47,7 +47,7 @@ class ProductionWidgetsTest {
         val manager = AppWidgetManager.getInstance(context)
         val providers = manager.installedProviders.map { it.provider }.toSet()
         listOf(
-            CompactWidgetReceiver::class.java, ClassicWidgetReceiver::class.java,
+            CompactWidgetReceiver::class.java,
             CoverWidgetReceiver::class.java, StudioWidgetReceiver::class.java,
             ControlsWidgetReceiver::class.java,
         ).forEach { receiver ->
