@@ -1,10 +1,12 @@
 <div align="center">
 
+<img src="assets/verso-logo.svg" alt="Verso" width="120" height="120" />
+
 # Verso
 
-**A refined Android music player combining YouTube Music streaming, the Compasso continuous recommendation engine, fast offline downloads, word-by-word synced lyrics, Last.fm scrobbling, and a shareable Recap.**
+**A refined Android music player combining YouTube Music streaming, the Compasso continuous recommendation engine, fast offline downloads, word-by-word synced lyrics, Last.fm & ListenBrainz scrobbling, and a shareable Recap.**
 
-[![Version](https://img.shields.io/badge/version-Arcodeon%201-FF6E4A?style=for-the-badge)](https://github.com/vimi-tt/verso/releases)
+[![Version](https://img.shields.io/badge/version-Arcodeon%202-FF6E4A?style=for-the-badge)](https://github.com/vimi-tt/verso/releases)
 [![Android](https://img.shields.io/badge/Android-10%2B%20(API%2029%2B)-19183D?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-Compose-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 
@@ -13,6 +15,11 @@
 </div>
 
 ---
+
+> [!WARNING]
+> The use of Verso to access YouTube Music may violate YouTube's Terms of Service. You use Verso at your own risk. You are solely responsible for any consequences. Verso's contributors are not liable for damages, claims, or actions against your account. We have received no reports of bans or restrictions for using Verso, but that does not guarantee your account's safety.
+>
+> YouTube Music is region-restricted. If the service is unavailable in your region, you need a [VPN or proxy in a supported region](https://one.one.one.one/) to use the app. [Changing your DNS](https://developers.cloudflare.com/1.1.1.1/setup/) can bypass some blocks.
 
 ## Overview
 
@@ -75,10 +82,19 @@ cd verso
 ./gradlew :app:assembleDebug
 ```
 
-To build the release APK (`app/build/release/verso.apk`):
+To build the release APK (`app/build/outputs/apk/release/app-release.apk`):
 
 ```bash
 ./gradlew :app:assembleRelease
 ```
 
 > **Requirements:** JDK 17+ and Android SDK (API 37 compileSdk / API 29 minSdk).
+
+---
+
+> [!WARNING]
+> **Legal disclaimer**
+>
+> This project is not affiliated with, funded, authorized, or endorsed by YouTube, Google LLC, or their affiliates and subsidiaries.
+>
+> All trademarks, service marks, and intellectual property rights referenced in this project belong to their respective owners.
