@@ -913,8 +913,8 @@ internal fun RootRouteGraph(
             val scope = androidx.compose.runtime.rememberCoroutineScope()
             SpotifyLoginScreen(
                 onBack = routeActions::navigateUp,
-                onSessionCaptured = { spDc, token, exp ->
-                    spotifyClient.saveSession(spDc, token, exp)
+                onSessionCaptured = { spDc, token, exp, clientToken ->
+                    spotifyClient.saveSession(spDc, token, exp, clientToken)
                     scope.launch { spotifyClient.syncPlaylists(force = true) }
                     navState.navController.popBackStack()
                 },

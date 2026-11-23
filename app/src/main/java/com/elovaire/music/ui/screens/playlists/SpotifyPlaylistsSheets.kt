@@ -78,12 +78,14 @@ private const val SPOTIFY_OPEN_HOST = "https://open.spotify.com"
 @Composable
 internal fun SpotifyLoginScreen(
     onBack: () -> Unit,
-    onSessionCaptured: (spDc: String, accessToken: String?, expiresAtMs: Long) -> Unit,
+    onSessionCaptured: (spDc: String, accessToken: String?, expiresAtMs: Long, clientToken: String?) -> Unit,
 ) {
     val context = LocalContext.current
     val language = LocalAppLanguage.current
     var loadProgress by remember { mutableIntStateOf(0) }
     var loginDispatched by remember { mutableStateOf(false) }
+    var capturedClientToken by remember { mutableStateOf<String?>(null) }
+    var capturedAccessToken by remember { mutableStateOf<String?>(null) }
 
     val webView = remember(context) {
         WebView(context).apply {
@@ -125,12 +127,12 @@ internal fun SpotifyLoginScreen(
         }
     }
 
-    fun dispatchCapturedSession(spDc: String, accessToken: String, expiresAtMs: Long) {
+    fun dispatchCapturedSession(spDc: String, accessToken: String, expiresAtMs: Long, clientToken: String? = capturedClientToken) {
         if (loginDispatched) return
         if (spDc.isBlank() || accessToken.isBlank()) return
         loginDispatched = true
         CookieManager.getInstance().flush()
-        onSessionCaptured(spDc, accessToken, expiresAtMs)
+        onSessionCaptured(spDc, accessToken, expiresAtMs, clientToken)
     }
 
     fun readSpDcCookie(): String {
@@ -266,18 +268,32 @@ internal fun SpotifyLoginScreen(
                                 if (!loginDispatched && request != null) {
                                     val host = request.url?.host?.lowercase().orEmpty()
                                     if (host.endsWith("spotify.com")) {
-                                        val authHeader = request.requestHeaders?.entries
+                                        val headers = request.requestHeaders
+                                        val authHeader = headers?.entries
                                             ?.firstOrNull { it.key.equals("authorization", ignoreCase = true) }
                                             ?.value
                                             .orEmpty()
+                                        val clientTokenHeader = headers?.entries
+                                            ?.firstOrNull { it.key.equals("client-token", ignoreCase = true) }
+                                            ?.value
+                                            ?.trim()
+                                            ?.takeIf { it.isNotBlank() }
+                                        if (clientTokenHeader != null) {
+                                            capturedClientToken = clientTokenHeader
+                                        }
                                         if (authHeader.startsWith("Bearer ", ignoreCase = true)) {
                                             val token = authHeader.substring(7).trim()
-                                            val spDc = readSpDcCookie()
-                                            if (token.isNotBlank() && spDc.isNotBlank()) {
-                                                val exp = System.currentTimeMillis() + 3_300_000L
-                                                view?.post {
-                                                    dispatchCapturedSession(spDc, token, exp)
-                                                }
+                                            if (token.isNotBlank()) {
+                                                capturedAccessToken = token
+                                            }
+                                        }
+                                        val token = capturedAccessToken
+                                        val cToken = capturedClientToken
+                                        val spDc = readSpDcCookie()
+                                        if (!token.isNullOrBlank() && !cToken.isNullOrBlank() && spDc.isNotBlank()) {
+                                            val exp = System.currentTimeMillis() + 3_300_000L
+                                            view?.post {
+                                                dispatchCapturedSession(spDc, token, exp, cToken)
                                             }
                                         }
                                     }

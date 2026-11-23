@@ -76,6 +76,7 @@ internal class SpotifyPlaylistClient(
         spDc: String,
         accessToken: String? = null,
         expiresAtMs: Long = 0L,
+        clientToken: String? = null,
     ) {
         val prefs = encryptedPrefs ?: return
         val cleanCookie = spDc.trim()
@@ -86,6 +87,9 @@ internal class SpotifyPlaylistClient(
                 if (!accessToken.isNullOrBlank()) {
                     putString(KEY_ACCESS_TOKEN, accessToken.trim())
                     putLong(KEY_EXPIRES_AT_MS, expiresAtMs)
+                }
+                if (!clientToken.isNullOrBlank()) {
+                    putString(KEY_CLIENT_TOKEN, clientToken.trim())
                 }
             }
             .apply()
@@ -213,39 +217,64 @@ internal class SpotifyPlaylistClient(
         }
     }
 
+    private fun Request.Builder.applySpotifyWebHeaders(token: String): Request.Builder {
+        val clientToken = encryptedPrefs?.getString(KEY_CLIENT_TOKEN, null)?.takeIf { it.isNotBlank() }
+        header("Authorization", "Bearer $token")
+        header("Accept", "application/json")
+        header("User-Agent", WEB_USER_AGENT)
+        header("Origin", "https://open.spotify.com")
+        header("Referer", "https://open.spotify.com/")
+        header("app-platform", "WebPlayer")
+        if (clientToken != null) {
+            header("client-token", clientToken)
+        }
+        return this
+    }
+
     private fun fetchPlaylistsWithToken(token: String): List<SpotifyPlaylistSummary> {
         val request = Request.Builder()
             .url("https://api.spotify.com/v1/me/playlists?limit=50")
-            .header("Authorization", "Bearer $token")
-            .header("Accept", "application/json")
+            .applySpotifyWebHeaders(token)
             .get()
             .build()
         return httpClient.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) error("HTTP ${resp.code}")
-            val json = JSONObject(resp.body?.string().orEmpty())
-            val items = json.optJSONArray("items") ?: return@use emptyList()
-            buildList {
-                for (i in 0 until items.length()) {
-                    val obj = items.optJSONObject(i) ?: continue
-                    val id = obj.optString("id").trim()
-                    val name = obj.optString("name").trim()
-                    if (id.isBlank() || name.isBlank()) continue
-                    val owner = obj.optJSONObject("owner")?.optString("display_name").orEmpty().trim()
-                    val total = obj.optJSONObject("tracks")?.optInt("total", 0) ?: 0
-                    val coverUrl = obj.optJSONArray("images")
-                        ?.optJSONObject(0)
-                        ?.optString("url")
-                        ?.takeIf { it.isNotBlank() }
-                    add(
-                        SpotifyPlaylistSummary(
-                            id = id,
-                            name = name,
-                            owner = owner,
-                            trackCount = total,
-                            coverUrl = coverUrl,
-                        ),
-                    )
+            if (resp.code == 429) {
+                val retrySec = resp.header("Retry-After")?.toLongOrNull()?.coerceIn(1L, 3L) ?: 1L
+                Thread.sleep(retrySec * 1000L)
+                return httpClient.newCall(request).execute().use { retryResp ->
+                    if (!retryResp.isSuccessful) error("HTTP ${retryResp.code}")
+                    parsePlaylistsJson(retryResp.body?.string().orEmpty())
                 }
+            }
+            if (!resp.isSuccessful) error("HTTP ${resp.code}")
+            parsePlaylistsJson(resp.body?.string().orEmpty())
+        }
+    }
+
+    private fun parsePlaylistsJson(body: String): List<SpotifyPlaylistSummary> {
+        val json = JSONObject(body)
+        val items = json.optJSONArray("items") ?: return emptyList()
+        return buildList {
+            for (i in 0 until items.length()) {
+                val obj = items.optJSONObject(i) ?: continue
+                val id = obj.optString("id").trim()
+                val name = obj.optString("name").trim()
+                if (id.isBlank() || name.isBlank()) continue
+                val owner = obj.optJSONObject("owner")?.optString("display_name").orEmpty().trim()
+                val total = obj.optJSONObject("tracks")?.optInt("total", 0) ?: 0
+                val coverUrl = obj.optJSONArray("images")
+                    ?.optJSONObject(0)
+                    ?.optString("url")
+                    ?.takeIf { it.isNotBlank() }
+                add(
+                    SpotifyPlaylistSummary(
+                        id = id,
+                        name = name,
+                        owner = owner,
+                        trackCount = total,
+                        coverUrl = coverUrl,
+                    ),
+                )
             }
         }
     }
@@ -256,8 +285,7 @@ internal class SpotifyPlaylistClient(
     ): List<BackupTrackRef> {
         val request = Request.Builder()
             .url("https://api.spotify.com/v1/playlists/$playlistId/tracks?limit=100")
-            .header("Authorization", "Bearer $token")
-            .header("Accept", "application/json")
+            .applySpotifyWebHeaders(token)
             .get()
             .build()
         return httpClient.newCall(request).execute().use { resp ->
@@ -300,6 +328,7 @@ internal class SpotifyPlaylistClient(
         private const val ENCRYPTED_PREFS_NAME = "spotify_session_encrypted"
         private const val KEY_SP_DC = "sp_dc"
         private const val KEY_ACCESS_TOKEN = "access_token"
+        private const val KEY_CLIENT_TOKEN = "client_token"
         private const val KEY_EXPIRES_AT_MS = "expires_at_ms"
         private const val WEB_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
