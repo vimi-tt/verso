@@ -1,23 +1,26 @@
 package elovaire.music.droidbeauty.app.ui.screens
 
 import androidx.compose.animation.animateColor
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -25,14 +28,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.ExperimentalHazeApi
 import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
@@ -44,7 +47,7 @@ import elovaire.music.droidbeauty.app.ui.motion.MotionDuration
 import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
-import elovaire.music.droidbeauty.app.ui.theme.InkText
+import elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors
 
 @OptIn(ExperimentalHazeApi::class)
 @Composable
@@ -55,61 +58,56 @@ internal fun BottomNavigationBar(
     onNavigate: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val iconColor = if (darkTheme) Color.White else InkText
+    val versoColors = LocalVersoColors.current
     val navigationInset = navigationBarInsetDp()
     val language = LocalAppLanguage.current
     val copy = remember(language) { commonUiCopy(language) }
-    val floatingSurfaceColor = if (darkTheme) {
-        Color(0xFF141416).copy(alpha = 0.92f)
-    } else {
-        Color.White.copy(alpha = 0.94f)
-    }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(
-                start = 24.dp,
-                end = 24.dp,
-                bottom = navigationInset + 8.dp,
+                start = ElovaireSpacing.lg,
+                end = ElovaireSpacing.lg,
+                bottom = navigationInset + ElovaireSpacing.sm,
             ),
         contentAlignment = Alignment.BottomCenter,
     ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp)
+                .heightIn(min = 64.dp)
                 .consumePointersWithoutSemantics(),
-            shape = RoundedCornerShape(ElovaireRadii.pill),
-            color = floatingSurfaceColor,
-            border = BorderStroke(1.dp, blurSurfaceBorderColor()),
-            shadowElevation = 10.dp,
+            shape = RoundedCornerShape(ElovaireRadii.dock),
+            color = versoColors.navBarSurface,
+            border = BorderStroke(1.dp, versoColors.navBarBorder),
+            shadowElevation = 0.dp,
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
-                    .padding(horizontal = 12.dp)
+                    .padding(horizontal = ElovaireSpacing.sm, vertical = ElovaireSpacing.xs)
                     .selectableGroup(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 destinations.forEach { destination ->
+                    val label = when (destination.route) {
+                        HOME_ROUTE -> copy.home
+                        ALBUMS_ROUTE -> copy.library
+                        PLAYLISTS_ROUTE -> copy.playlists
+                        SEARCH_ROUTE -> copy.search
+                        else -> destination.contentDescription
+                    }
                     BottomNavigationItemButton(
                         iconResId = destination.iconResId,
-                        contentDescription = when (destination.route) {
-                            HOME_ROUTE -> copy.home
-                            ALBUMS_ROUTE -> copy.library
-                            PLAYLISTS_ROUTE -> copy.playlists
-                            SEARCH_ROUTE -> copy.search
-                            else -> destination.contentDescription
-                        },
-                        baseTint = iconColor,
+                        label = label,
+                        contentDescription = label,
                         suppressEnterAnimation = suppressEnterAnimation,
                         selected = currentRoute == destination.route,
                         testTag = "bottom_nav_${destination.route}",
                         onClickAction = { onNavigate(destination.route) },
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -120,48 +118,40 @@ internal fun BottomNavigationBar(
 @Composable
 private fun BottomNavigationItemButton(
     iconResId: Int,
+    label: String,
     contentDescription: String,
-    baseTint: Color,
     suppressEnterAnimation: Boolean,
     selected: Boolean,
     testTag: String,
     onClickAction: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    val versoColors = LocalVersoColors.current
     val motionSpecs = rememberMotionSpecs()
     val interactionSource = rememberElovaireInteractionSource()
+    val transitionDuration = if (suppressEnterAnimation) 0 else MotionDuration.Fast
     val selectionTransition = updateTransition(
         targetState = selected,
         label = "BottomNavItemSelection",
     )
-    val iconTint by selectionTransition.animateColor(
-        transitionSpec = { motionSpecs.tween(durationMillis = MotionDuration.Fast) },
-        label = "BottomNavItemIconTint",
+    val contentTint by selectionTransition.animateColor(
+        transitionSpec = { motionSpecs.tween(durationMillis = transitionDuration) },
+        label = "BottomNavItemContentTint",
     ) { isSelected ->
-        if (isSelected) {
-            baseTint
-        } else {
-            baseTint.copy(alpha = 0.5f)
-        }
+        if (isSelected) versoColors.navPillContent else versoColors.navInactiveContent
     }
-    val baseIconScale = selectionTransition.animateFloat(
-        transitionSpec = {
-            if (suppressEnterAnimation) {
-                motionSpecs.tween(durationMillis = 0)
-            } else {
-                motionSpecs.spring<Float>(
-                    dampingRatio = 0.8f,
-                    stiffness = 540f,
-                )
-            }
-        },
-        label = "BottomNavItemBaseIconScale",
-    ) { isSelected -> if (isSelected) 1.14f else 1f }
+    val pillBackground by selectionTransition.animateColor(
+        transitionSpec = { motionSpecs.tween(durationMillis = transitionDuration) },
+        label = "BottomNavItemPillBackground",
+    ) { isSelected ->
+        if (isSelected) versoColors.navPillContainer else Color.Transparent
+    }
 
-    Box(
-        modifier = Modifier
-            .size(56.dp)
+    Column(
+        modifier = modifier
+            .heightIn(min = 56.dp)
             .elovairePressScale(
-                pressedScale = 0.88f,
+                pressedScale = 0.96f,
                 animationSpec = motionSpecs.chromeRelease(),
                 interactionSource = interactionSource,
                 label = "${contentDescription}_bottom_nav_scale",
@@ -173,24 +163,40 @@ private fun BottomNavigationItemButton(
                 indication = null,
                 role = Role.Tab,
                 onClick = onClickAction,
-            ),
-        contentAlignment = Alignment.Center,
+            )
+            .semantics(mergeDescendants = true) {
+                this.contentDescription = contentDescription
+                this.testTag = testTag
+                testTagsAsResourceId = true
+            }
+            .padding(vertical = ElovaireSpacing.xs),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.xs),
     ) {
-        Icon(
-            painter = painterResource(id = iconResId),
-            contentDescription = null,
-            tint = iconTint,
+        Box(
             modifier = Modifier
-                .semantics {
-                    this.contentDescription = contentDescription
-                    this.testTag = testTag
-                    testTagsAsResourceId = true
-                }
-                .graphicsLayer {
-                    scaleX = baseIconScale.value
-                    scaleY = baseIconScale.value
-                    alpha = if (selected) 1f else 0.95f
-                },
+                .width(52.dp)
+                .height(30.dp)
+                .clip(RoundedCornerShape(ElovaireRadii.pill))
+                .background(pillBackground),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(id = iconResId),
+                contentDescription = null,
+                tint = contentTint,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            ),
+            color = contentTint,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

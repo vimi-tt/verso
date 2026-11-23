@@ -31,6 +31,8 @@ import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
 import elovaire.music.droidbeauty.app.ui.i18n.navigationAccessibilityCopy
 import elovaire.music.droidbeauty.app.ui.motion.rememberMotionTransitions
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
+import elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors
 import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
 
 @Composable
@@ -40,9 +42,9 @@ internal fun DividerLine(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp)
+            .padding(horizontal = ElovaireSpacing.lg)
             .height(1.dp)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+            .background(LocalVersoColors.current.divider),
     )
 }
 
@@ -53,35 +55,15 @@ internal fun GroupedListRowContainer(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val shape = when {
-        lastIndex <= 0 -> RoundedCornerShape(ElovaireRadii.card)
-        index == 0 -> RoundedCornerShape(
-            topStart = ElovaireRadii.card,
-            topEnd = ElovaireRadii.card,
-            bottomStart = 0.dp,
-            bottomEnd = 0.dp,
-        )
-        index == lastIndex -> RoundedCornerShape(
-            topStart = 0.dp,
-            topEnd = 0.dp,
-            bottomStart = ElovaireRadii.card,
-            bottomEnd = ElovaireRadii.card,
-        )
-        else -> RoundedCornerShape(0.dp)
-    }
-    Surface(
-        modifier = modifier,
-        shape = shape,
-        color = MaterialTheme.colorScheme.surface,
-    ) {
-        Box(
-            modifier = Modifier.padding(
-                top = if (index == 0) 6.dp else 0.dp,
-                bottom = if (index == lastIndex) 6.dp else 0.dp,
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(
+                top = if (index == 0) ElovaireSpacing.xs else 0.dp,
+                bottom = if (index == lastIndex) ElovaireSpacing.xs else 0.dp,
             ),
-        ) {
-            content()
-        }
+    ) {
+        content()
     }
 }
 
@@ -134,8 +116,8 @@ internal fun DetailListTopBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(start = 10.dp, end = 14.dp, top = 3.dp, bottom = 13.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(start = ElovaireSpacing.sm, end = ElovaireSpacing.md, top = ElovaireSpacing.xs, bottom = ElovaireSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             HeaderIconButton(
@@ -222,7 +204,6 @@ private fun DetailListTopBarAnimatedTitle(
         Text(
             text = currentTitle,
             style = MaterialTheme.typography.titleLarge.copy(
-                fontSize = elovaireScaledSp(19f),
                 fontWeight = FontWeight.SemiBold,
             ),
             color = MaterialTheme.colorScheme.onSurface,

@@ -54,6 +54,7 @@ import elovaire.music.droidbeauty.app.ui.motion.ElovaireAnimatedContent
 import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
 import elovaire.music.droidbeauty.app.ui.motion.rememberMotionTransitions
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
 import elovaire.music.droidbeauty.app.ui.theme.InkText
 import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
 
@@ -223,7 +224,7 @@ internal fun UnifiedTopBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(start = 20.dp, end = 16.dp, top = 3.dp, bottom = 13.dp),
+                .padding(start = ElovaireSpacing.lg, end = ElovaireSpacing.md, top = ElovaireSpacing.xs, bottom = ElovaireSpacing.md),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -236,7 +237,7 @@ internal fun UnifiedTopBar(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.displayLarge.copy(fontSize = elovaireScaledSp(25f)),
+                    style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                 )

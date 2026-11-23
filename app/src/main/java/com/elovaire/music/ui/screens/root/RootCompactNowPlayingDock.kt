@@ -184,12 +184,12 @@ private fun StandaloneNowPlayingDock(
     val motionTransitions = rememberMotionTransitions()
     val artwork = rememberArtworkBitmap(song.artUri, size = 256)
     val gradient = rememberArtworkGradient(song.artUri).value
-    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val baseTint = if (darkTheme) Color(0xFF141414).copy(alpha = 0.82f) else Color.White.copy(alpha = 0.82f)
+    val baseTint = elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.miniPlayerBase
     val albumTint = gradient.first().copy(alpha = 0.5f)
     val resolvedSurface = albumTint.compositeOver(baseTint)
     val contentColor = if (resolvedSurface.luminance() > 0.42f) InkText else Color.White
     val secondaryContentColor = contentColor.copy(alpha = 0.72f)
+    val dockShape = RoundedCornerShape(ElovaireRadii.dock)
     ForceDarkColorScheme {
         ElovaireAnimatedVisibility(
             visible = visible,
@@ -201,12 +201,12 @@ private fun StandaloneNowPlayingDock(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(ElovaireRadii.card))
+                    .clip(dockShape)
                     .background(baseTint)
                     .border(
                         width = 1.dp,
-                        color = Color.White.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.05f else 0.04f),
-                        shape = RoundedCornerShape(ElovaireRadii.card),
+                        color = Color.White.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.06f else 0.04f),
+                        shape = dockShape,
                     ),
             ) {
                 val artworkBitmap = artwork.value
@@ -262,7 +262,7 @@ private fun CompactNowPlayingBar(
     val artwork = rememberArtworkBitmap(song.artUri, size = 192)
     val barGradient = rememberArtworkGradient(song.artUri).value
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val baseTint = if (darkTheme) Color(0xFF141414).copy(alpha = 0.82f) else Color.White.copy(alpha = 0.82f)
+    val baseTint = elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.miniPlayerBase
     val albumTint = barGradient.first().copy(alpha = 0.5f)
     val controlBaseTint = if (darkTheme) {
         barGradient.last().copy(alpha = 0.28f).compositeOver(Color.Black.copy(alpha = 0.16f))
@@ -327,7 +327,7 @@ private fun CompactNowPlayingBar(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(60.dp)
-                        .padding(start = 12.dp, end = 14.dp),
+                        .padding(horizontal = ElovaireSpacing.md),
                 ) {
                     Box(
                         modifier = Modifier
@@ -348,7 +348,7 @@ private fun CompactNowPlayingBar(
                             .fillMaxWidth()
                             .height(60.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
                     ) {
                         Box(
                             modifier = Modifier
@@ -364,35 +364,16 @@ private fun CompactNowPlayingBar(
                                 contentKey = { it.songId },
                                 transitionSpec = {
                                     (
-                                        (
-                                            fadeIn(
-                                                animationSpec = motionSpecs.tween(
-                                                    durationMillis = 300,
-                                                    delayMillis = 25,
-                                                    easing = FastOutSlowInEasing,
-                                                ),
-                                            ) +
-                                                scaleIn(
-                                                    initialScale = 0.96f,
-                                                    animationSpec = motionSpecs.tween(
-                                                        durationMillis = 300,
-                                                        easing = FastOutSlowInEasing,
-                                                    ),
-                                                )
-                                        ) togetherWith (
-                                            fadeOut(
-                                                animationSpec = motionSpecs.tween(
-                                                    durationMillis = 170,
-                                                    easing = FastOutSlowInEasing,
-                                                ),
-                                            ) +
-                                                scaleOut(
-                                                    targetScale = 1.04f,
-                                                    animationSpec = motionSpecs.tween(
-                                                        durationMillis = 220,
-                                                        easing = FastOutSlowInEasing,
-                                                    ),
-                                                )
+                                        fadeIn(
+                                            animationSpec = motionSpecs.tween(
+                                                durationMillis = MotionDuration.Standard,
+                                                easing = FastOutSlowInEasing,
+                                            ),
+                                        ) togetherWith fadeOut(
+                                            animationSpec = motionSpecs.tween(
+                                                durationMillis = MotionDuration.Quick,
+                                                easing = FastOutSlowInEasing,
+                                            ),
                                         )
                                     ).using(SizeTransform(clip = false))
                                 },
@@ -572,16 +553,17 @@ private fun NowPlayingBar(
         ),
         label = "MiniPlayerDragOffsetX",
     )
+    val dockShape = RoundedCornerShape(ElovaireRadii.dock)
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(ElovaireRadii.card))
+            .clip(dockShape)
             .onGloballyPositioned { barBounds = it.boundsInRoot() }
             .background(Color.Transparent)
             .border(
                 width = 1.dp,
                 color = Color.White.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.08f else 0.05f),
-                shape = RoundedCornerShape(ElovaireRadii.card),
+                shape = dockShape,
             ),
     ) {
         Box(
@@ -619,8 +601,8 @@ private fun NowPlayingBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(ElovaireSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
@@ -629,7 +611,7 @@ private fun NowPlayingBar(
                     .graphicsLayer {
                         translationX = (if (isDragging) dragOffsetX else animatedDragOffsetX) * 0.18f
                     },
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
@@ -647,37 +629,18 @@ private fun NowPlayingBar(
                         contentKey = { it.songId },
                         transitionSpec = {
                             (
-                                (
-                                    fadeIn(
-                                        animationSpec = motionSpecs.tween(
-                                            durationMillis = 300,
-                                            delayMillis = 25,
-                                            easing = FastOutSlowInEasing,
-                                        ),
-                                    ) +
-                                        scaleIn(
-                                            initialScale = 0.96f,
-                                            animationSpec = motionSpecs.tween(
-                                                durationMillis = 300,
-                                                easing = FastOutSlowInEasing,
-                                            ),
-                                        )
-                                ) togetherWith (
-                                    fadeOut(
-                                        animationSpec = motionSpecs.tween(
-                                            durationMillis = 170,
-                                            easing = FastOutSlowInEasing,
-                                        ),
-                                    ) +
-                                        scaleOut(
-                                            targetScale = 1.04f,
-                                            animationSpec = motionSpecs.tween(
-                                                durationMillis = 220,
-                                                easing = FastOutSlowInEasing,
-                                            ),
-                                        )
-                                    )
-                                ).using(SizeTransform(clip = false))
+                                fadeIn(
+                                    animationSpec = motionSpecs.tween(
+                                        durationMillis = MotionDuration.Standard,
+                                        easing = FastOutSlowInEasing,
+                                    ),
+                                ) togetherWith fadeOut(
+                                    animationSpec = motionSpecs.tween(
+                                        durationMillis = MotionDuration.Quick,
+                                        easing = FastOutSlowInEasing,
+                                    ),
+                                )
+                            ).using(SizeTransform(clip = false))
                         },
                         label = "mini_player_artwork_transition",
                     ) { frame ->
@@ -739,16 +702,15 @@ private fun NowPlayingBar(
             }
             Box(
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(48.dp)
                     .elovairePressScale(
                         enabled = visible,
-                        pressedScale = 0.9f,
+                        pressedScale = 0.94f,
                         animationSpec = motionSpecs.chromeRelease(),
                         interactionSource = interactionSource,
                         label = "MiniPlayerPlayButtonScale",
                     )
                     .clip(CircleShape)
-                    .background(compactControlBackground)
                     .clickable(
                         enabled = visible,
                         interactionSource = interactionSource,
@@ -757,78 +719,70 @@ private fun NowPlayingBar(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Canvas(
-                    modifier = Modifier.matchParentSize(),
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(compactControlBackground),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    val strokeWidth = size.minDimension * 0.1f
-                    val arcInset = strokeWidth / 2f + 2.2f
-                    val arcStart = -90f
-                    val arcSweep = 360f
-                    drawArc(
-                        color = controlIconTint.copy(alpha = 0.18f),
-                        startAngle = arcStart,
-                        sweepAngle = arcSweep,
-                        useCenter = false,
-                        topLeft = Offset(arcInset, arcInset),
-                        size = Size(size.width - (arcInset * 2f), size.height - (arcInset * 2f)),
-                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                    )
-                    drawArc(
-                        color = controlIconTint,
-                        startAngle = arcStart,
-                        sweepAngle = arcSweep * progressState.floatValue.coerceIn(0f, 1f),
-                        useCenter = false,
-                        topLeft = Offset(arcInset, arcInset),
-                        size = Size(size.width - (arcInset * 2f), size.height - (arcInset * 2f)),
-                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                    )
-                }
-                AnimatedContent(
-                    targetState = isPlaying,
-                    transitionSpec = {
-                        (
-                            fadeIn(animationSpec = motionSpecs.fadeIn(MotionDuration.ScreenFade)) +
-                                scaleIn(
-                                    initialScale = 0.9f,
-                                    animationSpec = motionSpecs.spring(
-                                        dampingRatio = 0.82f,
-                                        stiffness = 560f,
-                                    ),
-                                )
-                            ) togetherWith
-                            (
-                                fadeOut(animationSpec = motionSpecs.fadeOut(MotionDuration.Quick)) +
-                                    scaleOut(
-                                        targetScale = 1.04f,
-                                        animationSpec = motionSpecs.fadeOut(MotionDuration.Quick),
-                                    )
-                                )
-                    },
-                    label = "mini_player_play_pause_icon",
-                ) { playing ->
-                    Icon(
-                        painter = painterResource(
-                            id = if (playing) R.drawable.ic_lucide_pause else R.drawable.ic_lucide_play,
-                        ),
-                        contentDescription = if (playing) pauseLabel(LocalAppLanguage.current) else playLabel(LocalAppLanguage.current),
-                        tint = controlIconTint,
-                        modifier = Modifier.size(18.dp),
-                    )
+                    Canvas(
+                        modifier = Modifier.matchParentSize(),
+                    ) {
+                        val strokeWidth = size.minDimension * 0.1f
+                        val arcInset = strokeWidth / 2f + 2.2f
+                        val arcStart = -90f
+                        val arcSweep = 360f
+                        drawArc(
+                            color = controlIconTint.copy(alpha = 0.18f),
+                            startAngle = arcStart,
+                            sweepAngle = arcSweep,
+                            useCenter = false,
+                            topLeft = Offset(arcInset, arcInset),
+                            size = Size(size.width - (arcInset * 2f), size.height - (arcInset * 2f)),
+                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                        )
+                        drawArc(
+                            color = controlIconTint,
+                            startAngle = arcStart,
+                            sweepAngle = arcSweep * progressState.floatValue.coerceIn(0f, 1f),
+                            useCenter = false,
+                            topLeft = Offset(arcInset, arcInset),
+                            size = Size(size.width - (arcInset * 2f), size.height - (arcInset * 2f)),
+                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                        )
+                    }
+                    AnimatedContent(
+                        targetState = isPlaying,
+                        transitionSpec = {
+                            fadeIn(animationSpec = motionSpecs.fadeIn(MotionDuration.Fast)) togetherWith
+                                fadeOut(animationSpec = motionSpecs.fadeOut(MotionDuration.Quick))
+                        },
+                        label = "mini_player_play_pause_icon",
+                    ) { playing ->
+                        Icon(
+                            painter = painterResource(
+                                id = if (playing) R.drawable.ic_lucide_pause else R.drawable.ic_lucide_play,
+                            ),
+                            contentDescription = if (playing) pauseLabel(LocalAppLanguage.current) else playLabel(LocalAppLanguage.current),
+                            tint = controlIconTint,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
             val nextInteraction = rememberElovaireInteractionSource()
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(48.dp)
                     .elovairePressScale(
                         enabled = visible,
-                        pressedScale = 0.9f,
+                        pressedScale = 0.94f,
                         animationSpec = motionSpecs.chromeRelease(),
                         interactionSource = nextInteraction,
                         label = "MiniPlayerNextButtonScale",
                     )
                     .clip(CircleShape)
-                    .background(compactControlBackground)
                     .clickable(
                         enabled = visible,
                         interactionSource = nextInteraction,
@@ -837,12 +791,20 @@ private fun NowPlayingBar(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_elovaire_forward_filled),
-                    contentDescription = elovaire.music.droidbeauty.app.ui.i18n.playbackNavigationAccessibilityCopy(LocalAppLanguage.current).next,
-                    tint = controlIconTint,
-                    modifier = Modifier.size(18.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(compactControlBackground),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_elovaire_forward_filled),
+                        contentDescription = elovaire.music.droidbeauty.app.ui.i18n.playbackNavigationAccessibilityCopy(LocalAppLanguage.current).next,
+                        tint = controlIconTint,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
         }
     }

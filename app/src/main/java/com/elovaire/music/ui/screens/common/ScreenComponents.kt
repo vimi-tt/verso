@@ -326,6 +326,7 @@ import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
 import elovaire.music.droidbeauty.app.ui.theme.AboutCardButtonAccent
 import elovaire.music.droidbeauty.app.ui.theme.DestructiveRed
 import elovaire.music.droidbeauty.app.ui.theme.ForceDarkColorScheme
+import elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors
 import elovaire.music.droidbeauty.app.ui.theme.elovaireResolvedColorScheme
 import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
 import elovaire.music.droidbeauty.app.ui.theme.rememberElovaireOverscrollFactory
@@ -423,28 +424,19 @@ internal fun SortOptionsPopup(
 
 @Composable
 internal fun readableSecondaryTextColor(): Color {
-    return if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
-        InkText.copy(alpha = 0.82f)
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.92f)
-    }
+    return MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 @Composable
 internal fun secondaryBodyTextStyle(): TextStyle {
-    return MaterialTheme.typography.bodyLarge.copy(
-        fontWeight = FontWeight.Medium,
-        lineHeight = elovaireScaledSp(19.2f),
+    return MaterialTheme.typography.bodyMedium.copy(
+        fontWeight = FontWeight.Normal,
     )
 }
 
 @Composable
 internal fun readableMutedIconColor(): Color {
-    return if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
-        InkText.copy(alpha = 0.78f)
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
-    }
+    return LocalVersoColors.current.mutedIcon
 }
 
 @Composable
@@ -454,37 +446,21 @@ internal fun readableCardSurfaceColor(): Color {
 
 @Composable
 private fun readableCardBorderColor(): Color {
-    return if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
-        InkText.copy(alpha = 0.1f)
-    } else {
-        Color.White.copy(alpha = 0.07f)
-    }
+    return LocalVersoColors.current.divider
 }
 
 @Composable
 internal fun ModuleCard(
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(18.dp),
+    contentPadding: PaddingValues = PaddingValues(vertical = ElovaireSpacing.xs),
     content: @Composable () -> Unit,
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(ElovaireRadii.module),
-        color = readableCardSurfaceColor(),
-        shadowElevation = 0.dp,
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(contentPadding),
     ) {
-        Box(
-            modifier = Modifier
-                .background(readableCardSurfaceColor())
-                .border(
-                    width = 1.dp,
-                    color = readableCardBorderColor(),
-                    shape = RoundedCornerShape(ElovaireRadii.module),
-                )
-                .padding(contentPadding),
-        ) {
-            content()
-        }
+        content()
     }
 }
 
@@ -497,13 +473,12 @@ internal fun SectionTitleRow(
 ) {
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp),
+        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.xs),
     ) {
         Text(
             text = title,
             style = if (compact) {
-                MaterialTheme.typography.titleLarge.copy(
-                    fontSize = elovaireScaledSp(16f),
+                MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.SemiBold,
                 )
             } else {
@@ -533,23 +508,31 @@ internal fun MutedSectionHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.elovaireClickable(onClick = onClick) else Modifier),
+            .then(
+                if (onClick != null) {
+                    Modifier
+                        .heightIn(min = 48.dp)
+                        .elovaireClickable(onClick = onClick)
+                } else {
+                    Modifier.padding(vertical = ElovaireSpacing.xs)
+                },
+            ),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 painter = painterResource(id = iconResId),
                 contentDescription = null,
                 tint = readableMutedIconColor(),
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(16.dp),
             )
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
@@ -557,7 +540,7 @@ internal fun MutedSectionHeader(
             Icon(
                 painter = painterResource(id = R.drawable.ic_lucide_chevron_left),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+                tint = readableMutedIconColor(),
                 modifier = Modifier
                     .size(18.dp)
                     .rotate(180f),
