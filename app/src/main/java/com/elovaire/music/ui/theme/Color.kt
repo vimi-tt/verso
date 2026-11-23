@@ -42,20 +42,30 @@ val LightOutlineVariant = Color(0xFFE6E6E2)
 val DarkSelectionPill = Color(0xFF26262A)
 val LightSelectionPill = Color(0xFFE4E4E0)
 
-// Functional accent tokens (neutral high-contrast; no decorative saturated accent).
-val DarkFunctionalAccent = Color(0xFFF2F2F4)
-val LightFunctionalAccent = Color(0xFF141416)
+// Brand accent blue (reusing the app's established button blue, lightened slightly for dark mode >= 4.5:1).
+val BrandBlueLight = Color(0xFF1162DB)
+val BrandBlueDark = Color(0xFF4D91F5)
 
-// Legacy symbol alias mapped to the functional neutral accent for compatibility.
-val RoseAccent = LightFunctionalAccent
+// Legacy symbol alias mapped to the brand accent blue.
+val RoseAccent = BrandBlueLight
 
 // Secondary accent alias for About screen actions.
-val AboutCardButtonAccent = LightFunctionalAccent
+val AboutCardButtonAccent = BrandBlueLight
+
+// Closed 4-tone category palette (light / dark variants, all >= 4.5:1 against respective backgrounds).
+val CategoryMixesLight = Color(0xFF6E44A8)
+val CategoryMixesDark = Color(0xFFB38FF0)
+val CategoryDiscoverLight = Color(0xFF0F766E)
+val CategoryDiscoverDark = Color(0xFF4FD1C5)
+val CategoryDownloadsLight = Color(0xFF9A5B13)
+val CategoryDownloadsDark = Color(0xFFE8A849)
+val CategoryFavoritesLight = Color(0xFFB4344B)
+val CategoryFavoritesDark = Color(0xFFEE7B8F)
 
 // Shared destructive action colors (>= 4.5:1 against respective theme surfaces).
 val DestructiveRed = Color(0xFFC82828)
 val DestructiveRedDark = Color(0xFFF05252)
 
-// Dedicated green used by on/off setting toggles when enabled.
-val ToggleEnabledGreen = Color(0xFF1B8A5A)
-val ToggleEnabledGreenDark = Color(0xFF2CC47D)
+// Dedicated toggle active color mapped to the brand accent.
+val ToggleEnabledGreen = BrandBlueLight
+val ToggleEnabledGreenDark = BrandBlueDark

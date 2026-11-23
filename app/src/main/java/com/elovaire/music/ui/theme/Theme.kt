@@ -14,6 +14,14 @@ import elovaire.music.droidbeauty.app.domain.model.TextSizePreset
 import elovaire.music.droidbeauty.app.domain.model.ThemeMode
 
 @Immutable
+data class VersoCategoryColors(
+    val mixes: Color,
+    val discover: Color,
+    val downloads: Color,
+    val favorites: Color,
+)
+
+@Immutable
 data class VersoExtendedColors(
     val destructive: Color,
     val toggleEnabled: Color,
@@ -28,15 +36,16 @@ data class VersoExtendedColors(
     val scrim: Color,
     val playerChipContainer: Color,
     val playerChipPressedOverlay: Color,
+    val categories: VersoCategoryColors,
 )
 
 private val LightExtendedColors = VersoExtendedColors(
     destructive = DestructiveRed,
-    toggleEnabled = ToggleEnabledGreen,
+    toggleEnabled = BrandBlueLight,
     navBarSurface = Snow.copy(alpha = 0.96f),
     navBarBorder = LightOutlineVariant,
-    navPillContainer = LightSelectionPill,
-    navPillContent = InkText,
+    navPillContainer = BrandBlueLight.copy(alpha = 0.14f),
+    navPillContent = BrandBlueLight,
     navInactiveContent = InkTextSecondary,
     divider = LightOutlineVariant,
     mutedIcon = InkTextSecondary,
@@ -44,15 +53,21 @@ private val LightExtendedColors = VersoExtendedColors(
     scrim = InkText.copy(alpha = 0.36f),
     playerChipContainer = InkText.copy(alpha = 0.2f),
     playerChipPressedOverlay = InkText.copy(alpha = 0.12f),
+    categories = VersoCategoryColors(
+        mixes = CategoryMixesLight,
+        discover = CategoryDiscoverLight,
+        downloads = CategoryDownloadsLight,
+        favorites = CategoryFavoritesLight,
+    ),
 )
 
 private val DarkExtendedColors = VersoExtendedColors(
     destructive = DestructiveRedDark,
-    toggleEnabled = ToggleEnabledGreenDark,
+    toggleEnabled = BrandBlueDark,
     navBarSurface = Carbon.copy(alpha = 0.95f),
     navBarBorder = DarkOutlineVariant,
-    navPillContainer = DarkSelectionPill,
-    navPillContent = BoneText,
+    navPillContainer = BrandBlueDark.copy(alpha = 0.18f),
+    navPillContent = BrandBlueDark,
     navInactiveContent = Slate,
     divider = DarkOutlineVariant,
     mutedIcon = Slate,
@@ -60,16 +75,22 @@ private val DarkExtendedColors = VersoExtendedColors(
     scrim = Night.copy(alpha = 0.60f),
     playerChipContainer = BoneText.copy(alpha = 0.2f),
     playerChipPressedOverlay = BoneText.copy(alpha = 0.12f),
+    categories = VersoCategoryColors(
+        mixes = CategoryMixesDark,
+        discover = CategoryDiscoverDark,
+        downloads = CategoryDownloadsDark,
+        favorites = CategoryFavoritesDark,
+    ),
 )
 
 val LocalVersoColors = staticCompositionLocalOf { LightExtendedColors }
 
 // Light mode palette used across the whole app.
 private val LightColors = lightColorScheme(
-    primary = LightFunctionalAccent,
-    onPrimary = Cloud,
-    primaryContainer = LightSelectionPill,
-    onPrimaryContainer = InkText,
+    primary = BrandBlueLight,
+    onPrimary = Snow,
+    primaryContainer = BrandBlueLight.copy(alpha = 0.14f),
+    onPrimaryContainer = BrandBlueLight,
     secondary = Frost,
     onSecondary = InkText,
     secondaryContainer = Frost,
@@ -88,10 +109,10 @@ private val LightColors = lightColorScheme(
 
 // Dark mode palette used across the whole app.
 private val DarkColors = darkColorScheme(
-    primary = DarkFunctionalAccent,
+    primary = BrandBlueDark,
     onPrimary = Night,
-    primaryContainer = DarkSelectionPill,
-    onPrimaryContainer = BoneText,
+    primaryContainer = BrandBlueDark.copy(alpha = 0.18f),
+    onPrimaryContainer = BrandBlueDark,
     secondary = Graphite,
     onSecondary = BoneText,
     secondaryContainer = Graphite,

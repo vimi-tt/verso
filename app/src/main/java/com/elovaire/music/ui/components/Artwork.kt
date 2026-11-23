@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -297,6 +298,73 @@ private fun mutedPaletteColor(rgb: Int): Color {
     hsv[1] = (hsv[1] * 0.58f).coerceAtMost(0.62f)
     hsv[2] = hsv[2].coerceAtMost(0.78f)
     return Color(android.graphics.Color.HSVToColor(hsv))
+}
+
+internal fun contrastRatio(foreground: Color, background: Color): Float {
+    val l1 = maxOf(foreground.luminance(), background.luminance())
+    val l2 = minOf(foreground.luminance(), background.luminance())
+    return (l1 + 0.05f) / (l2 + 0.05f)
+}
+
+internal fun ensureContrastOnBackground(
+    accent: Color?,
+    background: Color,
+    fallback: Color,
+    minContrast: Float = 4.5f,
+): Color {
+    if (accent == null) return fallback
+    val isLightBg = background.luminance() > 0.5f
+    if (contrastRatio(accent, background) >= minContrast) return accent
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(accent.toArgb(), hsv)
+    // Reject near-achromatic or washed-out swatches early and fall back cleanly.
+    if (hsv[1] < 0.08f) return fallback
+    for (step in 1..12) {
+        val t = step / 12f
+        val candidateHsv = hsv.copyOf()
+        if (isLightBg) {
+            candidateHsv[2] = (hsv[2] * (1f - t * 0.72f)).coerceIn(0.12f, 0.85f)
+            candidateHsv[1] = (hsv[1] + t * 0.15f).coerceIn(0.25f, 0.85f)
+        } else {
+            candidateHsv[2] = (hsv[2] + (1f - hsv[2]) * t * 0.85f).coerceIn(0.45f, 0.96f)
+            candidateHsv[1] = (hsv[1] * (1f - t * 0.25f)).coerceIn(0.25f, 0.80f)
+        }
+        val candidate = Color(android.graphics.Color.HSVToColor(candidateHsv))
+        if (contrastRatio(candidate, background) >= minContrast) {
+            return candidate
+        }
+    }
+    return fallback
+}
+
+@Composable
+fun rememberReadableArtworkAccent(
+    uri: Uri?,
+    minContrast: Float = 4.5f,
+): State<Color> {
+    val rawAccent = rememberArtworkPaletteAccent(uri).value
+    val background = MaterialTheme.colorScheme.background
+    val fallback = MaterialTheme.colorScheme.primary
+    return remember(rawAccent, background, fallback, minContrast) {
+        androidx.compose.runtime.mutableStateOf(
+            ensureContrastOnBackground(
+                accent = rawAccent,
+                background = background,
+                fallback = fallback,
+                minContrast = minContrast,
+            ),
+        )
+    }
+}
+
+@Composable
+fun rememberArtworkHeaderWash(uri: Uri?): State<Color> {
+    val rawAccent = rememberArtworkPaletteAccent(uri).value
+    val fallback = MaterialTheme.colorScheme.primary
+    val resolved = rawAccent ?: fallback
+    return remember(resolved) {
+        androidx.compose.runtime.mutableStateOf(resolved)
+    }
 }
 
 internal fun invalidateArtworkCaches(uris: Collection<Uri?>) {
