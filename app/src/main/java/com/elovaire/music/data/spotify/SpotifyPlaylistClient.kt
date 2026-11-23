@@ -1,6 +1,11 @@
 package elovaire.music.droidbeauty.app.data.spotify
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.util.Log
+import android.webkit.CookieManager
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import elovaire.music.droidbeauty.app.data.settings.BackupTrackRef
 import elovaire.music.droidbeauty.app.data.settings.PlaylistLinkImporter
 import kotlinx.coroutines.Dispatchers
@@ -28,28 +33,55 @@ internal data class SpotifyPlaylistsUiState(
     val error: String? = null,
 )
 
+/**
+ * Handles Spotify web session authentication (session cookie and access token stored encrypted
+ * via Android Keystore EncryptedSharedPreferences; passwords are never seen or persisted)
+ * strictly for reading the user's playlists.
+ */
 internal class SpotifyPlaylistClient(
     context: Context,
 ) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
     private val httpClient = OkHttpClient()
+
+    private val encryptedPrefs: SharedPreferences? by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        // Remove any legacy unencrypted preferences if present.
+        runCatching { appContext.deleteSharedPreferences(LEGACY_PLAINTEXT_PREFS_NAME) }
+        runCatching {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                appContext,
+                ENCRYPTED_PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }.onFailure { error ->
+            Log.e(TAG, "EncryptedSharedPreferences unavailable for Spotify", error)
+        }.getOrNull()
+    }
 
     private val _state = MutableStateFlow(
         SpotifyPlaylistsUiState(
-            isLoggedIn = !prefs.getString(KEY_SP_DC, null).isNullOrBlank(),
+            isLoggedIn = !encryptedPrefs?.getString(KEY_SP_DC, null).isNullOrBlank(),
         ),
     )
     val state: StateFlow<SpotifyPlaylistsUiState> = _state.asStateFlow()
 
-    fun isLoggedIn(): Boolean = !prefs.getString(KEY_SP_DC, null).isNullOrBlank()
+    fun isLoggedIn(): Boolean = !encryptedPrefs?.getString(KEY_SP_DC, null).isNullOrBlank()
 
     fun saveSession(
         spDc: String,
         accessToken: String? = null,
         expiresAtMs: Long = 0L,
     ) {
+        val prefs = encryptedPrefs ?: return
+        val cleanCookie = spDc.trim()
+        if (cleanCookie.isBlank()) return
         prefs.edit()
-            .putString(KEY_SP_DC, spDc.trim())
+            .putString(KEY_SP_DC, cleanCookie)
             .apply {
                 if (!accessToken.isNullOrBlank()) {
                     putString(KEY_ACCESS_TOKEN, accessToken.trim())
@@ -61,7 +93,14 @@ internal class SpotifyPlaylistClient(
     }
 
     fun signOut() {
-        prefs.edit().clear().apply()
+        encryptedPrefs?.edit()?.clear()?.apply()
+        runCatching {
+            CookieManager.getInstance().apply {
+                setCookie("https://open.spotify.com", "sp_dc=; Max-Age=0; Path=/; Secure")
+                setCookie("https://accounts.spotify.com", "sp_dc=; Max-Age=0; Path=/; Secure")
+                flush()
+            }
+        }
         _state.value = SpotifyPlaylistsUiState(isLoggedIn = false)
     }
 
@@ -115,6 +154,7 @@ internal class SpotifyPlaylistClient(
         }
 
     private fun resolveValidAccessToken(): String? {
+        val prefs = encryptedPrefs ?: return null
         val now = System.currentTimeMillis()
         val cached = prefs.getString(KEY_ACCESS_TOKEN, null)
         val expiresAt = prefs.getLong(KEY_EXPIRES_AT_MS, 0L)
@@ -225,7 +265,9 @@ internal class SpotifyPlaylistClient(
     }
 
     companion object {
-        private const val PREFS_NAME = "verso_spotify_session"
+        private const val TAG = "SpotifyPlaylistClient"
+        private const val LEGACY_PLAINTEXT_PREFS_NAME = "verso_spotify_session"
+        private const val ENCRYPTED_PREFS_NAME = "spotify_session_encrypted"
         private const val KEY_SP_DC = "sp_dc"
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_EXPIRES_AT_MS = "expires_at_ms"

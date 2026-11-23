@@ -12,6 +12,7 @@ import elovaire.music.droidbeauty.app.ui.motion.MotionDuration
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -98,7 +99,7 @@ internal fun PlaylistsScreen(
     importedCoverUris: Map<Long, String> = emptyMap(),
     spotifyState: elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistsUiState =
         elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistsUiState(),
-    onSpotifySessionCaptured: (spDc: String, accessToken: String?, expiresAtMs: Long) -> Unit = { _, _, _ -> },
+    onOpenSpotifyLogin: () -> Unit = {},
     onSyncSpotify: (Boolean) -> Unit = {},
     onSignOutSpotify: () -> Unit = {},
     onOpenSpotifyPlaylist: suspend (elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistSummary) -> Boolean = { false },
@@ -109,7 +110,6 @@ internal fun PlaylistsScreen(
     val scope = rememberCoroutineScope()
     var playlistBeingRenamed by remember { mutableStateOf<Playlist?>(null) }
     var selectedPlaylistIds by rememberSaveable { mutableStateOf(setOf<Long>()) }
-    var showSpotifyLogin by rememberSaveable { mutableStateOf(false) }
     var showSpotifyPlaylists by rememberSaveable { mutableStateOf(false) }
     var importingSpotifyPlaylistId by remember { mutableStateOf<String?>(null) }
     val playlistRows = remember(playlists, songsById) {
@@ -197,17 +197,14 @@ internal fun PlaylistsScreen(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(ElovaireRadii.card))
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-                        .elovaireClickable(
-                            interactionSource = rememberElovaireInteractionSource(),
-                            onClick = {
-                                if (spotifyState.isLoggedIn) {
-                                    showSpotifyPlaylists = true
-                                    onSyncSpotify(false)
-                                } else {
-                                    showSpotifyLogin = true
-                                }
-                            },
-                        )
+                        .clickable {
+                            if (spotifyState.isLoggedIn) {
+                                showSpotifyPlaylists = true
+                                onSyncSpotify(false)
+                            } else {
+                                onOpenSpotifyLogin()
+                            }
+                        }
                         .padding(horizontal = ElovaireSpacing.lg, vertical = ElovaireSpacing.md),
                     horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
                     verticalAlignment = Alignment.CenterVertically,
@@ -501,16 +498,6 @@ internal fun PlaylistsScreen(
                 }
             },
         )
-        if (showSpotifyLogin) {
-            SpotifyLoginDialog(
-                onDismiss = { showSpotifyLogin = false },
-                onSessionCaptured = { spDc, token, exp ->
-                    showSpotifyLogin = false
-                    onSpotifySessionCaptured(spDc, token, exp)
-                    showSpotifyPlaylists = true
-                },
-            )
-        }
         if (showSpotifyPlaylists) {
             SpotifyPlaylistsModal(
                 state = spotifyState,

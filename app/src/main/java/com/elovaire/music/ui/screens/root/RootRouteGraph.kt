@@ -45,6 +45,10 @@ internal fun RootRouteGraph(
     audiobookDescriptionReader: AudiobookDescriptionReader,
     modifier: Modifier = Modifier,
 ) {
+    val rootContext = androidx.compose.ui.platform.LocalContext.current
+    val spotifyClient = remember(rootContext) {
+        elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistClient(rootContext)
+    }
     RootNavigationHost(
         navState = navState,
         motionTransitions = motionTransitions,
@@ -338,10 +342,6 @@ internal fun RootRouteGraph(
             val accountState by youTubeCatalog.accountState.collectAsStateWithLifecycle()
             val downloadsState by youTubeDownloadManager.state.collectAsStateWithLifecycle()
             val scope = androidx.compose.runtime.rememberCoroutineScope()
-            val context = androidx.compose.ui.platform.LocalContext.current
-            val spotifyClient = remember(context) {
-                elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistClient(context)
-            }
             val spotifyState by spotifyClient.state.collectAsStateWithLifecycle()
             val inAppFavoritesCount = routeState.appState.favoriteSongIds.size
             val totalFavoritesCount = inAppFavoritesCount + accountState.likedSongs.count { it.id !in routeState.appState.favoriteSongIds }
@@ -368,10 +368,7 @@ internal fun RootRouteGraph(
                 onOpenSettings = { navState.navigateTo(SETTINGS_ROUTE) },
                 importedCoverUris = importedCoverUris,
                 spotifyState = spotifyState,
-                onSpotifySessionCaptured = { spDc, token, exp ->
-                    spotifyClient.saveSession(spDc, token, exp)
-                    scope.launch { spotifyClient.syncPlaylists(force = true) }
-                },
+                onOpenSpotifyLogin = { navState.navigateTo(Routes.spotifyLogin()) },
                 onSyncSpotify = { force ->
                     scope.launch { spotifyClient.syncPlaylists(force = force) }
                 },
@@ -909,6 +906,17 @@ internal fun RootRouteGraph(
                         youTubeCatalog.completeLogin(cookies)
                         navState.navController.popBackStack()
                     }
+                },
+            )
+        }
+        composable(RootRouteRegistry.SPOTIFY_LOGIN) {
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
+            SpotifyLoginScreen(
+                onBack = routeActions::navigateUp,
+                onSessionCaptured = { spDc, token, exp ->
+                    spotifyClient.saveSession(spDc, token, exp)
+                    scope.launch { spotifyClient.syncPlaylists(force = true) }
+                    navState.navController.popBackStack()
                 },
             )
         }

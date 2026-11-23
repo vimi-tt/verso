@@ -76,8 +76,8 @@ private const val SPOTIFY_OPEN_HOST = "https://open.spotify.com"
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-internal fun SpotifyLoginDialog(
-    onDismiss: () -> Unit,
+internal fun SpotifyLoginScreen(
+    onBack: () -> Unit,
     onSessionCaptured: (spDc: String, accessToken: String?, expiresAtMs: Long) -> Unit,
 ) {
     val context = LocalContext.current
@@ -91,6 +91,10 @@ internal fun SpotifyLoginDialog(
             settings.domStorageEnabled = true
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            @Suppress("DEPRECATION")
+            settings.saveFormData = false
             val currentWebView = this
             CookieManager.getInstance().apply {
                 setAcceptCookie(true)
@@ -102,6 +106,8 @@ internal fun SpotifyLoginDialog(
     DisposableEffect(webView) {
         onDispose {
             webView.stopLoading()
+            webView.clearFormData()
+            webView.clearCache(true)
             webView.destroy()
         }
     }
@@ -152,70 +158,69 @@ internal fun SpotifyLoginDialog(
         else -> "Sign in to load your Spotify playlists"
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+    BackHandler(onBack = {
+        if (webView.canGoBack()) webView.goBack() else onBack()
+    })
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding(),
     ) {
-        BackHandler(onBack = {
-            if (webView.canGoBack()) webView.goBack() else onDismiss()
-        })
-        Column(
+        Row(
             modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .statusBarsPadding()
-                .navigationBarsPadding(),
+                .fillMaxWidth()
+                .padding(horizontal = ElovaireSpacing.md, vertical = ElovaireSpacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = ElovaireSpacing.md, vertical = ElovaireSpacing.sm),
-                horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
+            HeaderIconButton(
+                iconResId = R.drawable.ic_lucide_chevron_left,
+                contentDescription = navigationAccessibilityCopy(language).back,
+                showBackground = false,
+                onClick = onBack,
+            )
+            Image(
+                painter = painterResource(id = R.drawable.ic_spotify_logo),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                HeaderIconButton(
-                    iconResId = R.drawable.ic_lucide_chevron_left,
-                    contentDescription = navigationAccessibilityCopy(language).back,
-                    showBackground = false,
-                    onClick = onDismiss,
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Image(
-                    painter = painterResource(id = R.drawable.ic_spotify_logo),
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp),
-                )
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = readableSecondaryTextColor(),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            if (loadProgress in 1..99) {
-                LinearProgressIndicator(
-                    progress = { loadProgress / 100f },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = readableSecondaryTextColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        if (loadProgress in 1..99) {
+            LinearProgressIndicator(
+                progress = { loadProgress / 100f },
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) {
             AndroidView(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
+                modifier = Modifier.fillMaxSize(),
                 factory = {
                     webView.apply {
                         webChromeClient = object : WebChromeClient() {
@@ -227,7 +232,11 @@ internal fun SpotifyLoginDialog(
                             override fun shouldOverrideUrlLoading(
                                 view: WebView?,
                                 request: WebResourceRequest?,
-                            ): Boolean = false
+                            ): Boolean {
+                                val scheme = request?.url?.scheme?.lowercase()
+                                // Block non-HTTPS schemes (file://, intent://, javascript:, etc.)
+                                return scheme != "https"
+                            }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)

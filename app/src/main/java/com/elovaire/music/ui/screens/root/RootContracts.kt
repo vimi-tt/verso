@@ -55,6 +55,7 @@ internal const val EXPLORE_MOOD_ROUTE = "explore_mood"
 internal const val YOUTUBE_DOWNLOADS_ROUTE = "youtube_downloads"
 internal const val YOUTUBE_FAVORITES_ROUTE = "youtube_favorites"
 internal const val YOUTUBE_LOGIN_ROUTE = "youtube_login"
+internal const val SPOTIFY_LOGIN_ROUTE = "spotify_login"
 internal const val STATS_ROUTE = "stats"
 internal const val RECAP_ROUTE = "recap"
 internal const val RECENTLY_ADDED_ROUTE = "recently_added"
@@ -90,6 +91,7 @@ internal object RootRouteRegistry {
     const val YOUTUBE_DOWNLOADS = YOUTUBE_DOWNLOADS_ROUTE
     const val YOUTUBE_FAVORITES = YOUTUBE_FAVORITES_ROUTE
     const val YOUTUBE_LOGIN = YOUTUBE_LOGIN_ROUTE
+    const val SPOTIFY_LOGIN = SPOTIFY_LOGIN_ROUTE
     const val STATS = STATS_ROUTE
     const val RECAP = "$RECAP_ROUTE?period={period}"
     const val SETTINGS_ACCOUNTS = "$SETTINGS_ROUTE?section=accounts"
@@ -152,6 +154,7 @@ internal object Routes {
     fun youtubeDownloads(): String = YOUTUBE_DOWNLOADS_ROUTE
     fun youtubeFavorites(): String = YOUTUBE_FAVORITES_ROUTE
     fun youtubeLogin(): String = YOUTUBE_LOGIN_ROUTE
+    fun spotifyLogin(): String = SPOTIFY_LOGIN_ROUTE
     fun stats(): String = STATS_ROUTE
     fun recap(period: String = "AllTime"): String = "$RECAP_ROUTE?period=${Uri.encode(period)}"
     fun settingsAccounts(): String = "$SETTINGS_ROUTE?section=accounts"

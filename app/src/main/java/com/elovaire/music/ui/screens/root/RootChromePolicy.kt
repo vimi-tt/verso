@@ -69,6 +69,7 @@ internal fun rootScaffoldPadding(
 private val CompactNowPlayingHiddenRoutes = setOf(
     SETTINGS_ROUTE,
     YOUTUBE_LOGIN_ROUTE,
+    SPOTIFY_LOGIN_ROUTE,
     MANAGE_PLAYLISTS_ROUTE,
     LIBRARY_FOLDERS_ROUTE,
     CHANGELOG_ROUTE,
