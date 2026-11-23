@@ -230,8 +230,8 @@ internal fun BoxScope.RootPlayerLayerSlot(
         onOpenCurrentArtist = openResolvedArtist,
         resolvedCurrentAlbumTitle = trackLinks?.albumTitle,
         onOpenCurrentYouTubeAlbum = openCurrentYouTubeAlbum,
-        resolvedCurrentStreamFormat = resolvedStreamFormatInfo?.format,
-        resolvedCurrentStreamQuality = resolvedStreamFormatInfo?.quality,
+        resolvedCurrentStreamFormat = resolvedStreamFormatInfo?.format ?: playbackState.resolvedAudioFormat,
+        resolvedCurrentStreamQuality = resolvedStreamFormatInfo?.quality ?: playbackState.resolvedAudioQuality,
         isCurrentSongYouTubeDownloaded = isCurrentSongYouTubeDownloaded,
         isCurrentSongYouTubeDownloading = isCurrentSongYouTubeDownloading,
         onDownloadCurrentSong = youTubeDownloadManager?.let { manager ->

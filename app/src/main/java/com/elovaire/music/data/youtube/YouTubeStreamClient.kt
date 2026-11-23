@@ -54,6 +54,7 @@ internal class YouTubeStreamClient(
     private val authenticatedTrackingCache = ConcurrentHashMap<String, PlaybackTrackingUrls>()
     @Volatile
     private var cachedSignatureTimestamp: Int? = null
+    private val resolvedFormatSeq = java.util.concurrent.atomic.AtomicLong(0L)
     private val _resolvedFormatUpdates = MutableStateFlow(0L)
     val resolvedFormatUpdates: StateFlow<Long> = _resolvedFormatUpdates.asStateFlow()
     private val sessionManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -118,7 +119,7 @@ internal class YouTubeStreamClient(
                     format = formatLabel,
                     quality = qualityLabel,
                 )
-                _resolvedFormatUpdates.value += 1L
+                _resolvedFormatUpdates.value = resolvedFormatSeq.incrementAndGet()
                 streamCache.put(videoId, resolution.url, generation)
                 resolution.url
             }

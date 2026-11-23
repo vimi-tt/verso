@@ -142,6 +142,8 @@ data class PlaybackUiState(
     val sourcePlaylistId: Long? = null,
     val lastPlayedCollectionKind: PlaybackCollectionKind? = null,
     val lastPlayedCollectionId: Long? = null,
+    val resolvedAudioFormat: String? = null,
+    val resolvedAudioQuality: String? = null,
 ) {
     val currentSong: Song?
         get() = queue.getOrNull(currentIndex)
@@ -1861,11 +1863,19 @@ internal class PlaybackManager internal constructor(
         }
         val displayedVolume = currentEffectiveVolumeFraction()
         userVolume = displayedVolume
+        val (exoAudioFormat, exoAudioQuality) = extractActiveAudioTrackInfo(player.currentTracks)
         val updatedState = stateReducer.reduce(
             existingState = existingState,
             isPauseTransitioningToStopped = isPauseTransitioningToStopped,
             resolvedQueueIndex = currentIndex,
             displayedVolume = displayedVolume,
+        ).copy(
+            resolvedAudioFormat = exoAudioFormat ?: existingState.resolvedAudioFormat?.takeIf {
+                existingState.currentSong?.id == currentSong?.id
+            },
+            resolvedAudioQuality = exoAudioQuality ?: existingState.resolvedAudioQuality?.takeIf {
+                existingState.currentSong?.id == currentSong?.id
+            },
         )
         if (BuildConfig.DEBUG) {
             assertPlaybackInvariants(updatedState)
@@ -1886,6 +1896,38 @@ internal class PlaybackManager internal constructor(
         _state.value = nextState
         ExternalAudioStageUsage.setActivePlaybackUris(nextState.queue.map(Song::uri))
         return true
+    }
+
+    private fun extractActiveAudioTrackInfo(tracks: androidx.media3.common.Tracks): Pair<String?, String?> {
+        val audioGroup = tracks.groups.firstOrNull {
+            it.type == androidx.media3.common.C.TRACK_TYPE_AUDIO && it.isSelected
+        } ?: tracks.groups.firstOrNull {
+            it.type == androidx.media3.common.C.TRACK_TYPE_AUDIO && it.length > 0
+        } ?: return null to null
+        val selectedIndex = (0 until audioGroup.length).firstOrNull { audioGroup.isTrackSelected(it) } ?: 0
+        val format = audioGroup.getTrackFormat(selectedIndex)
+        val mime = format.sampleMimeType.orEmpty().lowercase()
+        val codecs = format.codecs.orEmpty().lowercase()
+        val container = format.containerMimeType.orEmpty().lowercase()
+        val formatLabel = when {
+            mime.contains("opus") || codecs.contains("opus") -> "OPUS"
+            mime.contains("mp4a") || mime.contains("aac") || codecs.contains("mp4a") -> "AAC"
+            mime.contains("flac") || codecs.contains("flac") -> "FLAC"
+            mime.contains("mpeg") || mime.contains("mp3") -> "MP3"
+            mime.contains("vorbis") || codecs.contains("vorbis") -> "OGG"
+            mime.contains("alac") || codecs.contains("alac") -> "ALAC"
+            mime.contains("raw") || mime.contains("pcm") -> "WAV"
+            container.contains("webm") -> "OPUS"
+            container.contains("mp4") -> "AAC"
+            else -> null
+        }
+        val bitrate = listOf(format.bitrate, format.averageBitrate, format.peakBitrate).firstOrNull { it > 0 }
+        val qualityLabel = when {
+            bitrate != null -> "${(bitrate + 500) / 1000} kbps"
+            format.sampleRate > 0 -> "${format.sampleRate / 1000} kHz"
+            else -> null
+        }
+        return formatLabel to qualityLabel
     }
 
     private fun assertPlaybackEngineInvariants(state: PlaybackUiState) {
