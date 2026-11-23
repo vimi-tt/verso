@@ -63,12 +63,19 @@ internal class SpotifyPlaylistClient(
         }.getOrNull()
     }
 
-    private val _state = MutableStateFlow(
-        SpotifyPlaylistsUiState(
-            isLoggedIn = !encryptedPrefs?.getString(KEY_SP_DC, null).isNullOrBlank(),
-        ),
-    )
+    private val _state = MutableStateFlow(loadInitialState())
     val state: StateFlow<SpotifyPlaylistsUiState> = _state.asStateFlow()
+
+    private fun loadInitialState(): SpotifyPlaylistsUiState {
+        val prefs = encryptedPrefs ?: return SpotifyPlaylistsUiState()
+        val loggedIn = !prefs.getString(KEY_SP_DC, null).isNullOrBlank()
+        if (!loggedIn) return SpotifyPlaylistsUiState(isLoggedIn = false)
+        val cached = deserializePlaylists(prefs.getString(KEY_CACHED_PLAYLISTS, null).orEmpty())
+        return SpotifyPlaylistsUiState(
+            isLoggedIn = true,
+            playlists = cached,
+        )
+    }
 
     fun isLoggedIn(): Boolean = !encryptedPrefs?.getString(KEY_SP_DC, null).isNullOrBlank()
 
@@ -77,6 +84,7 @@ internal class SpotifyPlaylistClient(
         accessToken: String? = null,
         expiresAtMs: Long = 0L,
         clientToken: String? = null,
+        playlists: List<SpotifyPlaylistSummary>? = null,
     ) {
         val prefs = encryptedPrefs ?: return
         val cleanCookie = spDc.trim()
@@ -91,9 +99,58 @@ internal class SpotifyPlaylistClient(
                 if (!clientToken.isNullOrBlank()) {
                     putString(KEY_CLIENT_TOKEN, clientToken.trim())
                 }
+                if (playlists != null) {
+                    putString(KEY_CACHED_PLAYLISTS, serializePlaylists(playlists))
+                }
             }
             .apply()
-        _state.update { it.copy(isLoggedIn = true, error = null) }
+        _state.update { current ->
+            current.copy(
+                isLoggedIn = true,
+                isLoading = false,
+                playlists = playlists ?: current.playlists,
+                error = null,
+            )
+        }
+    }
+
+    private fun serializePlaylists(list: List<SpotifyPlaylistSummary>): String {
+        val arr = org.json.JSONArray()
+        for (p in list) {
+            arr.put(
+                JSONObject()
+                    .put("id", p.id)
+                    .put("name", p.name)
+                    .put("owner", p.owner)
+                    .put("trackCount", p.trackCount)
+                    .put("coverUrl", p.coverUrl.orEmpty()),
+            )
+        }
+        return arr.toString()
+    }
+
+    private fun deserializePlaylists(raw: String): List<SpotifyPlaylistSummary> {
+        if (raw.isBlank()) return emptyList()
+        return runCatching {
+            val arr = org.json.JSONArray(raw)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val id = obj.optString("id").trim()
+                    val name = obj.optString("name").trim()
+                    if (id.isBlank() || name.isBlank()) continue
+                    add(
+                        SpotifyPlaylistSummary(
+                            id = id,
+                            name = name,
+                            owner = obj.optString("owner").trim(),
+                            trackCount = obj.optInt("trackCount", 0),
+                            coverUrl = obj.optString("coverUrl").takeIf { it.isNotBlank() },
+                        ),
+                    )
+                }
+            }
+        }.getOrDefault(emptyList())
     }
 
     fun signOut() {
@@ -149,12 +206,14 @@ internal class SpotifyPlaylistClient(
 
     suspend fun fetchPlaylistTracks(playlistId: String): List<BackupTrackRef> =
         withContext(Dispatchers.IO) {
-            val fromApi = runCatching {
+            // 1. Prefer public embed HTML first (never rate-limited with HTTP 429).
+            val fromEmbed = PlaylistLinkImporter.fetchSpotifyEmbedPlaylist(playlistId)?.tracks.orEmpty()
+            if (fromEmbed.isNotEmpty()) return@withContext fromEmbed
+            // 2. Fallback to authenticated Web API for private playlists.
+            runCatching {
                 val token = resolveValidAccessToken() ?: return@runCatching emptyList()
                 fetchTracksWithToken(playlistId, token)
             }.getOrDefault(emptyList())
-            if (fromApi.isNotEmpty()) return@withContext fromApi
-            PlaylistLinkImporter.fetchSpotifyEmbedPlaylist(playlistId)?.tracks.orEmpty()
         }
 
     private fun resolveValidAccessToken(): String? {
@@ -330,6 +389,7 @@ internal class SpotifyPlaylistClient(
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_CLIENT_TOKEN = "client_token"
         private const val KEY_EXPIRES_AT_MS = "expires_at_ms"
+        private const val KEY_CACHED_PLAYLISTS = "cached_playlists"
         private const val WEB_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
     }

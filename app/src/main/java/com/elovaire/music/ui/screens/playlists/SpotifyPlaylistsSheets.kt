@@ -71,19 +71,28 @@ import elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors
 import org.json.JSONObject
 
 private const val SPOTIFY_LOGIN_URL =
-    "https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
+    "https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2Fcollection%2Fplaylists"
+private const val SPOTIFY_PLAYLISTS_URL = "https://open.spotify.com/collection/playlists"
 private const val SPOTIFY_OPEN_HOST = "https://open.spotify.com"
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 internal fun SpotifyLoginScreen(
     onBack: () -> Unit,
-    onSessionCaptured: (spDc: String, accessToken: String?, expiresAtMs: Long, clientToken: String?) -> Unit,
+    onSessionCaptured: (
+        spDc: String,
+        accessToken: String?,
+        expiresAtMs: Long,
+        clientToken: String?,
+        playlists: List<SpotifyPlaylistSummary>,
+    ) -> Unit,
 ) {
     val context = LocalContext.current
     val language = LocalAppLanguage.current
     var loadProgress by remember { mutableIntStateOf(0) }
     var loginDispatched by remember { mutableStateOf(false) }
+    var isSyncingFromWeb by remember { mutableStateOf(false) }
+    var redirectedToPlaylists by remember { mutableStateOf(false) }
     var capturedClientToken by remember { mutableStateOf<String?>(null) }
     var capturedAccessToken by remember { mutableStateOf<String?>(null) }
 
@@ -127,12 +136,16 @@ internal fun SpotifyLoginScreen(
         }
     }
 
-    fun dispatchCapturedSession(spDc: String, accessToken: String, expiresAtMs: Long, clientToken: String? = capturedClientToken) {
+    fun dispatchCapturedSession(
+        spDc: String,
+        playlists: List<SpotifyPlaylistSummary>,
+    ) {
         if (loginDispatched) return
-        if (spDc.isBlank() || accessToken.isBlank()) return
+        if (spDc.isBlank()) return
         loginDispatched = true
         CookieManager.getInstance().flush()
-        onSessionCaptured(spDc, accessToken, expiresAtMs, clientToken)
+        val exp = System.currentTimeMillis() + 3_300_000L
+        onSessionCaptured(spDc, capturedAccessToken, exp, capturedClientToken, playlists)
     }
 
     fun readSpDcCookie(): String {
@@ -146,27 +159,89 @@ internal fun SpotifyLoginScreen(
             .orEmpty()
     }
 
-    fun tryExtractSpotifySession(view: WebView?, currentUrl: String?) {
+    fun scrapePlaylistsFromDom(view: WebView, attempt: Int = 0) {
         if (loginDispatched) return
+        val spDc = readSpDcCookie()
+        if (spDc.isBlank()) return
+        val js = """
+            (function() {
+                var seen = {};
+                var out = [];
+                var links = document.querySelectorAll('a[href*="/playlist/"]');
+                for (var i = 0; i < links.length; i++) {
+                    var a = links[i];
+                    var href = a.getAttribute('href') || '';
+                    var m = href.match(/\/playlist\/([A-Za-z0-9]+)/);
+                    if (!m) continue;
+                    var id = m[1];
+                    if (seen[id]) continue;
+                    var title = (a.getAttribute('title') || a.getAttribute('aria-label') || a.innerText || '').trim();
+                    if (!title) {
+                        var card = a.closest('[data-testid], li, [role="listitem"], [role="row"], div');
+                        if (card) {
+                            var p = card.querySelector('p, span');
+                            if (p) title = (p.innerText || '').trim();
+                        }
+                    }
+                    title = title.split('\n')[0].trim();
+                    if (!title || title.length < 1) continue;
+                    var imgUrl = '';
+                    var container = a.closest('[data-testid], li, [role="listitem"], [role="row"], section, div');
+                    if (container) {
+                        var img = container.querySelector('img[src]');
+                        if (img) imgUrl = img.getAttribute('src') || '';
+                    }
+                    seen[id] = true;
+                    out.push({ id: id, name: title, coverUrl: imgUrl });
+                }
+                return JSON.stringify(out);
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(js) { raw ->
+            if (loginDispatched) return@evaluateJavascript
+            val parsed = runCatching {
+                val unquoted = org.json.JSONTokener(raw ?: "").nextValue()?.toString().orEmpty()
+                if (!unquoted.startsWith("[")) return@runCatching emptyList<SpotifyPlaylistSummary>()
+                val arr = org.json.JSONArray(unquoted)
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.optJSONObject(i) ?: continue
+                        val id = obj.optString("id").trim()
+                        val name = obj.optString("name").trim()
+                        if (id.isBlank() || name.isBlank()) continue
+                        add(
+                            SpotifyPlaylistSummary(
+                                id = id,
+                                name = name,
+                                owner = "Spotify",
+                                trackCount = 0,
+                                coverUrl = obj.optString("coverUrl").takeIf { it.isNotBlank() },
+                            ),
+                        )
+                    }
+                }
+            }.getOrDefault(emptyList())
+
+            if (parsed.isNotEmpty() || attempt >= 16) {
+                dispatchCapturedSession(spDc, parsed)
+            } else {
+                view.postDelayed({ scrapePlaylistsFromDom(view, attempt + 1) }, 650L)
+            }
+        }
+    }
+
+    fun tryHandleOpenSpotifyPage(view: WebView?, currentUrl: String?) {
+        if (loginDispatched || view == null) return
         if (currentUrl?.startsWith(SPOTIFY_OPEN_HOST) != true) return
         val spDc = readSpDcCookie()
         if (spDc.isBlank()) return
-        view?.evaluateJavascript(
-            "(function(){var el=document.getElementById('session');return el?el.textContent:'';})();",
-        ) { raw ->
-            runCatching {
-                val unquoted = org.json.JSONTokener(raw ?: "").nextValue()?.toString().orEmpty()
-                if (unquoted.startsWith("{")) {
-                    val obj = JSONObject(unquoted)
-                    val token = obj.optString("accessToken").takeIf { it.isNotBlank() }
-                    val isAnonymous = obj.optBoolean("isAnonymous", false)
-                    val exp = obj.optLong("accessTokenExpirationTimestampMs", System.currentTimeMillis() + 3_300_000L)
-                    if (!token.isNullOrBlank() && !isAnonymous) {
-                        dispatchCapturedSession(spDc, token, exp)
-                    }
-                }
-            }
+        isSyncingFromWeb = true
+        if (!currentUrl.contains("/collection/playlists") && !redirectedToPlaylists) {
+            redirectedToPlaylists = true
+            view.loadUrl(SPOTIFY_PLAYLISTS_URL)
+            return
         }
+        view.postDelayed({ scrapePlaylistsFromDom(view, 0) }, 900L)
     }
 
     val title = when (language) {
@@ -287,15 +362,6 @@ internal fun SpotifyLoginScreen(
                                                 capturedAccessToken = token
                                             }
                                         }
-                                        val token = capturedAccessToken
-                                        val cToken = capturedClientToken
-                                        val spDc = readSpDcCookie()
-                                        if (!token.isNullOrBlank() && !cToken.isNullOrBlank() && spDc.isNotBlank()) {
-                                            val exp = System.currentTimeMillis() + 3_300_000L
-                                            view?.post {
-                                                dispatchCapturedSession(spDc, token, exp, cToken)
-                                            }
-                                        }
                                     }
                                 }
                                 return super.shouldInterceptRequest(view, request)
@@ -303,13 +369,39 @@ internal fun SpotifyLoginScreen(
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
-                                tryExtractSpotifySession(view, url)
+                                tryHandleOpenSpotifyPage(view, url)
                             }
                         }
                         loadUrl(SPOTIFY_LOGIN_URL)
                     }
                 },
             )
+            if (isSyncingFromWeb) {
+                val syncingMsg = when (language) {
+                    AppLanguage.Portuguese -> "Carregando suas playlists do Spotify..."
+                    AppLanguage.Spanish -> "Cargando tus playlists de Spotify..."
+                    else -> "Loading your Spotify playlists..."
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 2.5.dp,
+                    )
+                    Spacer(modifier = Modifier.height(ElovaireSpacing.lg))
+                    Text(
+                        text = syncingMsg,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = readableSecondaryTextColor(),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
         }
     }
 }

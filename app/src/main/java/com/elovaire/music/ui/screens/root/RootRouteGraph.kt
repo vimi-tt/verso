@@ -370,7 +370,9 @@ internal fun RootRouteGraph(
                 spotifyState = spotifyState,
                 onOpenSpotifyLogin = { navState.navigateTo(Routes.spotifyLogin()) },
                 onSyncSpotify = { force ->
-                    scope.launch { spotifyClient.syncPlaylists(force = force) }
+                    if (force || spotifyState.playlists.isEmpty()) {
+                        navState.navigateTo(Routes.spotifyLogin())
+                    }
                 },
                 onSignOutSpotify = {
                     spotifyClient.signOut()
@@ -910,12 +912,16 @@ internal fun RootRouteGraph(
             )
         }
         composable(RootRouteRegistry.SPOTIFY_LOGIN) {
-            val scope = androidx.compose.runtime.rememberCoroutineScope()
             SpotifyLoginScreen(
                 onBack = routeActions::navigateUp,
-                onSessionCaptured = { spDc, token, exp, clientToken ->
-                    spotifyClient.saveSession(spDc, token, exp, clientToken)
-                    scope.launch { spotifyClient.syncPlaylists(force = true) }
+                onSessionCaptured = { spDc, token, exp, clientToken, playlists ->
+                    spotifyClient.saveSession(
+                        spDc = spDc,
+                        accessToken = token,
+                        expiresAtMs = exp,
+                        clientToken = clientToken,
+                        playlists = playlists,
+                    )
                     navState.navController.popBackStack()
                 },
             )
