@@ -6,6 +6,13 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
+    <release version="Banjo 2">
+        <item>Refined the top bar with a simple progressive blur separating the greeting and tab title from the floating profile and menu pill</item>
+        <item>Added Spotify account sign-in with Android Keystore encryption in Playlists to browse and open your Spotify playlists with track counts</item>
+        <item>Fixed the Add to Playlist picker so all YouTube Music and local playlists can be scrolled and selected</item>
+        <item>Fixed Now Playing audio quality display to read real codec and bitrate from ExoPlayer tracks instead of falling back to YouTube</item>
+        <item>Fixed update version comparison for codename releases and prioritized the stable release tag for update checks</item>
+    </release>
     <release version="Banjo 1">
         <item>Introduced a new Verso visual identity with Outfit display typography, Geist body copy, neutral surfaces, and a 4dp spacing grid across Library, Search, Playlists, Albums, Artists, and Settings</item>
         <item>Redesigned the top bar on Home, Library, Playlists, and Search with a single translucent pill for account and menu actions, three-dot menu icon, and borderless edge</item>

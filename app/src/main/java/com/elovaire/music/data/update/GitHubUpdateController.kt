@@ -614,6 +614,10 @@ private object GitHubReleaseClient {
         installedVersion: String,
         transport: BoundedHttpTransport,
     ): AppReleaseInfo? {
+        val stable = runNetworkCatching { parseRelease(JSONObject(getText(STABLE_RELEASE_URL, transport))) }.getOrNull()
+        if (stable != null && AppVersionPolicy.isNewer(stable.versionName, installedVersion)) {
+            return stable
+        }
         val latest = runNetworkCatching { parseRelease(JSONObject(getText(LATEST_RELEASE_URL, transport))) }.getOrNull()
         if (latest != null && AppVersionPolicy.isNewer(latest.versionName, installedVersion)) {
             return latest
@@ -700,6 +704,7 @@ private object GitHubReleaseClient {
         return response.body.toString(Charsets.UTF_8)
     }
 
+    private const val STABLE_RELEASE_URL = "https://api.github.com/repos/vimi-tt/verso/releases/tags/stable"
     private const val LATEST_RELEASE_URL = "https://api.github.com/repos/vimi-tt/verso/releases/latest"
     private const val RELEASES_URL = "https://api.github.com/repos/vimi-tt/verso/releases?per_page=20"
     private const val MAX_RELEASE_METADATA_BYTES = 1 * 1024 * 1024

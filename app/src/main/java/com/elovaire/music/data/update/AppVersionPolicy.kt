@@ -38,8 +38,7 @@ internal object AppVersionPolicy {
             return if (candidateCodename.instrument.equals(installedCodename.instrument, ignoreCase = true)) {
                 compareNumeric(candidateCodename.number, installedCodename.number) > 0
             } else {
-                // Instrument codename changed for a new major release family.
-                true
+                candidateCodename.instrument.compareTo(installedCodename.instrument, ignoreCase = true) > 0
             }
         }
         if (candidateCodename != null && parse(installed) != null) {
