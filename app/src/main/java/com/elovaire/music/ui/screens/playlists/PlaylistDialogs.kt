@@ -16,6 +16,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -726,7 +728,6 @@ internal fun PlaylistSelectionDialog(
     val context = androidx.compose.ui.platform.LocalContext.current
     val menuActions = LocalSongMenuActions.current
     val motionSpecs = rememberMotionSpecs()
-    val listState = rememberElovaireLazyListState(title, subtitle, "playlist_picker")
     val createPlaylist = onCreatePlaylist
     var showPlaylistCreator by rememberSaveable(title, subtitle) { mutableStateOf(false) }
     var playlistCreatorMounted by remember { mutableStateOf(false) }
@@ -745,10 +746,8 @@ internal fun PlaylistSelectionDialog(
         menuActions.isYouTubeLoggedIn &&
         menuActions.isYouTubeSyncing &&
         effectiveYouTubePlaylists.isEmpty()
-    val visibleRows = 4
-    val rowHeight = 82.dp
     val rowSpacing = 12.dp
-    val listHeight = (rowHeight * visibleRows) + (rowSpacing * (visibleRows - 1))
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val displayedRows = remember(playlists, playlistSongsById) {
         buildPlaylistPickerRowModels(playlists, playlistSongsById)
     }
@@ -791,7 +790,11 @@ internal fun PlaylistSelectionDialog(
                 DynamicBackdropSurface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .consumePointersWithoutSemantics(),
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                        ),
                     shape = RoundedCornerShape(ElovaireRadii.card),
                     overlayAlpha = 0.6f,
                     borderColor = blurSurfaceBorderColor(),
@@ -831,7 +834,7 @@ internal fun PlaylistSelectionDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(listHeight),
+                            .heightIn(min = 180.dp, max = 380.dp),
                     ) {
                         val hasYouTubeChoices = effectiveYouTubePlaylists.isNotEmpty() && onYouTubePlaylistSelected != null
                         if (displayedRows.isEmpty() && !hasYouTubeChoices && !showYouTubeSyncingState) {
@@ -849,10 +852,8 @@ internal fun PlaylistSelectionDialog(
                         } else {
                             LazyColumn(
                                 state = listState,
-                                overscrollEffect = null,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .ensureSingleItemRubberBand(listState),
+                                userScrollEnabled = true,
+                                modifier = Modifier.fillMaxSize(),
                                 verticalArrangement = Arrangement.spacedBy(rowSpacing),
                             ) {
                                 if (hasYouTubeChoices || showYouTubeSyncingState) {
