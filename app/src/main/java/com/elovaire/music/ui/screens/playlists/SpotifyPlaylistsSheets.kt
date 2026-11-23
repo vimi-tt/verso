@@ -87,14 +87,27 @@ internal fun SpotifyLoginScreen(
 
     val webView = remember(context) {
         WebView(context).apply {
+            layoutParams = android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            )
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            @Suppress("DEPRECATION")
+            settings.databaseEnabled = true
+            settings.javaScriptCanOpenWindowsAutomatically = true
+            settings.setSupportMultipleWindows(false)
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
             settings.allowFileAccess = false
             settings.allowContentAccess = false
+            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
             @Suppress("DEPRECATION")
             settings.saveFormData = false
+            // Strip "; wv" token so accounts.spotify.com and OAuth providers render the mobile web login form.
+            settings.userAgentString = settings.userAgentString
+                .replace("; wv)", ")")
+                .replace(" wv)", ")")
             val currentWebView = this
             CookieManager.getInstance().apply {
                 setAcceptCookie(true)
@@ -233,9 +246,10 @@ internal fun SpotifyLoginScreen(
                                 view: WebView?,
                                 request: WebResourceRequest?,
                             ): Boolean {
-                                val scheme = request?.url?.scheme?.lowercase()
-                                // Block non-HTTPS schemes (file://, intent://, javascript:, etc.)
-                                return scheme != "https"
+                                val uri = request?.url ?: return false
+                                val scheme = uri.scheme?.lowercase().orEmpty()
+                                // Allow HTTPS and internal about: frames; block deep links (spotify://, intent://, file://).
+                                return scheme != "https" && scheme != "about"
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
