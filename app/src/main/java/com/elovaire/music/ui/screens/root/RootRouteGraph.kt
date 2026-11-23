@@ -37,6 +37,7 @@ internal fun RootRouteGraph(
     onExportLibraryJson: () -> String = { "{}" },
     onImportLibraryJson: suspend (String) -> Int = { 0 },
     onImportPlaylistLink: suspend (String, String?) -> Int = { _, _ -> 0 },
+    onImportSpotifyPlaylist: suspend (String, String?, List<elovaire.music.droidbeauty.app.data.settings.BackupTrackRef>) -> Long? = { _, _, _ -> null },
     importedCoverUris: Map<Long, String> = emptyMap(),
     viewModelFactory: ElovaireViewModelFactory,
     artistImageRepository: ArtistImageReader,
@@ -337,6 +338,11 @@ internal fun RootRouteGraph(
             val accountState by youTubeCatalog.accountState.collectAsStateWithLifecycle()
             val downloadsState by youTubeDownloadManager.state.collectAsStateWithLifecycle()
             val scope = androidx.compose.runtime.rememberCoroutineScope()
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val spotifyClient = remember(context) {
+                elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistClient(context)
+            }
+            val spotifyState by spotifyClient.state.collectAsStateWithLifecycle()
             val inAppFavoritesCount = routeState.appState.favoriteSongIds.size
             val totalFavoritesCount = inAppFavoritesCount + accountState.likedSongs.count { it.id !in routeState.appState.favoriteSongIds }
             PlaylistsRouteHost(
@@ -361,6 +367,35 @@ internal fun RootRouteGraph(
                 onSyncYouTube = { scope.launch { youTubeCatalog.syncAccountLibrary(force = true) } },
                 onOpenSettings = { navState.navigateTo(SETTINGS_ROUTE) },
                 importedCoverUris = importedCoverUris,
+                spotifyState = spotifyState,
+                onSpotifySessionCaptured = { spDc, token, exp ->
+                    spotifyClient.saveSession(spDc, token, exp)
+                    scope.launch { spotifyClient.syncPlaylists(force = true) }
+                },
+                onSyncSpotify = { force ->
+                    scope.launch { spotifyClient.syncPlaylists(force = force) }
+                },
+                onSignOutSpotify = {
+                    spotifyClient.signOut()
+                },
+                onOpenSpotifyPlaylist = { summary ->
+                    val existing = routeState.appState.playlists.firstOrNull {
+                        !it.isSystem && it.name.equals(summary.name, ignoreCase = true)
+                    }
+                    if (existing != null) {
+                        routeActions.openPlaylist(existing.id, ExpandOrigin())
+                        true
+                    } else {
+                        val tracks = spotifyClient.fetchPlaylistTracks(summary.id)
+                        val createdId = onImportSpotifyPlaylist(summary.name, summary.coverUrl, tracks)
+                        if (createdId != null) {
+                            routeActions.openPlaylist(createdId, ExpandOrigin())
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                },
             )
         }
         composable(RootRouteRegistry.SEARCH) {

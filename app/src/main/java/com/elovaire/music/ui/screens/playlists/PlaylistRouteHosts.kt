@@ -21,6 +21,12 @@ internal fun PlaylistsRouteHost(
     onSyncYouTube: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     importedCoverUris: Map<Long, String> = emptyMap(),
+    spotifyState: elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistsUiState =
+        elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistsUiState(),
+    onSpotifySessionCaptured: (spDc: String, accessToken: String?, expiresAtMs: Long) -> Unit = { _, _, _ -> },
+    onSyncSpotify: (Boolean) -> Unit = {},
+    onSignOutSpotify: () -> Unit = {},
+    onOpenSpotifyPlaylist: suspend (elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistSummary) -> Boolean = { false },
 ) {
     val smartSummaries = remember(
         state.appState.smartPlaylists,
@@ -53,6 +59,11 @@ internal fun PlaylistsRouteHost(
         onSyncYouTube = onSyncYouTube,
         onOpenSettings = onOpenSettings,
         importedCoverUris = importedCoverUris,
+        spotifyState = spotifyState,
+        onSpotifySessionCaptured = onSpotifySessionCaptured,
+        onSyncSpotify = onSyncSpotify,
+        onSignOutSpotify = onSignOutSpotify,
+        onOpenSpotifyPlaylist = onOpenSpotifyPlaylist,
     )
 }
 

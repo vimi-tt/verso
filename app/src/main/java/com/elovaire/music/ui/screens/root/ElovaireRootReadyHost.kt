@@ -421,6 +421,48 @@ internal fun ElovaireRootReadyHost(
                         }
                     }
                 },
+                onImportSpotifyPlaylist = { playlistName, coverUrl, tracks ->
+                    if (tracks.isEmpty()) return@RootRouteGraph null
+                    val localByKey = derivedState.songsById.values.associateBy { song ->
+                        elovaire.music.droidbeauty.app.data.compasso.TrackNormalizer
+                            .normalizeKey(song.title, song.artist)
+                    }
+                    val resolved = ArrayList<elovaire.music.droidbeauty.app.domain.model.Song>()
+                    val seenIds = HashSet<Long>()
+                    kotlinx.coroutines.coroutineScope {
+                        for (chunk in tracks.take(50).chunked(5)) {
+                            val batch = chunk.map { ref ->
+                                async {
+                                    elovaire.music.droidbeauty.app.data.settings.PlaylistLinkImporter
+                                        .matchLocalOrFallback(ref, localByKey)
+                                        ?: runCatching {
+                                            composition.youTubeCatalog.searchSongs("${ref.title} ${ref.artist}").firstOrNull()
+                                        }.getOrNull()
+                                }
+                            }
+                            for (deferred in batch) {
+                                val match = deferred.await()
+                                if (match != null && seenIds.add(match.id)) {
+                                    resolved.add(match)
+                                }
+                            }
+                        }
+                    }
+                    if (resolved.isEmpty()) return@RootRouteGraph null
+                    val result = composition.playlistStore.createPlaylist(playlistName).await()
+                    if (result is elovaire.music.droidbeauty.app.data.settings.PlaylistMutationResult.Success) {
+                        result.playlistId?.also { newId ->
+                            composition.importedPlaylistStore.savePlaylistData(
+                                playlistId = newId,
+                                coverUri = coverUrl ?: resolved.firstOrNull()?.artUri?.toString(),
+                                songs = resolved,
+                            )
+                            composition.playlistStore.addSongsToPlaylist(newId, resolved.map { it.id }).await()
+                        }
+                    } else {
+                        null
+                    }
+                },
                 importedCoverUris = importedPlaylistsSnapshot.coverUrisByPlaylistId,
                 viewModelFactory = composition.viewModelFactory,
                 artistImageRepository = composition.artistImageRepository,

@@ -44,6 +44,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -95,6 +96,12 @@ internal fun PlaylistsScreen(
     onSyncYouTube: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     importedCoverUris: Map<Long, String> = emptyMap(),
+    spotifyState: elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistsUiState =
+        elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistsUiState(),
+    onSpotifySessionCaptured: (spDc: String, accessToken: String?, expiresAtMs: Long) -> Unit = { _, _, _ -> },
+    onSyncSpotify: (Boolean) -> Unit = {},
+    onSignOutSpotify: () -> Unit = {},
+    onOpenSpotifyPlaylist: suspend (elovaire.music.droidbeauty.app.data.spotify.SpotifyPlaylistSummary) -> Boolean = { false },
 ) {
     val motionTransitions = rememberMotionTransitions()
     val motionSpecs = rememberMotionSpecs()
@@ -102,6 +109,9 @@ internal fun PlaylistsScreen(
     val scope = rememberCoroutineScope()
     var playlistBeingRenamed by remember { mutableStateOf<Playlist?>(null) }
     var selectedPlaylistIds by rememberSaveable { mutableStateOf(setOf<Long>()) }
+    var showSpotifyLogin by rememberSaveable { mutableStateOf(false) }
+    var showSpotifyPlaylists by rememberSaveable { mutableStateOf(false) }
+    var importingSpotifyPlaylistId by remember { mutableStateOf<String?>(null) }
     val playlistRows = remember(playlists, songsById) {
         buildPlaylistRowModels(
             playlists = playlists.filterNot(Playlist::isSystem),
@@ -159,6 +169,84 @@ internal fun PlaylistsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            item(
+                key = "spotify_playlists_entry",
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = "spotify_entry_row",
+            ) {
+                val spotifySubtitle = when {
+                    !spotifyState.isLoggedIn -> when (language) {
+                        elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese -> "Entrar para ver suas playlists"
+                        elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish -> "Iniciar sesión para ver tus playlists"
+                        else -> "Sign in to view your playlists"
+                    }
+                    spotifyState.isLoading && spotifyState.playlists.isEmpty() -> when (language) {
+                        elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese -> "Carregando playlists..."
+                        elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish -> "Cargando playlists..."
+                        else -> "Loading playlists..."
+                    }
+                    spotifyState.playlists.isNotEmpty() -> localizedCountLabel(spotifyState.playlists.size, "playlist", language)
+                    else -> when (language) {
+                        elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese -> "Ver suas playlists do Spotify"
+                        elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish -> "Ver tus playlists de Spotify"
+                        else -> "View your Spotify playlists"
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(ElovaireRadii.card))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                        .elovaireClickable(
+                            interactionSource = rememberElovaireInteractionSource(),
+                            onClick = {
+                                if (spotifyState.isLoggedIn) {
+                                    showSpotifyPlaylists = true
+                                    onSyncSpotify(false)
+                                } else {
+                                    showSpotifyLogin = true
+                                }
+                            },
+                        )
+                        .padding(horizontal = ElovaireSpacing.lg, vertical = ElovaireSpacing.md),
+                    horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = painterResource(id = R.drawable.ic_spotify_logo),
+                        contentDescription = "Spotify",
+                        modifier = Modifier.size(28.dp),
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = "Spotify",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = spotifySubtitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = readableSecondaryTextColor(),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_lucide_chevron_left),
+                        contentDescription = null,
+                        tint = elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.mutedIcon,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .rotate(180f),
+                    )
+                }
+            }
+
             item(
                 key = "youtube_playlists_header",
                 span = { GridItemSpan(maxLineSpan) },
@@ -413,6 +501,42 @@ internal fun PlaylistsScreen(
                 }
             },
         )
+        if (showSpotifyLogin) {
+            SpotifyLoginDialog(
+                onDismiss = { showSpotifyLogin = false },
+                onSessionCaptured = { spDc, token, exp ->
+                    showSpotifyLogin = false
+                    onSpotifySessionCaptured(spDc, token, exp)
+                    showSpotifyPlaylists = true
+                },
+            )
+        }
+        if (showSpotifyPlaylists) {
+            SpotifyPlaylistsModal(
+                state = spotifyState,
+                importingPlaylistId = importingSpotifyPlaylistId,
+                onDismiss = {
+                    if (importingSpotifyPlaylistId == null) {
+                        showSpotifyPlaylists = false
+                    }
+                },
+                onRefresh = { onSyncSpotify(true) },
+                onSignOut = {
+                    onSignOutSpotify()
+                    showSpotifyPlaylists = false
+                },
+                onSelectPlaylist = { spotifyPlaylist ->
+                    scope.launch {
+                        importingSpotifyPlaylistId = spotifyPlaylist.id
+                        val opened = runCatching { onOpenSpotifyPlaylist(spotifyPlaylist) }.getOrDefault(false)
+                        importingSpotifyPlaylistId = null
+                        if (opened) {
+                            showSpotifyPlaylists = false
+                        }
+                    }
+                },
+            )
+        }
     }
 }
 
