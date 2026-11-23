@@ -38,6 +38,10 @@ internal data class SongMenuActions(
     val onBlockArtist: ((Song) -> Unit)? = null,
     val youTubePlaylists: List<elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary> = emptyList(),
     val onAddToYouTubePlaylist: (suspend (playlistId: String, song: Song) -> Boolean)? = null,
+    val isYouTubeLoggedIn: Boolean = false,
+    val isYouTubeSyncing: Boolean = false,
+    val onRefreshYouTubePlaylists: (() -> Unit)? = null,
+    val importedCoverUris: Map<Long, String> = emptyMap(),
     val deletePhrase: UiPhrase = UiPhrase.DeleteFromLibrary,
 )
 
@@ -62,6 +66,7 @@ internal fun rememberRootSongMenuActions(
 ): SongMenuActions {
     val scope = rememberCoroutineScope()
     val ytAccountState = youTubeCatalog?.accountState?.collectAsStateWithLifecycle()?.value
+    val importedSnapshot = importedPlaylistStore?.snapshot?.collectAsStateWithLifecycle()?.value
     val editableYouTubePlaylists = remember(ytAccountState?.userPlaylists, ytAccountState?.isLoggedIn) {
         if (ytAccountState?.isLoggedIn == true) {
             ytAccountState.userPlaylists.filterNot { it.id == "LM" || it.id == "VLLM" }
@@ -83,6 +88,9 @@ internal fun rememberRootSongMenuActions(
         downloadedVideoIds,
         activeDownloadVideoIds,
         editableYouTubePlaylists,
+        ytAccountState?.isLoggedIn,
+        ytAccountState?.isSyncing,
+        importedSnapshot?.coverUrisByPlaylistId,
     ) {
         SongMenuActions(
             playlists = playlists.filterNot { it.isSystem },
@@ -173,6 +181,14 @@ internal fun rememberRootSongMenuActions(
                     }
                 }
             },
+            isYouTubeLoggedIn = ytAccountState?.isLoggedIn == true,
+            isYouTubeSyncing = ytAccountState?.isSyncing == true,
+            onRefreshYouTubePlaylists = youTubeCatalog?.let { catalog ->
+                {
+                    scope.launch { catalog.syncAccountLibrary(force = true) }
+                }
+            },
+            importedCoverUris = importedSnapshot?.coverUrisByPlaylistId.orEmpty(),
         )
     }
 }

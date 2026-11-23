@@ -1553,6 +1553,7 @@ private fun AlbumCollectionContent(
         }
     }
     val language = LocalAppLanguage.current
+    val libraryMenuActions = LocalSongMenuActions.current
     PlaylistSelectionDialog(
         visible = showPlaylistPicker && selectionModeActive,
         title = uiPhrase(language, UiPhrase.AddToPlaylist),
@@ -1582,6 +1583,21 @@ private fun AlbumCollectionContent(
             result
         },
         onCreatePlaylist = onCreatePlaylist,
+        youTubePlaylists = libraryMenuActions.youTubePlaylists,
+        onYouTubePlaylistSelected = libraryMenuActions.onAddToYouTubePlaylist?.let { fn ->
+            { ytId ->
+                val songs = selectedAlbums.flatMap(Album::songs).distinctBy(Song::id)
+                var anyAdded = false
+                for (song in songs) {
+                    if (fn(ytId, song)) anyAdded = true
+                }
+                if (anyAdded) {
+                    showPlaylistPicker = false
+                    selectedAlbumIds = emptySet()
+                }
+                anyAdded
+            }
+        },
     )
 }
 

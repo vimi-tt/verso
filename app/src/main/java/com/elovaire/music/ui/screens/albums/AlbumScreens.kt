@@ -846,6 +846,7 @@ internal fun AlbumScreen(
         }
     }
 
+    val albumSongMenuActions = LocalSongMenuActions.current
     PlaylistSelectionDialog(
         visible = showPlaylistPicker && selectionModeActive,
         title = uiPhrase(language, UiPhrase.AddToPlaylist),
@@ -862,6 +863,20 @@ internal fun AlbumScreen(
             result
         },
         onCreatePlaylist = onCreatePlaylist,
+        youTubePlaylists = albumSongMenuActions.youTubePlaylists,
+        onYouTubePlaylistSelected = albumSongMenuActions.onAddToYouTubePlaylist?.let { fn ->
+            { ytId ->
+                var anyAdded = false
+                for (song in selectedSongs) {
+                    if (fn(ytId, song)) anyAdded = true
+                }
+                if (anyAdded) {
+                    selectedSongIds = emptySet()
+                    showPlaylistPicker = false
+                }
+                anyAdded
+            }
+        },
     )
 }
 

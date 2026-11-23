@@ -275,6 +275,7 @@ internal fun RecentlyAddedAlbumsScreen(
             modifier = Modifier.align(Alignment.TopCenter),
         )
     }
+    val recentMenuActions = LocalSongMenuActions.current
     PlaylistSelectionDialog(
         visible = showPlaylistPicker && selectionModeActive,
         title = uiPhrase(language, UiPhrase.AddToPlaylist),
@@ -290,6 +291,17 @@ internal fun RecentlyAddedAlbumsScreen(
             result
         },
         onCreatePlaylist = onCreatePlaylist,
+        youTubePlaylists = recentMenuActions.youTubePlaylists,
+        onYouTubePlaylistSelected = recentMenuActions.onAddToYouTubePlaylist?.let { fn ->
+            { ytId ->
+                var anyAdded = false
+                for (song in selectedSongs) {
+                    if (fn(ytId, song)) anyAdded = true
+                }
+                if (anyAdded) leaveSelection()
+                anyAdded
+            }
+        },
     )
 }
 

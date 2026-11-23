@@ -724,6 +724,7 @@ internal fun PlaylistSelectionDialog(
     val revealRegistry = rememberMotionRevealRegistry()
     val language = LocalAppLanguage.current
     val context = androidx.compose.ui.platform.LocalContext.current
+    val menuActions = LocalSongMenuActions.current
     val motionSpecs = rememberMotionSpecs()
     val listState = rememberElovaireLazyListState(title, subtitle, "playlist_picker")
     val createPlaylist = onCreatePlaylist
@@ -733,6 +734,17 @@ internal fun PlaylistSelectionDialog(
     var selectedYouTubePlaylistId by rememberSaveable(title, subtitle) { mutableStateOf<String?>(null) }
     var isAddingToPlaylist by rememberSaveable(title, subtitle) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val effectiveYouTubePlaylists = remember(youTubePlaylists, menuActions.youTubePlaylists, onYouTubePlaylistSelected) {
+        if (onYouTubePlaylistSelected != null) {
+            youTubePlaylists.ifEmpty { menuActions.youTubePlaylists }
+        } else {
+            emptyList()
+        }
+    }
+    val showYouTubeSyncingState = onYouTubePlaylistSelected != null &&
+        menuActions.isYouTubeLoggedIn &&
+        menuActions.isYouTubeSyncing &&
+        effectiveYouTubePlaylists.isEmpty()
     val visibleRows = 4
     val rowHeight = 82.dp
     val rowSpacing = 12.dp
@@ -748,7 +760,16 @@ internal fun PlaylistSelectionDialog(
     }
     var mounted by remember { mutableStateOf(visible) }
     LaunchedEffect(visible) {
-        if (visible) mounted = true
+        if (visible) {
+            mounted = true
+            if (onYouTubePlaylistSelected != null &&
+                menuActions.isYouTubeLoggedIn &&
+                effectiveYouTubePlaylists.isEmpty() &&
+                !menuActions.isYouTubeSyncing
+            ) {
+                menuActions.onRefreshYouTubePlaylists?.invoke()
+            }
+        }
     }
     if (mounted) Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -812,8 +833,8 @@ internal fun PlaylistSelectionDialog(
                             .fillMaxWidth()
                             .height(listHeight),
                     ) {
-                        val hasYouTubeChoices = youTubePlaylists.isNotEmpty() && onYouTubePlaylistSelected != null
-                        if (displayedRows.isEmpty() && !hasYouTubeChoices) {
+                        val hasYouTubeChoices = effectiveYouTubePlaylists.isNotEmpty() && onYouTubePlaylistSelected != null
+                        if (displayedRows.isEmpty() && !hasYouTubeChoices && !showYouTubeSyncingState) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center,
@@ -830,21 +851,41 @@ internal fun PlaylistSelectionDialog(
                                 state = listState,
                                 overscrollEffect = null,
                                 modifier = Modifier
-                                    .fillMaxWidth()
+                                    .fillMaxSize()
                                     .ensureSingleItemRubberBand(listState),
                                 verticalArrangement = Arrangement.spacedBy(rowSpacing),
                             ) {
-                                if (hasYouTubeChoices) {
+                                if (hasYouTubeChoices || showYouTubeSyncingState) {
                                     item(key = "yt_picker_header") {
                                         Text(
-                                            text = "YouTube Music",
+                                            text = if (effectiveYouTubePlaylists.isNotEmpty()) {
+                                                "YouTube Music (${effectiveYouTubePlaylists.size})"
+                                            } else {
+                                                "YouTube Music"
+                                            },
                                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                                             color = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                         )
                                     }
+                                    if (showYouTubeSyncingState) {
+                                        item(key = "yt_picker_syncing") {
+                                            Text(
+                                                text = if (language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese) {
+                                                    "Sincronizando playlists do YouTube Music..."
+                                                } else if (language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish) {
+                                                    "Sincronizando playlists de YouTube Music..."
+                                                } else {
+                                                    "Syncing YouTube Music playlists..."
+                                                },
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = readableSecondaryTextColor(),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                                            )
+                                        }
+                                    }
                                     items(
-                                        items = youTubePlaylists,
+                                        items = effectiveYouTubePlaylists,
                                         key = { "yt_pick_${it.id}" },
                                     ) { ytPl ->
                                         val isYtSelected = selectedYouTubePlaylistId == ytPl.id
@@ -902,6 +943,21 @@ internal fun PlaylistSelectionDialog(
                                         }
                                     }
                                 }
+                                if (displayedRows.isNotEmpty() && (hasYouTubeChoices || showYouTubeSyncingState)) {
+                                    item(key = "local_picker_header") {
+                                        val localHeaderLabel = when (language) {
+                                            elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese -> "Minhas playlists (${displayedRows.size})"
+                                            elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish -> "Mis playlists (${displayedRows.size})"
+                                            else -> "My playlists (${displayedRows.size})"
+                                        }
+                                        Text(
+                                            text = localHeaderLabel,
+                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 2.dp),
+                                        )
+                                    }
+                                }
                                 items(
                                     items = displayedRows,
                                     key = { it.playlist.id },
@@ -912,6 +968,7 @@ internal fun PlaylistSelectionDialog(
                                         previewSongs = row.previewSongs,
                                         durationMs = row.durationMs,
                                         selected = row.playlist.id == selectedPlaylistId,
+                                        importedCoverUri = menuActions.importedCoverUris[row.playlist.id],
                                         modifier = Modifier
                                             .elovaireListReveal(
                                                 itemKey = row.playlist.id,
@@ -1066,6 +1123,7 @@ internal fun PlaylistPickerRow(
     previewSongs: List<Song>,
     durationMs: Long,
     selected: Boolean,
+    importedCoverUri: String? = null,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -1093,11 +1151,21 @@ internal fun PlaylistPickerRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PlaylistArtworkPreview(
-                songs = previewSongs,
-                title = playlist.name,
-                modifier = Modifier.size(62.dp),
-            )
+            if (!importedCoverUri.isNullOrBlank()) {
+                ArtworkImage(
+                    uri = android.net.Uri.parse(importedCoverUri),
+                    title = playlist.name,
+                    placeholderIconResId = R.drawable.ic_lucide_list_music,
+                    modifier = Modifier.size(62.dp),
+                    cornerRadius = ElovaireRadii.artworkSmall,
+                )
+            } else {
+                PlaylistArtworkPreview(
+                    songs = previewSongs,
+                    title = playlist.name,
+                    modifier = Modifier.size(62.dp),
+                )
+            }
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(5.dp),

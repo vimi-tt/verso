@@ -113,6 +113,44 @@ internal fun parsePlaylistsFromInternalJson(json: String): List<PlaylistDisplayI
                                  thumbnailUrl = thumbnailUrl
                              ))
                          }
+                     } else {
+                         // Fallback: list-layout library playlists use musicResponsiveListItemRenderer
+                         val responsiveItem = item.optJSONObject("musicResponsiveListItemRenderer")
+                         if (responsiveItem != null) {
+                             val browseId = responsiveItem.optJSONObject("navigationEndpoint")
+                                 ?.optJSONObject("browseEndpoint")
+                                 ?.optString("browseId")
+                             if (browseId != null && (browseId.startsWith("VL") || browseId.startsWith("PL"))) {
+                                 val cleanId = browseId.removePrefix("VL")
+                                 val flexColumns = responsiveItem.optJSONArray("flexColumns")
+                                 val title = flexColumns?.optJSONObject(0)
+                                     ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                                     ?.optJSONObject("text")
+                                     ?.let { getRunText(it) }
+                                     .orEmpty()
+                                 val subtitleObj = flexColumns?.optJSONObject(1)
+                                     ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                                     ?.optJSONObject("text")
+                                 val subtitle = getRunText(subtitleObj).orEmpty()
+                                 val itemCount = extractItemCountFromSubtitle(subtitleObj)
+                                 val thumbnails = responsiveItem.optJSONObject("thumbnail")
+                                     ?.optJSONObject("musicThumbnailRenderer")
+                                     ?.optJSONObject("thumbnail")
+                                     ?.optJSONArray("thumbnails")
+                                 val thumbnailUrl = thumbnails?.let {
+                                     it.optJSONObject(it.length() - 1)?.optString("url")
+                                 }
+                                 if (title.isNotBlank()) {
+                                     playlists.add(PlaylistDisplayItem(
+                                         name = title,
+                                         url = "https://music.youtube.com/playlist?list=$cleanId",
+                                         uploaderName = subtitle,
+                                         itemCount = itemCount,
+                                         thumbnailUrl = thumbnailUrl
+                                     ))
+                                 }
+                             }
+                         }
                      }
                 } catch (e: Exception) {
                      // Skip

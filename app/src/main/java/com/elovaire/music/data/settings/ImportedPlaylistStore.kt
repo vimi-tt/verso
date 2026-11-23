@@ -73,6 +73,25 @@ internal class ImportedPlaylistStore(context: Context) {
         }
     }
 
+    fun registerFavoriteSong(song: Song) {
+        synchronized(lock) {
+            val existing = entries[FAVORITES_CATALOG_KEY]
+            if (existing != null && existing.songs.any { it.id == song.id }) return
+            val updatedSongs = (existing?.songs ?: emptyList()) + song
+            entries[FAVORITES_CATALOG_KEY] = ImportedPlaylistMetadata(
+                playlistId = FAVORITES_CATALOG_KEY,
+                coverUri = null,
+                songs = updatedSongs,
+            )
+            persistLocked()
+            _snapshot.value = buildSnapshotLocked()
+        }
+    }
+
+    companion object {
+        private const val FAVORITES_CATALOG_KEY = -100L
+    }
+
     private fun loadInitialSnapshot(): ImportedPlaylistsSnapshot {
         synchronized(lock) {
             if (!file.isFile) return ImportedPlaylistsSnapshot()

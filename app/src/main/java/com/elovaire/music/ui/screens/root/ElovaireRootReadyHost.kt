@@ -107,16 +107,34 @@ internal fun ElovaireRootReadyHost(
         previousFavoriteIds = appState.favoriteSongIds
         val quality = composition.youTubeCatalog.qualityState.value
         val canAutoDownload = quality.autoDownloadLikedOnWifi && composition.youTubeDownloadManager.isOnWifi()
+        fun resolveFavoriteSong(songId: Long): elovaire.music.droidbeauty.app.domain.model.Song? {
+            return derivedState.songsById[songId]
+                ?: playbackState.currentSong?.takeIf { it.id == songId }
+                ?: playbackState.queue.firstOrNull { it.id == songId }
+                ?: composition.youTubeCatalog.accountState.value.likedSongs.firstOrNull { it.id == songId }
+                ?: elovaire.music.droidbeauty.app.data.youtube.YouTubeSongRegistry.find(songId)
+        }
         if (prev != null) {
             val newlyLiked = appState.favoriteSongIds - prev
             for (likedId in newlyLiked) {
-                val song = derivedState.songsById[likedId]
-                    ?: playbackState.queue.firstOrNull { it.id == likedId }
-                    ?: playbackState.currentSong?.takeIf { it.id == likedId }
+                val song = resolveFavoriteSong(likedId)
                 if (song != null) {
+                    if (elovaire.music.droidbeauty.app.data.youtube.YouTubeUri.isYouTubeUri(song.uri) ||
+                        derivedState.songsById[likedId] == null
+                    ) {
+                        composition.importedPlaylistStore.registerFavoriteSong(song)
+                    }
                     composition.compassoEngine.recordLikeSignal(song)
                     if (canAutoDownload && elovaire.music.droidbeauty.app.data.youtube.YouTubeUri.isYouTubeUri(song.uri)) {
                         composition.youTubeDownloadManager.enqueueDownload(song)
+                    }
+                }
+            }
+        } else {
+            for (favId in appState.favoriteSongIds) {
+                if (derivedState.songsById[favId] == null) {
+                    resolveFavoriteSong(favId)?.let { song ->
+                        composition.importedPlaylistStore.registerFavoriteSong(song)
                     }
                 }
             }

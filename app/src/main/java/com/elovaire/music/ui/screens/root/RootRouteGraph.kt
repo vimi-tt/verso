@@ -223,8 +223,24 @@ internal fun RootRouteGraph(
             val accountState by youTubeCatalog.accountState.collectAsStateWithLifecycle()
             val scope = androidx.compose.runtime.rememberCoroutineScope()
             val favoriteSongIds = routeState.appState.favoriteSongIds
-            val inAppFavoriteSongs = androidx.compose.runtime.remember(routeState.appState.library.songs, favoriteSongIds) {
-                routeState.appState.library.songs.filter { it.id in favoriteSongIds }
+            val songsById = routeState.libraryDerivedState.songsById
+            val playback = routeState.appState.playback
+            val inAppFavoriteSongs = androidx.compose.runtime.remember(
+                songsById,
+                favoriteSongIds,
+                playback.currentSong,
+                playback.queue,
+                accountState.likedSongs,
+            ) {
+                val likedById = accountState.likedSongs.associateBy { it.id }
+                val queueById = playback.queue.associateBy { it.id }
+                favoriteSongIds.toList().asReversed().mapNotNull { id ->
+                    songsById[id]
+                        ?: playback.currentSong?.takeIf { it.id == id }
+                        ?: queueById[id]
+                        ?: likedById[id]
+                        ?: elovaire.music.droidbeauty.app.data.youtube.YouTubeSongRegistry.find(id)
+                }
             }
             YouTubeFavoritesScreen(
                 inAppFavoriteSongs = inAppFavoriteSongs,

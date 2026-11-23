@@ -241,9 +241,7 @@ internal fun BoxScope.RootPlayerLayerSlot(
             { song -> YouTubeUri.videoId(song.uri)?.let(manager::removeDownload) }
         },
         onToggleFavorite = playlistActions::toggleFavorite,
-        onAddCurrentSongToPlaylist = { playlistId, song ->
-            playlistActions.addSongsToPlaylist(playlistId, listOf(song.id))
-        },
+        onAddCurrentSongToPlaylist = LocalSongMenuActions.current.onAddToPlaylist,
         onCreatePlaylist = playlistActions::createPlaylist,
         onOpenEqualizer = {
             playerLayerController.hide(false)
