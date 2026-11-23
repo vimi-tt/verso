@@ -24,6 +24,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.ExperimentalHazeApi
+import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazePerformanceMode
@@ -333,4 +335,48 @@ internal fun FrostedTopBarBackground(
         modifier = modifier,
         hazeState = hazeState,
     )
+}
+
+@OptIn(ExperimentalHazeApi::class)
+@Composable
+internal fun SimpleTopBarBlurBackdrop(
+    modifier: Modifier = Modifier,
+    hazeState: HazeState? = null,
+) {
+    val effectiveHazeState = hazeState ?: LocalPlayerHazeState.current ?: LocalChromeHazeState.current
+    val bg = androidx.compose.material3.MaterialTheme.colorScheme.background
+    val canBlur = effectiveHazeState != null && shouldApplyDynamicBackdropHaze(
+        sdkInt = Build.VERSION.SDK_INT,
+        flatOverlay = false,
+        hazeStateAvailable = true,
+    )
+    Box(modifier = modifier) {
+        if (canBlur) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .hazeBlur(
+                        input = HazeInput.Sources(effectiveHazeState),
+                        style = HazeBlurStyle {
+                            blurRadius(20.dp)
+                            backgroundColor(bg.copy(alpha = 0.25f))
+                            colorEffects(listOf(HazeColorEffect.tint(bg.copy(alpha = 0.20f))))
+                            progressive(HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0f))
+                        },
+                        performanceMode = HazePerformanceMode.Quality,
+                    ),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        0.0f to bg.copy(alpha = if (canBlur) 0.72f else 0.90f),
+                        0.62f to bg.copy(alpha = if (canBlur) 0.34f else 0.56f),
+                        1.0f to Color.Transparent,
+                    ),
+                ),
+        )
+    }
 }

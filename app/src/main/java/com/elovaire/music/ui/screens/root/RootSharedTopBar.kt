@@ -4,6 +4,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -224,9 +225,7 @@ internal fun UnifiedTopBar(
                 .consumePointersWithoutSemantics(),
         )
         if (!useSharedBackdrop) {
-            FrostedTopBarBackground(
-                darkTheme = darkTheme,
-                showEdgeLine = false,
+            SimpleTopBarBlurBackdrop(
                 modifier = Modifier.matchParentSize(),
             )
         }
@@ -702,7 +701,7 @@ private fun UnifiedTopBarRow(
             )
             .heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
+        horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.lg),
     ) {
         Box(
             modifier = Modifier
@@ -758,6 +757,7 @@ private fun UnifiedTopBarRow(
                 Surface(
                     shape = RoundedCornerShape(ElovaireRadii.pill),
                     color = versoColors.playerChipContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.xs),
