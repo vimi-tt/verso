@@ -207,15 +207,15 @@ internal fun YouTubeArtistScreen(
                             top = topBarOccupiedHeight() + 14.dp,
                             bottom = bottomPadding + 24.dp,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.xl),
                     ) {
                     item(key = "yt_artist_editorial_header") {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 20.dp),
+                                .padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.md),
                         ) {
                             ArtworkImage(
                                 uri = page.bannerUri,
@@ -254,8 +254,8 @@ internal fun YouTubeArtistScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 20.dp, vertical = 2.dp),
-                                horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally),
+                                    .padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding, vertical = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.xs),
+                                horizontalArrangement = Arrangement.spacedBy(elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.lg, Alignment.CenterHorizontally),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 ArtistCircularQuickAction(
@@ -267,7 +267,7 @@ internal fun YouTubeArtistScreen(
                                     modifier = Modifier
                                         .size(56.dp)
                                         .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.onSurface)
+                                        .background(MaterialTheme.colorScheme.primary)
                                         .semantics {
                                             role = Role.Button
                                             contentDescription = ytCopy.playAll
@@ -278,7 +278,7 @@ internal fun YouTubeArtistScreen(
                                     androidx.compose.material3.Icon(
                                         painter = painterResource(id = R.drawable.ic_lucide_play),
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.surface,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier.size(22.dp),
                                     )
                                 }
@@ -306,8 +306,8 @@ internal fun YouTubeArtistScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 20.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    .padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding),
+                                verticalArrangement = Arrangement.spacedBy(elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.md),
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -381,14 +381,14 @@ internal fun YouTubeArtistScreen(
                                     text = ytCopy.fansMightAlsoLike,
                                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(horizontal = 20.dp),
+                                    modifier = Modifier.padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding),
                                 )
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .horizontalScroll(rememberScrollState())
-                                        .padding(horizontal = 20.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                        .padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding),
+                                    horizontalArrangement = Arrangement.spacedBy(elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.md),
                                 ) {
                                     page.similarArtists.forEach { similar ->
                                         Column(
@@ -424,9 +424,9 @@ internal fun YouTubeArtistScreen(
 
                     page.bio?.takeIf(String::isNotBlank)?.let { bio ->
                         item(key = "yt_artist_bio") {
-                            Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                            Box(modifier = Modifier.padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding)) {
                                 ModuleCard(
-                                    contentPadding = PaddingValues(18.dp),
+                                    contentPadding = PaddingValues(vertical = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.xs),
                                 ) {
                                     Column(
                                         modifier = Modifier
@@ -517,7 +517,7 @@ private fun ArtistCollectionsCarousel(
             text = title,
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = 20.dp),
+            modifier = Modifier.padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding),
         )
         Row(
             modifier = Modifier

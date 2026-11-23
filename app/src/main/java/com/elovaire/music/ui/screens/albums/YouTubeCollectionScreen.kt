@@ -240,9 +240,9 @@ internal fun YouTubeCollectionScreen(
                 .fillMaxSize()
                 .ensureSingleItemRubberBand(listState),
             contentPadding = PaddingValues(
-                start = 20.dp,
-                end = 20.dp,
-                top = topBarOccupiedHeight() + 10.dp,
+                start = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding,
+                end = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding,
+                top = topBarOccupiedHeight() + elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.md,
                 bottom = bottomPadding + 24.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(18.dp),

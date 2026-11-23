@@ -544,9 +544,9 @@ internal fun AlbumScreen(
                     .fillMaxSize()
                     .ensureSingleItemRubberBand(listState),
                 contentPadding = PaddingValues(
-                    start = 20.dp,
+                    start = ElovaireSpacing.screenHorizontalPadding,
                     top = detailTopPadding + ElovaireSpacing.albumHeaderTopGap,
-                    end = 20.dp,
+                    end = ElovaireSpacing.screenHorizontalPadding,
                     bottom = bottomPadding,
                 ),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -706,15 +706,15 @@ internal fun AlbumScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             AlbumHeaderPlayButton(
-                                tint = Color.White,
-                                backgroundColor = RoseAccent,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                backgroundColor = MaterialTheme.colorScheme.primary,
                                 onClick = { onPlayAlbum(album) },
                             )
                             AlbumHeaderActionButton(
                                 iconResId = R.drawable.ic_lucide_shuffle,
                                 contentDescription = copy.shuffleAlbum,
-                                tint = Color.White,
-                                backgroundColor = RoseAccent,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                backgroundColor = MaterialTheme.colorScheme.surfaceVariant,
                                 iconSize = 18.dp,
                                 onClick = { onShuffleAlbum(album) },
                             )
@@ -1332,7 +1332,7 @@ internal fun AddSongsToPlaylistOverlay(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 16.dp),
+                    .padding(ElovaireSpacing.lg),
             ) {
                 OutlinedTextField(
                     value = query,
@@ -1451,8 +1451,8 @@ internal fun AddSongsToPlaylistOverlay(
                             .fillMaxSize()
                             .ensureSingleItemRubberBand(listState),
                         contentPadding = PaddingValues(
-                            start = 20.dp,
-                            end = 20.dp,
+                            start = ElovaireSpacing.screenHorizontalPadding,
+                            end = ElovaireSpacing.screenHorizontalPadding,
                             bottom = overlayBottomPadding,
                         ),
                         verticalArrangement = Arrangement.spacedBy(0.dp),

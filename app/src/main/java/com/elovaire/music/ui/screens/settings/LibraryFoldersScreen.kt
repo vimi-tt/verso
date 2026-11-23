@@ -451,7 +451,7 @@ private fun NetworkSourceRemovalDialog(
                 surfaceId = "folders.remove_confirmation",
                 visible = source != null,
                 onExitFinished = { if (source == null) mounted = false },
-                modifier = Modifier.padding(horizontal = 20.dp),
+                modifier = Modifier.padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
             ) {
                 DynamicBackdropSurface(
                     modifier = Modifier.fillMaxWidth(),
@@ -563,8 +563,8 @@ private fun LibrarySourceChooserSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                        .padding(start = ElovaireSpacing.screenHorizontalPadding, top = ElovaireSpacing.lg, end = ElovaireSpacing.screenHorizontalPadding, bottom = ElovaireSpacing.xl),
+                    verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),

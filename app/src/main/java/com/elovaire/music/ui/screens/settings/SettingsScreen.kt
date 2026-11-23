@@ -258,12 +258,12 @@ internal fun SettingsScreen(
                 .fillMaxSize()
                 .ensureSingleItemRubberBand(listState),
             contentPadding = PaddingValues(
-                start = 18.dp,
-                top = topBarOccupiedHeight() + 8.dp,
-                end = 18.dp,
-                bottom = bottomPadding + buttonNavigationScrollBoost() + 20.dp,
+                start = ElovaireSpacing.screenHorizontalPadding,
+                top = topBarOccupiedHeight() + ElovaireSpacing.sm,
+                end = ElovaireSpacing.screenHorizontalPadding,
+                bottom = bottomPadding + buttonNavigationScrollBoost() + ElovaireSpacing.xl,
             ),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.xl),
         ) {
             item(key = "settings_accounts_header") {
                 val accountsTitle = when (appLanguage) {
@@ -1474,9 +1474,9 @@ private fun LanguageSelectionDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(start = 20.dp, top = 18.dp, end = 16.dp, bottom = 18.dp)
+                            .padding(ElovaireSpacing.lg)
                             .animateContentSize(animationSpec = motionSpecs.contentSize()),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
                     ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1688,7 +1688,7 @@ private fun BoxScope.LibraryScanProgressPopup(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(

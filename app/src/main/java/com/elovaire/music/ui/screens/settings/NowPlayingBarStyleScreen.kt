@@ -127,7 +127,7 @@ private fun StyleOptionCard(
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, borderColor, shape)
             .elovaireClickable(onClick = onClick)
-            .padding(18.dp),
+            .padding(ElovaireSpacing.lg),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
@@ -178,10 +178,9 @@ private fun StyleOptionCard(
 
 @Composable
 private fun NowPlayingStylePreview(style: NowPlayingBarStyle) {
-    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val previewBackground = if (darkTheme) Color(0xFF080B0B) else Color(0xFFE9ECEC)
-    val previewSurface = if (darkTheme) Color(0xFF202424) else Color.White
-    val previewText = if (darkTheme) Color.White else InkText
+    val previewBackground = MaterialTheme.colorScheme.background
+    val previewSurface = MaterialTheme.colorScheme.surfaceVariant
+    val previewText = MaterialTheme.colorScheme.onSurface
     Box(
         modifier = Modifier
             .fillMaxWidth()
