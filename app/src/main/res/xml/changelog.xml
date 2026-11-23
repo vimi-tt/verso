@@ -6,6 +6,13 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
+    <release version="Banjo 1">
+        <item>Introduced a new Verso visual identity with Outfit display typography, Geist body copy, neutral surfaces, and a 4dp spacing grid across Library, Search, Playlists, Albums, Artists, and Settings</item>
+        <item>Redesigned the top bar on Home, Library, Playlists, and Search with a single translucent pill for account and menu actions, three-dot menu icon, and borderless edge</item>
+        <item>Redesigned the bottom navigation bar with a brand-blue selection pill, consistent icons, and readable labels, and updated mini player geometry</item>
+        <item>Added contrast-safe cover color tinting to currently playing list rows and album and playlist headers, alongside larger covers matching the player radius</item>
+        <item>Added a 4-tone category accent palette for Mixes, Discover, Downloads, and Favorites section headers and refined UI motion to 150–250 ms</item>
+    </release>
     <release version="Arcodeon 2">
         <item>Encrypted Last.fm session storage with Android Keystore, added a persistent offline scrobble queue, and added ListenBrainz integration</item>
         <item>Added full YouTube Music playlist editing (rename, search and add songs, remove tracks) and YouTube playlist selection in Add to Playlist</item>
