@@ -111,14 +111,14 @@ class MotionSpecs internal constructor(
         easing = MotionEasing.SoftOut,
     )
 
-    fun <T> chromeRelease(): FiniteAnimationSpec<T> = spring(
-        dampingRatio = Spring.DampingRatioNoBouncy,
-        stiffness = 520f,
+    fun <T> chromeRelease(): FiniteAnimationSpec<T> = tween(
+        durationMillis = MotionDuration.Quick,
+        easing = MotionEasing.RefinedDecelerate,
     )
 
-    fun <T> mediaRelease(): FiniteAnimationSpec<T> = spring(
-        dampingRatio = 0.86f,
-        stiffness = 480f,
+    fun <T> mediaRelease(): FiniteAnimationSpec<T> = tween(
+        durationMillis = MotionDuration.Fast,
+        easing = MotionEasing.RefinedDecelerate,
     )
 }
 

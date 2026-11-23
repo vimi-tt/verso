@@ -6,34 +6,34 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 
 object MotionDuration {
-    const val Micro = 80
-    const val Quick = 90
-    const val Fast = 120
-    const val Standard = 180
-    const val Medium = 260
-    const val Spacious = 340
-    const val Screen = 360
-    const val ScreenFade = 240
-    const val ScreenSlide = 420
-    const val ScreenExpand = 440
+    const val Micro = 100
+    const val Quick = 150
+    const val Fast = 160
+    const val Standard = 200
+    const val Medium = 240
+    const val Spacious = 250
+    const val Screen = 240
+    const val ScreenFade = 180
+    const val ScreenSlide = 240
+    const val ScreenExpand = 240
     const val Player = 540
     const val PlayerFade = 260
-    const val Component = 240
-    const val TopBarActionExit = 120
+    const val Component = 200
+    const val TopBarActionExit = 150
     const val TopBarActionEnter = 180
-    const val ChromeResize = 220
-    const val Emphasized = 460
-    const val TopLevelEnter = 320
-    const val TopLevelExit = 240
-    const val DetailEnter = 480
-    const val DetailExit = 340
-    const val AlbumDetail = 540
-    const val FullScreenEnter = 440
-    const val FullScreenExit = 320
-    const val QueueMenuEnter = 480
-    const val QueueMenuExit = 340
-    const val ListReveal = 320
-    const val ListPlacement = 320
+    const val ChromeResize = 200
+    const val Emphasized = 250
+    const val TopLevelEnter = 220
+    const val TopLevelExit = 180
+    const val DetailEnter = 240
+    const val DetailExit = 200
+    const val AlbumDetail = 250
+    const val FullScreenEnter = 240
+    const val FullScreenExit = 200
+    const val QueueMenuEnter = 240
+    const val QueueMenuExit = 200
+    const val ListReveal = 200
+    const val ListPlacement = 200
 }
 
 object MotionEasing {
