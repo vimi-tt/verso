@@ -78,6 +78,7 @@ internal fun BoxScope.RootChromeHost(
     if (showSharedTopBarBackdrop && sharedTopBarSpec != null) {
         FrostedTopBarBackground(
             darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f,
+            showEdgeLine = sharedTopBarSpec !is SharedTopBarSpec.Unified,
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .offset(x = contentPaneStart)

@@ -5,21 +5,26 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -38,6 +43,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +54,7 @@ import elovaire.music.droidbeauty.app.R
 import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
 import elovaire.music.droidbeauty.app.ui.i18n.navigationAccessibilityCopy
 import elovaire.music.droidbeauty.app.ui.i18n.rootUiCopy
+import elovaire.music.droidbeauty.app.ui.i18n.youtubeAccountCopy
 import elovaire.music.droidbeauty.app.ui.interaction.consumePointersWithoutSemantics
 import elovaire.music.droidbeauty.app.ui.interaction.elovairePressScale
 import elovaire.music.droidbeauty.app.ui.interaction.rememberElovaireInteractionSource
@@ -56,6 +64,7 @@ import elovaire.music.droidbeauty.app.ui.motion.rememberMotionTransitions
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
 import elovaire.music.droidbeauty.app.ui.theme.InkText
+import elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors
 import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
 
 internal val LocalSharedTopBarController = compositionLocalOf<SharedTopBarController?> { null }
@@ -217,61 +226,22 @@ internal fun UnifiedTopBar(
         if (!useSharedBackdrop) {
             FrostedTopBarBackground(
                 darkTheme = darkTheme,
+                showEdgeLine = false,
                 modifier = Modifier.matchParentSize(),
             )
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = ElovaireSpacing.lg, end = ElovaireSpacing.md, top = ElovaireSpacing.xs, bottom = ElovaireSpacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Box(
-                modifier = Modifier
-                    .zIndex(1f)
-                    .weight(1f)
-                    .height(40.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                )
-            }
-            if (showSettings) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (supplementalActionIconResId != null && onSupplementalAction != null) {
-                        AnimatedSharedTopBarActions(
-                            actions = listOf(
-                                TopBarActionSpec(
-                                    iconResId = supplementalActionIconResId,
-                                    contentDescription = supplementalActionContentDescription ?: "Action",
-                                    onClick = onSupplementalAction,
-                                ),
-                            ),
-                        )
-                    } else {
-                        AnimatedSharedTopBarActions(actions = emptyList())
-                    }
-                    HeaderIconButton(
-                        iconResId = R.drawable.ic_lucide_menu,
-                        contentDescription = navigationAccessibilityCopy(LocalAppLanguage.current).menu,
-                        showBackground = false,
-                        onClick = onOpenMenu,
-                        modifier = Modifier.zIndex(1f),
-                    )
-                }
-            } else {
-                Spacer(modifier = Modifier.size(40.dp))
-            }
-        }
+        UnifiedTopBarRow(
+            title = title,
+            animateTitle = false,
+            showSettings = showSettings,
+            supplementalActionIconResId = supplementalActionIconResId,
+            supplementalActionContentDescription = supplementalActionContentDescription,
+            onSupplementalAction = onSupplementalAction,
+            isYouTubeLoggedIn = false,
+            youTubeAvatarUrl = null,
+            onYouTubeAccountClick = null,
+            onOpenMenu = onOpenMenu,
+        )
     }
 }
 
@@ -474,69 +444,18 @@ internal fun SharedTopBarOverlay(
         ) { currentSpec ->
             when (currentSpec) {
                 is SharedTopBarSpec.Unified -> {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(start = 20.dp, end = 16.dp, top = 3.dp, bottom = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(40.dp),
-                            contentAlignment = Alignment.CenterStart,
-                        ) {
-                            ElovaireAnimatedContent(
-                                targetState = currentSpec.title,
-                                transitionSpec = {
-                                    motionTransitions.topBarTextForwardTransform()
-                                },
-                                label = "SharedTopBarUnifiedTitle",
-                            ) { currentTitle ->
-                                Text(
-                                    text = currentTitle,
-                                    style = MaterialTheme.typography.displayLarge.copy(fontSize = elovaireScaledSp(25f)),
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                        if (currentSpec.showSettings) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                AnimatedSharedTopBarActions(
-                                    actions = if (currentSpec.supplementalActionIconResId != null && currentSpec.onSupplementalAction != null) {
-                                        listOf(
-                                            TopBarActionSpec(
-                                                iconResId = currentSpec.supplementalActionIconResId,
-                                                contentDescription = currentSpec.supplementalActionContentDescription ?: "Action",
-                                                onClick = currentSpec.onSupplementalAction,
-                                            ),
-                                        )
-                                    } else {
-                                        emptyList()
-                                    },
-                                )
-                                TopBarAccountAvatarButton(
-                                    isYouTubeLoggedIn = isYouTubeLoggedIn,
-                                    avatarUrl = youTubeAvatarUrl,
-                                    onClick = onYouTubeAccountClick,
-                                )
-                                HeaderIconButton(
-                                    iconResId = R.drawable.ic_lucide_menu,
-                                    contentDescription = navigationAccessibilityCopy(language).menu,
-                                    showBackground = false,
-                                    onClick = currentSpec.onOpenMenu,
-                                )
-                            }
-                        } else {
-                            Spacer(modifier = Modifier.size(48.dp))
-                        }
-                    }
+                    UnifiedTopBarRow(
+                        title = currentSpec.title,
+                        animateTitle = true,
+                        showSettings = currentSpec.showSettings,
+                        supplementalActionIconResId = currentSpec.supplementalActionIconResId,
+                        supplementalActionContentDescription = currentSpec.supplementalActionContentDescription,
+                        onSupplementalAction = currentSpec.onSupplementalAction,
+                        isYouTubeLoggedIn = isYouTubeLoggedIn,
+                        youTubeAvatarUrl = youTubeAvatarUrl,
+                        onYouTubeAccountClick = onYouTubeAccountClick,
+                        onOpenMenu = currentSpec.onOpenMenu,
+                    )
                 }
 
                 is SharedTopBarSpec.Back -> {
@@ -704,7 +623,7 @@ internal fun HeaderIconButton(
     val sharedTopMenuPainter = LocalSharedTopMenuIconPainter.current
     val iconPainter = when {
         iconResId == R.drawable.ic_lucide_chevron_left && sharedBackPainter != null -> sharedBackPainter
-        iconResId == R.drawable.ic_lucide_menu && sharedTopMenuPainter != null -> sharedTopMenuPainter
+        (iconResId == R.drawable.ic_lucide_menu || iconResId == R.drawable.ic_lucide_ellipsis_vertical) && sharedTopMenuPainter != null -> sharedTopMenuPainter
         else -> painterResource(id = iconResId)
     }
     Box(
@@ -753,32 +672,144 @@ internal fun HeaderIconButton(
 }
 
 @Composable
+private fun UnifiedTopBarRow(
+    title: String,
+    animateTitle: Boolean,
+    showSettings: Boolean,
+    @DrawableRes supplementalActionIconResId: Int?,
+    supplementalActionContentDescription: String?,
+    onSupplementalAction: (() -> Unit)?,
+    isYouTubeLoggedIn: Boolean,
+    youTubeAvatarUrl: String?,
+    onYouTubeAccountClick: (() -> Unit)?,
+    onOpenMenu: () -> Unit,
+) {
+    val language = LocalAppLanguage.current
+    val motionTransitions = rememberMotionTransitions()
+    val versoColors = LocalVersoColors.current
+    val titleStyle = MaterialTheme.typography.titleLarge.copy(
+        fontSize = elovaireScaledSp(22f),
+        fontWeight = FontWeight.SemiBold,
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(
+                horizontal = ElovaireSpacing.screenHorizontalPadding,
+                vertical = ElovaireSpacing.xs,
+            )
+            .heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
+    ) {
+        Box(
+            modifier = Modifier
+                .zIndex(1f)
+                .weight(1f)
+                .heightIn(min = 48.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            if (animateTitle) {
+                ElovaireAnimatedContent(
+                    targetState = title,
+                    transitionSpec = {
+                        motionTransitions.topBarTextForwardTransform()
+                    },
+                    label = "SharedTopBarUnifiedTitle",
+                ) { currentTitle ->
+                    Text(
+                        text = currentTitle,
+                        style = titleStyle,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else {
+                Text(
+                    text = title,
+                    style = titleStyle,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (showSettings) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AnimatedSharedTopBarActions(
+                    actions = if (supplementalActionIconResId != null && onSupplementalAction != null) {
+                        listOf(
+                            TopBarActionSpec(
+                                iconResId = supplementalActionIconResId,
+                                contentDescription = supplementalActionContentDescription ?: "Action",
+                                onClick = onSupplementalAction,
+                            ),
+                        )
+                    } else {
+                        emptyList()
+                    },
+                )
+                Surface(
+                    shape = RoundedCornerShape(ElovaireRadii.pill),
+                    color = versoColors.playerChipContainer,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (onYouTubeAccountClick != null) {
+                            TopBarAccountAvatarButton(
+                                isYouTubeLoggedIn = isYouTubeLoggedIn,
+                                avatarUrl = youTubeAvatarUrl,
+                                contentDescription = youtubeAccountCopy(language).accountTitle,
+                                onClick = onYouTubeAccountClick,
+                            )
+                        }
+                        TopBarPillMenuButton(
+                            contentDescription = navigationAccessibilityCopy(language).menu,
+                            onClick = onOpenMenu,
+                        )
+                    }
+                }
+            }
+        } else {
+            Spacer(modifier = Modifier.size(48.dp))
+        }
+    }
+}
+
+@Composable
 private fun TopBarAccountAvatarButton(
     isYouTubeLoggedIn: Boolean,
     avatarUrl: String?,
+    contentDescription: String,
     onClick: () -> Unit,
 ) {
-    val borderColor = if (isYouTubeLoggedIn) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
-    }
-    val containerColor = if (isYouTubeLoggedIn) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-    }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val pressedOverlay = LocalVersoColors.current.playerChipPressedOverlay
+
     Box(
         modifier = Modifier
-            .size(30.dp)
+            .size(48.dp)
             .clip(CircleShape)
-            .background(containerColor)
-            .border(
-                width = if (isYouTubeLoggedIn) 1.5.dp else 1.dp,
-                color = borderColor,
-                shape = CircleShape,
-            )
-            .clickable(onClick = onClick),
+            .background(if (isPressed || isFocused) pressedOverlay else Color.Transparent)
+            .semantics {
+                this.contentDescription = contentDescription
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         if (isYouTubeLoggedIn && !avatarUrl.isNullOrBlank()) {
@@ -786,7 +817,7 @@ private fun TopBarAccountAvatarButton(
                 uri = android.net.Uri.parse(avatarUrl),
                 title = "",
                 placeholderIconResId = R.drawable.ic_lucide_user_round,
-                modifier = Modifier.size(30.dp),
+                modifier = Modifier.size(28.dp),
                 cornerRadius = ElovaireRadii.pill,
                 requestedSizePx = 128,
                 showArtworkGlow = false,
@@ -795,9 +826,45 @@ private fun TopBarAccountAvatarButton(
             Icon(
                 painter = painterResource(id = R.drawable.ic_lucide_user_round),
                 contentDescription = null,
-                tint = if (isYouTubeLoggedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(20.dp),
             )
         }
+    }
+}
+
+@Composable
+private fun TopBarPillMenuButton(
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val pressedOverlay = LocalVersoColors.current.playerChipPressedOverlay
+    val sharedTopMenuPainter = LocalSharedTopMenuIconPainter.current
+
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(if (isPressed || isFocused) pressedOverlay else Color.Transparent)
+            .semantics {
+                this.contentDescription = contentDescription
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = sharedTopMenuPainter ?: painterResource(id = R.drawable.ic_lucide_ellipsis_vertical),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }

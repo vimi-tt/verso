@@ -146,7 +146,7 @@ private fun rememberRootShellInputs(
         overscrollFactory = rememberElovaireOverscrollFactory(),
         chromeHazeState = rememberHazeState(),
         sharedBackIconPainter = painterResource(id = R.drawable.ic_lucide_chevron_left),
-        sharedTopMenuIconPainter = painterResource(id = R.drawable.ic_lucide_menu),
+        sharedTopMenuIconPainter = painterResource(id = R.drawable.ic_lucide_ellipsis_vertical),
         sharedTopBarController = sharedTopBarController,
         navHostBlur = 0.dp,
         navHostScrimAlpha = 0f,

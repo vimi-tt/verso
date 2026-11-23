@@ -26,6 +26,8 @@ data class VersoExtendedColors(
     val mutedIcon: Color,
     val miniPlayerBase: Color,
     val scrim: Color,
+    val playerChipContainer: Color,
+    val playerChipPressedOverlay: Color,
 )
 
 private val LightExtendedColors = VersoExtendedColors(
@@ -40,6 +42,8 @@ private val LightExtendedColors = VersoExtendedColors(
     mutedIcon = InkTextSecondary,
     miniPlayerBase = Snow.copy(alpha = 0.90f),
     scrim = InkText.copy(alpha = 0.36f),
+    playerChipContainer = InkText.copy(alpha = 0.2f),
+    playerChipPressedOverlay = InkText.copy(alpha = 0.12f),
 )
 
 private val DarkExtendedColors = VersoExtendedColors(
@@ -54,6 +58,8 @@ private val DarkExtendedColors = VersoExtendedColors(
     mutedIcon = Slate,
     miniPlayerBase = Carbon.copy(alpha = 0.88f),
     scrim = Night.copy(alpha = 0.60f),
+    playerChipContainer = BoneText.copy(alpha = 0.2f),
+    playerChipPressedOverlay = BoneText.copy(alpha = 0.12f),
 )
 
 val LocalVersoColors = staticCompositionLocalOf { LightExtendedColors }
