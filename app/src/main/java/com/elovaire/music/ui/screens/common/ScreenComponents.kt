@@ -503,6 +503,7 @@ internal fun SectionTitleRow(
 internal fun MutedSectionHeader(
     title: String,
     iconResId: Int,
+    accentColor: Color? = null,
     onClick: (() -> Unit)? = null,
 ) {
     Row(
@@ -527,7 +528,7 @@ internal fun MutedSectionHeader(
             Icon(
                 painter = painterResource(id = iconResId),
                 contentDescription = null,
-                tint = readableMutedIconColor(),
+                tint = accentColor ?: readableMutedIconColor(),
                 modifier = Modifier.size(16.dp),
             )
             Text(

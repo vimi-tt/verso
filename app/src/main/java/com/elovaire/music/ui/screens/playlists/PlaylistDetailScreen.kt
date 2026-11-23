@@ -289,8 +289,7 @@ internal fun PlaylistDetailScreen(
         val headerArtworkUri = remember(coverUriOverride, playlistSongs) {
             coverUriOverride?.let(android.net.Uri::parse) ?: playlistSongs.firstOrNull()?.artUri
         }
-        val paletteAccent by rememberArtworkPaletteAccent(headerArtworkUri)
-        val headerTint = paletteAccent ?: MaterialTheme.colorScheme.primary
+        val headerTint by elovaire.music.droidbeauty.app.ui.components.rememberArtworkHeaderWash(headerArtworkUri)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -754,12 +753,23 @@ internal fun PlaylistSongRow(
             onLongClick = onLongPress,
         )
     }
+    val playingAccent = if (isCurrentSong) {
+        elovaire.music.droidbeauty.app.ui.components.rememberReadableArtworkAccent(song.artUri).value
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val rowBackground = if (handleDragActive) {
+        dragHighlight
+    } else if (isCurrentSong) {
+        playingAccent.copy(alpha = 0.10f)
+    } else {
+        Color.Transparent
+    }
     Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(ElovaireRadii.tile))
-                .background(dragHighlight)
+                .background(rowBackground)
                 .graphicsLayer {
                     scaleX = rowScale
                     scaleY = rowScale
@@ -872,7 +882,7 @@ internal fun PlaylistSongRow(
                         title = song.title,
                         isExplicit = song.isExplicit,
                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = if (isCurrentSong) playingAccent else MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth(),

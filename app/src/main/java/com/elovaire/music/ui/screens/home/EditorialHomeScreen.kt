@@ -219,6 +219,7 @@ internal fun EditorialHomeScreen(
                 subtitle = copy.newReleasesSubtitle,
                 showSeeAll = editorialState.newReleases is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.NewReleases) },
+                categoryAccent = elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.categories.discover,
             ) {
                 when (val section = editorialState.newReleases) {
                     EditorialSectionState.Loading -> EditorialCarouselSkeleton(cardSize = 164.dp, count = 4)
@@ -252,6 +253,7 @@ internal fun EditorialHomeScreen(
                 subtitle = copy.essentialsSubtitle,
                 showSeeAll = editorialState.essentials is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Essentials) },
+                categoryAccent = elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.categories.favorites,
             ) {
                 when (val section = editorialState.essentials) {
                     EditorialSectionState.Loading -> EditorialCarouselSkeleton(cardSize = 164.dp, count = 4)
@@ -285,6 +287,7 @@ internal fun EditorialHomeScreen(
                 subtitle = copy.trendingSubtitle,
                 showSeeAll = editorialState.trending is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Trending) },
+                categoryAccent = elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.categories.discover,
             ) {
                 when (val section = editorialState.trending) {
                     EditorialSectionState.Loading -> EditorialTrendingSkeleton()
@@ -317,6 +320,7 @@ internal fun EditorialHomeScreen(
                 subtitle = copy.moodsSubtitle,
                 showSeeAll = editorialState.moods is EditorialSectionState.Content,
                 onSeeAllClick = { onOpenSeeAll(EditorialSectionId.Moods) },
+                categoryAccent = elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.categories.discover,
             ) {
                 when (val section = editorialState.moods) {
                     EditorialSectionState.Loading -> EditorialMoodsSkeleton()
@@ -483,18 +487,18 @@ private fun EditorialResumeCard(
 ) {
     Column(
         modifier = Modifier
-            .width(144.dp)
+            .width(160.dp)
             .clip(RoundedCornerShape(ElovaireRadii.artwork))
             .semantics(mergeDescendants = true) { role = Role.Button }
             .elovaireClickable(onClick = onClick),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
     ) {
         ArtworkImage(
             uri = song.artUri,
             title = song.title,
-            modifier = Modifier.size(144.dp),
+            modifier = Modifier.size(160.dp),
             cornerRadius = ElovaireRadii.artwork,
-            requestedSizePx = 320,
+            requestedSizePx = 360,
             showArtworkGlow = false,
         )
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -528,7 +532,7 @@ internal fun EditorialCollectionCarousel(
     LazyRow(
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = ElovaireSpacing.screenHorizontalPadding),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
     ) {
         items(
             items = items,
@@ -537,7 +541,7 @@ internal fun EditorialCollectionCarousel(
         ) { item ->
             EditorialCollectionCard(
                 item = item,
-                cardWidth = 164.dp,
+                cardWidth = 176.dp,
                 onClick = { onCollectionClick(item.collection) },
             )
         }
@@ -774,17 +778,19 @@ internal fun EditorialSectionBlock(
     showSeeAll: Boolean,
     onSeeAllClick: () -> Unit,
     modifier: Modifier = Modifier,
+    categoryAccent: Color? = null,
     content: @Composable () -> Unit,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
     ) {
         EditorialSectionHeader(
             title = title,
             subtitle = subtitle,
             showSeeAll = showSeeAll,
             onSeeAllClick = onSeeAllClick,
+            categoryAccent = categoryAccent,
             modifier = Modifier.padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
         )
         content()
@@ -798,6 +804,7 @@ internal fun EditorialSectionHeader(
     showSeeAll: Boolean,
     onSeeAllClick: () -> Unit,
     modifier: Modifier = Modifier,
+    categoryAccent: Color? = null,
 ) {
     val language = LocalAppLanguage.current
     val copy = remember(language) { editorialHomeCopy(language) }
@@ -813,16 +820,30 @@ internal fun EditorialSectionHeader(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Row(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(end = 12.dp),
-            )
+                    .padding(end = ElovaireSpacing.md),
+                horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (categoryAccent != null) {
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .height(16.dp)
+                            .clip(RoundedCornerShape(ElovaireRadii.pill))
+                            .background(categoryAccent),
+                    )
+                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (showSeeAll) {
                 Box(
                     modifier = Modifier

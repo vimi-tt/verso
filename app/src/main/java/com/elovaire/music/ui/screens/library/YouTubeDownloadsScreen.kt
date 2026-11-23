@@ -309,7 +309,7 @@ internal fun YouTubeDownloadsScreen(
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_lucide_download),
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    tint = elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.categories.downloads,
                                     modifier = Modifier.size(20.dp),
                                 )
                                 Column(

@@ -2067,7 +2067,7 @@ private fun SettingsToggle(
     }, animationSpec = motionSpecs.tween(MotionDuration.Standard), label = "settings_toggle_thumb_color")
     val trackColor by animateColorAsState(
         targetValue = if (checked) {
-            ToggleEnabledGreen
+            elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.toggleEnabled
         } else {
             MaterialTheme.colorScheme.onSurface.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) 0.16f else 0.2f)
         },

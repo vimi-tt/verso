@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -322,7 +323,10 @@ internal fun PlaylistsScreen(
                     span = { GridItemSpan(maxLineSpan) },
                     contentType = "playlist_section_header",
                 ) {
-                    PlaylistSectionHeader(playlistMainCopy(language).smartMixes)
+                    PlaylistSectionHeader(
+                        text = playlistMainCopy(language).smartMixes,
+                        categoryAccent = elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.categories.mixes,
+                    )
                 }
                 item(
                     key = "smart_mix_rows",
@@ -424,13 +428,30 @@ private fun SmartMixSeparator() {
 }
 
 @Composable
-private fun PlaylistSectionHeader(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-        color = MaterialTheme.colorScheme.onSurface,
+private fun PlaylistSectionHeader(
+    text: String,
+    categoryAccent: Color? = null,
+) {
+    Row(
         modifier = Modifier.padding(top = ElovaireSpacing.sm, bottom = ElovaireSpacing.xs),
-    )
+        horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (categoryAccent != null) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(16.dp)
+                    .clip(RoundedCornerShape(ElovaireRadii.pill))
+                    .background(categoryAccent),
+            )
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
 }
 
 @Composable
@@ -516,7 +537,7 @@ internal fun PlaylistGridTile(
                 onClick = { onClick(bounds.toExpandOrigin(screenWidthPx, screenHeightPx)) },
                 onLongClick = onLongPress,
             ),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
     ) {
         Box {
             if (!coverUriOverride.isNullOrBlank()) {
@@ -527,7 +548,8 @@ internal fun PlaylistGridTile(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(1f),
-                    cornerRadius = ElovaireRadii.card,
+                    cornerRadius = ElovaireRadii.artwork,
+                    showArtworkGlow = false,
                 )
             } else {
                 PlaylistArtworkPreview(
@@ -541,30 +563,26 @@ internal fun PlaylistGridTile(
                     selected = selected,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(10.dp),
+                        .padding(ElovaireSpacing.sm),
                 )
             }
         }
-        Text(
-            text = playlist.name,
-            style = if (!coverUriOverride.isNullOrBlank()) {
-                MaterialTheme.typography.titleMedium
-            } else {
-                MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
-            },
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = localizedCountLabel(playlist.songIds.size, "song", language),
-            style = if (!coverUriOverride.isNullOrBlank()) {
-                MaterialTheme.typography.bodySmall
-            } else {
-                MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium)
-            },
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = playlist.name,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = localizedCountLabel(playlist.songIds.size, "song", language),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

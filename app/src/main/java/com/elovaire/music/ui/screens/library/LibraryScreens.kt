@@ -3953,14 +3953,20 @@ internal fun HomeRecentSongRow(
     modifier: Modifier = Modifier,
 ) {
     val motionSpecs = rememberMotionSpecs()
+    val playingAccent = if (isCurrentSong) {
+        elovaire.music.droidbeauty.app.ui.components.rememberReadableArtworkAccent(song.artUri).value
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
     Column(modifier = modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(if (isCurrentSong) playingAccent.copy(alpha = 0.10f) else Color.Transparent)
                 .elovaireClickable(onClick = onClick)
-                .padding(horizontal = 2.dp, vertical = 12.dp),
+                .padding(horizontal = 4.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
         ) {
             Box(
                 modifier = Modifier.size(44.dp),
@@ -3971,7 +3977,7 @@ internal fun HomeRecentSongRow(
                     title = song.title,
                     modifier = Modifier.matchParentSize(),
                     cornerRadius = ElovaireRadii.artworkSmall,
-                    showArtworkGlow = true,
+                    showArtworkGlow = false,
                 )
                 androidx.compose.animation.AnimatedVisibility(
                     visible = isCurrentSong && isPlaybackActive,
@@ -3996,7 +4002,7 @@ internal fun HomeRecentSongRow(
                         title = song.title,
                         isExplicit = song.isExplicit,
                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = if (isCurrentSong) playingAccent else MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth(),

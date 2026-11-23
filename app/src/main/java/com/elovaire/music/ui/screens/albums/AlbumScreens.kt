@@ -525,18 +525,32 @@ internal fun AlbumScreen(
         showPlaylistPicker = false
     }
     val copy = remember(language) { rootUiCopy(language) }
+    val bgColor = MaterialTheme.colorScheme.background
+    val headerWash by elovaire.music.droidbeauty.app.ui.components.rememberArtworkHeaderWash(album.artUri)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(bgColor),
     ) {
         val listState = rememberLazyListState()
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .hazeSource(selectionHazeState, zIndex = -1f)
-                .background(MaterialTheme.colorScheme.background),
+                .background(bgColor),
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(340.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            0.0f to headerWash.copy(alpha = if (isLightTheme) 0.22f else 0.30f),
+                            0.65f to headerWash.copy(alpha = if (isLightTheme) 0.08f else 0.12f),
+                            1.0f to bgColor.copy(alpha = 0f),
+                        ),
+                    ),
+            )
             LazyColumn(
                 state = listState,
                 overscrollEffect = null,
@@ -989,10 +1003,16 @@ private fun AlbumSongRow(
     onToggleFavorite: () -> Unit,
     showDivider: Boolean,
 ) {
+    val playingAccent = if (isCurrentSong) {
+        elovaire.music.droidbeauty.app.ui.components.rememberReadableArtworkAccent(song.artUri).value
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
     Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(if (isCurrentSong) playingAccent.copy(alpha = 0.10f) else Color.Transparent)
                 .elovaireCombinedClickable(
                     interactionSource = remember { MutableInteractionSource() },
                     onClick = onClick,
@@ -1019,7 +1039,7 @@ private fun AlbumSongRow(
                     ) { showSignal ->
                         if (showSignal) {
                             AnimatedAudioLinesIcon(
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                tint = playingAccent,
                                 animate = isPlaybackActive,
                                 modifier = Modifier.size(16.dp),
                             )
@@ -1027,7 +1047,7 @@ private fun AlbumSongRow(
                             Text(
                                 text = trackIndex.toString(),
                                 style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                                color = if (isCurrentSong) playingAccent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                                 textAlign = TextAlign.Center,
                             )
                         }
@@ -1047,7 +1067,7 @@ private fun AlbumSongRow(
                         title = song.title,
                         isExplicit = song.isExplicit,
                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = if (isCurrentSong) playingAccent else MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth(),
