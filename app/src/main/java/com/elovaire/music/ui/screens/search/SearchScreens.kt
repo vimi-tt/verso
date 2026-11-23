@@ -685,11 +685,11 @@ private fun SearchScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(
-                                start = 20.dp,
-                                top = topPadding + 8.dp,
-                                end = 20.dp,
+                                start = ElovaireSpacing.screenHorizontalPadding,
+                                top = topPadding + ElovaireSpacing.sm,
+                                end = ElovaireSpacing.screenHorizontalPadding,
                             ),
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.lg),
                     ) {
                 SearchSongsResultsHeader(
                     resultCount = state.totalSongMatchCount,
@@ -753,13 +753,13 @@ private fun SearchScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(top = topPadding + 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                            .padding(top = topPadding + ElovaireSpacing.sm),
+                        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.lg),
                     ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 20.dp),
+                                .padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
                         ) {
                             searchBar()
                         }
@@ -775,11 +775,11 @@ private fun SearchScreen(
                     .fillMaxSize()
                     .ensureSingleItemRubberBand(listState),
                 contentPadding = PaddingValues(
-                    start = 20.dp,
-                    end = 20.dp,
-                    bottom = bottomPadding + if (isSearchUiActive) 20.dp else 12.dp,
+                    start = ElovaireSpacing.screenHorizontalPadding,
+                    end = ElovaireSpacing.screenHorizontalPadding,
+                    bottom = bottomPadding + if (isSearchUiActive) ElovaireSpacing.lg else ElovaireSpacing.md,
                 ),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.lg),
             ) {
                 when (browsingContentMode) {
                     SearchContentMode.AllSongs -> Unit
@@ -790,7 +790,7 @@ private fun SearchScreen(
                                 key = "search_recent",
                                 contentType = "search_history",
                             ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                                Column(verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.md)) {
                                     SearchHistorySectionHeader(
                                         showClearAction = true,
                                         onClearHistory = onClearSearchHistory,

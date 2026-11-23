@@ -141,9 +141,9 @@ internal fun PlaylistDetailScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
-                        start = 20.dp,
+                        start = ElovaireSpacing.screenHorizontalPadding,
                         top = detailTopBarOccupiedHeight() + ElovaireSpacing.detailListTopGap,
-                        end = 20.dp,
+                        end = ElovaireSpacing.screenHorizontalPadding,
                         bottom = bottomPadding,
                     ),
                 contentAlignment = Alignment.Center,
@@ -319,9 +319,9 @@ internal fun PlaylistDetailScreen(
                     .navigationBarsPadding()
                     .ensureSingleItemRubberBand(listState),
                 contentPadding = PaddingValues(
-                    start = 20.dp,
+                    start = ElovaireSpacing.screenHorizontalPadding,
                     top = detailTopPadding + ElovaireSpacing.albumHeaderTopGap + editMenuTopInset,
-                    end = 20.dp,
+                    end = ElovaireSpacing.screenHorizontalPadding,
                     bottom = bottomPadding,
                 ),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -398,19 +398,19 @@ internal fun PlaylistDetailScreen(
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                            horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md, Alignment.CenterHorizontally),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             AlbumHeaderPlayButton(
-                                tint = Color.White,
-                                backgroundColor = RoseAccent,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                backgroundColor = MaterialTheme.colorScheme.primary,
                                 onClick = { onPlayPlaylist(playlistSongs, playlistState.name) },
                             )
                             AlbumHeaderActionButton(
                                 iconResId = R.drawable.ic_lucide_shuffle,
                                 contentDescription = shuffleAccessibilityCopy(language).playlist,
-                                tint = Color.White,
-                                backgroundColor = RoseAccent,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                backgroundColor = MaterialTheme.colorScheme.surfaceVariant,
                                 iconSize = 18.dp,
                                 onClick = { onShufflePlaylist(playlistSongs, playlistState.name) },
                             )
@@ -428,8 +428,8 @@ internal fun PlaylistDetailScreen(
                                 AlbumHeaderActionButton(
                                     iconResId = if (allDownloaded) R.drawable.ic_lucide_check else R.drawable.ic_lucide_download,
                                     contentDescription = if (allDownloaded) dlCopy.downloadedAction else dlCopy.downloadAction,
-                                    tint = Color.White,
-                                    backgroundColor = if (allDownloaded) MaterialTheme.colorScheme.primary else RoseAccent,
+                                    tint = if (allDownloaded) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                    backgroundColor = if (allDownloaded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                                     iconSize = 18.dp,
                                     onClick = {
                                         if (!allDownloaded) {

@@ -363,6 +363,7 @@ import elovaire.music.droidbeauty.app.ui.theme.elovaireResolvedColorScheme
 import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
 import elovaire.music.droidbeauty.app.ui.theme.rememberElovaireOverscrollFactory
 import elovaire.music.droidbeauty.app.ui.theme.InkText
+import elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors
 import elovaire.music.droidbeauty.app.ui.theme.RoseAccent
 import elovaire.music.droidbeauty.app.ui.theme.ToggleEnabledGreen
 import kotlin.math.atan2
@@ -598,10 +599,10 @@ internal fun HomeScreen(
                             .fillMaxSize()
                             .ensureSingleItemRubberBand(listState),
                         contentPadding = PaddingValues(
-                            start = 20.dp,
-                            top = topPadding + 8.dp,
-                            end = 20.dp,
-                            bottom = bottomPadding + 12.dp,
+                            start = ElovaireSpacing.screenHorizontalPadding,
+                            top = topPadding + ElovaireSpacing.sm,
+                            end = ElovaireSpacing.screenHorizontalPadding,
+                            bottom = bottomPadding + ElovaireSpacing.md,
                         ),
                         verticalArrangement = Arrangement.spacedBy(20.dp),
                     ) {
@@ -818,7 +819,7 @@ private fun LastPlayedAlbumModule(
         val playBackground = rememberArtworkPaletteAccent(album.artUri).value ?: MaterialTheme.colorScheme.primary
         val playTint = if (playBackground.luminance() > 0.56f) InkText else Color.White
         val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-        val baseTint = if (darkTheme) Color(0xFF141414).copy(alpha = 0.82f) else Color.White.copy(alpha = 0.82f)
+        val baseTint = LocalVersoColors.current.miniPlayerBase
         val albumTint = gradient.first().copy(alpha = 0.46f)
         val controlBaseTint = if (darkTheme) {
             gradient.last().copy(alpha = 0.28f).compositeOver(Color.Black.copy(alpha = 0.16f))
@@ -839,12 +840,7 @@ private fun LastPlayedAlbumModule(
                     },
                 )
                 .clip(RoundedCornerShape(ElovaireRadii.module))
-                .background(baseTint)
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = if (darkTheme) 0.05f else 0.04f),
-                    shape = RoundedCornerShape(ElovaireRadii.module),
-                ),
+                .background(baseTint),
         ) {
             artwork.value?.let { artworkBitmap ->
                 Image(
@@ -969,7 +965,7 @@ private fun LastPlayedPlaylistModule(
         val playBackground = rememberArtworkPaletteAccent(artworkSong?.artUri).value ?: MaterialTheme.colorScheme.primary
         val playTint = if (playBackground.luminance() > 0.56f) InkText else Color.White
         val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-        val baseTint = if (darkTheme) Color(0xFF141414).copy(alpha = 0.82f) else Color.White.copy(alpha = 0.82f)
+        val baseTint = LocalVersoColors.current.miniPlayerBase
         val playlistTint = gradient.first().copy(alpha = 0.46f)
         val controlBaseTint = if (darkTheme) {
             gradient.last().copy(alpha = 0.28f).compositeOver(Color.Black.copy(alpha = 0.16f))
@@ -986,12 +982,7 @@ private fun LastPlayedPlaylistModule(
                     interactionSource = remember { MutableInteractionSource() },
                     onClick = onOpen,
                 )
-                .background(baseTint)
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = if (darkTheme) 0.05f else 0.04f),
-                    shape = RoundedCornerShape(ElovaireRadii.module),
-                ),
+                .background(baseTint),
         ) {
             artwork.value?.let { artworkBitmap ->
                 Image(
@@ -1256,10 +1247,10 @@ private fun AlbumCollectionContent(
                         .fillMaxSize()
                         .ensureSingleItemRubberBand(gridState),
                     contentPadding = PaddingValues(
-                        start = 20.dp,
-                        top = topPadding + selectionTopInset + 8.dp,
-                        end = 20.dp,
-                        bottom = bottomPadding + 12.dp,
+                        start = ElovaireSpacing.screenHorizontalPadding,
+                        top = topPadding + selectionTopInset + ElovaireSpacing.sm,
+                        end = ElovaireSpacing.screenHorizontalPadding,
+                        bottom = bottomPadding + ElovaireSpacing.md,
                     ),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -1423,10 +1414,10 @@ private fun AlbumCollectionContent(
                         .fillMaxSize()
                         .ensureSingleItemRubberBand(listState),
                     contentPadding = PaddingValues(
-                        start = 20.dp,
-                        top = topPadding + selectionTopInset + 8.dp,
-                        end = 20.dp,
-                        bottom = bottomPadding + 12.dp,
+                        start = ElovaireSpacing.screenHorizontalPadding,
+                        top = topPadding + selectionTopInset + ElovaireSpacing.sm,
+                        end = ElovaireSpacing.screenHorizontalPadding,
+                        bottom = bottomPadding + ElovaireSpacing.md,
                     ),
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
@@ -1902,10 +1893,10 @@ internal fun LibraryHubScreen(
                 .fillMaxSize()
                 .ensureSingleItemRubberBand(listState),
             contentPadding = PaddingValues(
-                start = 20.dp,
+                start = ElovaireSpacing.screenHorizontalPadding,
                 top = topPadding,
-                end = 20.dp,
-                bottom = bottomPadding + 12.dp,
+                end = ElovaireSpacing.screenHorizontalPadding,
+                bottom = bottomPadding + ElovaireSpacing.md,
             ),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
@@ -2090,10 +2081,10 @@ internal fun LibraryCollectionScreen(
                     columns = GridCells.Fixed(columns),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        start = 20.dp,
-                        top = detailTopBarOccupiedHeight() + 12.dp,
-                        end = 20.dp,
-                        bottom = bottomPadding + 16.dp,
+                        start = ElovaireSpacing.screenHorizontalPadding,
+                        top = detailTopBarOccupiedHeight() + ElovaireSpacing.md,
+                        end = ElovaireSpacing.screenHorizontalPadding,
+                        bottom = bottomPadding + ElovaireSpacing.lg,
                     ),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -2151,10 +2142,10 @@ internal fun LibraryCollectionScreen(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        start = 20.dp,
-                        top = detailTopBarOccupiedHeight() + 12.dp,
-                        end = 20.dp,
-                        bottom = bottomPadding + 16.dp,
+                        start = ElovaireSpacing.screenHorizontalPadding,
+                        top = detailTopBarOccupiedHeight() + ElovaireSpacing.md,
+                        end = ElovaireSpacing.screenHorizontalPadding,
+                        bottom = bottomPadding + ElovaireSpacing.lg,
                     ),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -2254,9 +2245,9 @@ private fun SongCollectionScreen(
                 .fillMaxSize()
                 .ensureSingleItemRubberBand(listState),
             contentPadding = PaddingValues(
-                start = 20.dp,
+                start = ElovaireSpacing.screenHorizontalPadding,
                 top = detailTopBarOccupiedHeight() + ElovaireSpacing.detailListTopGap,
-                end = 20.dp,
+                end = ElovaireSpacing.screenHorizontalPadding,
                 bottom = bottomPadding,
             ),
             verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -2436,9 +2427,9 @@ private fun ArtistCollectionScreen(
                 .fillMaxSize()
                 .ensureSingleItemRubberBand(listState),
             contentPadding = PaddingValues(
-                start = 20.dp,
+                start = ElovaireSpacing.screenHorizontalPadding,
                 top = detailTopBarOccupiedHeight() + ElovaireSpacing.detailListTopGap,
-                end = 20.dp,
+                end = ElovaireSpacing.screenHorizontalPadding,
                 bottom = bottomPadding,
             ),
             verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -2491,9 +2482,9 @@ private fun GenreCollectionScreen(
                 .fillMaxSize()
                 .ensureSingleItemRubberBand(listState),
             contentPadding = PaddingValues(
-                start = 20.dp,
+                start = ElovaireSpacing.screenHorizontalPadding,
                 top = detailTopBarOccupiedHeight() + ElovaireSpacing.detailSectionTopGap,
-                end = 20.dp,
+                end = ElovaireSpacing.screenHorizontalPadding,
                 bottom = bottomPadding,
             ),
         ) {
@@ -2645,8 +2636,8 @@ internal fun ArtistDetailScreen(
             if (topSongs.isNotEmpty()) {
                 item {
                     Column(
-                        modifier = Modifier.padding(horizontal = 20.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
+                        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
                     ) {
                         ArtistSectionTitleRow(
                             title = rootUiCopy(LocalAppLanguage.current).mostPlayedSongs,
@@ -2672,11 +2663,11 @@ internal fun ArtistDetailScreen(
 
             if (artistAlbums.isNotEmpty()) {
                 item {
-                    Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                    Box(modifier = Modifier.padding(horizontal = ElovaireSpacing.screenHorizontalPadding)) {
                         ModuleCard(
-                            contentPadding = PaddingValues(start = 18.dp, top = 18.dp, end = 18.dp, bottom = 2.dp),
+                            contentPadding = PaddingValues(vertical = ElovaireSpacing.xs),
                         ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.md)) {
                                 ArtistSectionTitleRow(
                                     title = commonUiCopy(LocalAppLanguage.current).albums,
                                     subtitle = availableReleasesLabel(artistAlbums.size, LocalAppLanguage.current),
@@ -3093,8 +3084,8 @@ private fun ArtistHeroHeader(
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(start = ElovaireSpacing.screenHorizontalPadding, end = ElovaireSpacing.screenHorizontalPadding, bottom = ElovaireSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
         ) {
             Text(
                 text = localizedArtistName(artistName, LocalAppLanguage.current),
@@ -3112,8 +3103,8 @@ private fun ArtistHeroHeader(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 AlbumHeaderPlayButton(
-                    tint = Color.White,
-                    backgroundColor = RoseAccent,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    backgroundColor = MaterialTheme.colorScheme.primary,
                     onClick = onPlay,
                 )
                 ArtistShuffleButton(

@@ -138,9 +138,9 @@ internal fun SmartPlaylistDetailScreen(
             overscrollEffect = null,
             modifier = Modifier.fillMaxSize().ensureSingleItemRubberBand(listState),
             contentPadding = PaddingValues(
-                start = 20.dp,
+                start = ElovaireSpacing.screenHorizontalPadding,
                 top = detailTopBarOccupiedHeight() + ElovaireSpacing.albumHeaderTopGap,
-                end = 20.dp,
+                end = ElovaireSpacing.screenHorizontalPadding,
                 bottom = bottomPadding,
             ),
             verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -250,17 +250,17 @@ private fun SmartPlaylistDetailHeader(
                     style = MaterialTheme.typography.labelLarge.copy(fontSize = elovaireScaledSp(12f)),
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md)) {
                 AlbumHeaderPlayButton(
-                    tint = Color.White,
-                    backgroundColor = RoseAccent,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    backgroundColor = MaterialTheme.colorScheme.primary,
                     onClick = onPlay,
                 )
                 AlbumHeaderActionButton(
                     iconResId = R.drawable.ic_lucide_shuffle,
                     contentDescription = smartPlaylistActionCopy(LocalAppLanguage.current).shuffle,
-                    tint = Color.White,
-                    backgroundColor = RoseAccent,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    backgroundColor = MaterialTheme.colorScheme.surfaceVariant,
                     iconSize = 18.dp,
                     onClick = onShuffle,
                 )
@@ -273,9 +273,9 @@ private fun SmartPlaylistDetailHeader(
 private fun SmartPlaylistEmptyResult() {
     val copy = smartPlaylistEmptyCopy(LocalAppLanguage.current)
     Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 34.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = ElovaireSpacing.xxl),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
     ) {
         Text(
             text = copy.title,
@@ -422,10 +422,10 @@ private fun SmartPlaylistEditorContent(
         modifier = Modifier.fillMaxSize().ensureSingleItemRubberBand(listState),
         overscrollEffect = null,
         contentPadding = PaddingValues(
-            start = 20.dp,
-            top = detailTopBarOccupiedHeight() + 20.dp,
-            end = 20.dp,
-            bottom = bottomPadding + 20.dp,
+            start = ElovaireSpacing.screenHorizontalPadding,
+            top = detailTopBarOccupiedHeight() + ElovaireSpacing.lg,
+            end = ElovaireSpacing.screenHorizontalPadding,
+            bottom = bottomPadding + ElovaireSpacing.lg,
         ),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {

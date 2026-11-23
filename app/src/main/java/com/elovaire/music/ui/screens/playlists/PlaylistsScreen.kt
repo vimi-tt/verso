@@ -73,6 +73,7 @@ import elovaire.music.droidbeauty.app.ui.i18n.uiPhrase
 import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
 import elovaire.music.droidbeauty.app.ui.motion.rememberMotionTransitions
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
 
 @Composable
 internal fun PlaylistsScreen(
@@ -149,10 +150,10 @@ internal fun PlaylistsScreen(
                 .fillMaxSize()
                 .ensureSingleItemRubberBand(gridState),
             contentPadding = PaddingValues(
-                start = 20.dp,
-                top = topPadding + selectionTopInset + 8.dp,
-                end = 20.dp,
-                bottom = bottomPadding + 16.dp,
+                start = ElovaireSpacing.screenHorizontalPadding,
+                top = topPadding + selectionTopInset + ElovaireSpacing.sm,
+                end = ElovaireSpacing.screenHorizontalPadding,
+                bottom = bottomPadding + ElovaireSpacing.lg,
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -416,9 +417,9 @@ private fun SmartMixSeparator() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 6.dp)
+            .padding(top = ElovaireSpacing.sm)
             .height(1.dp)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)),
+            .background(elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.divider),
     )
 }
 
@@ -426,9 +427,9 @@ private fun SmartMixSeparator() {
 private fun PlaylistSectionHeader(text: String) {
     Text(
         text = text,
-        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
         color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+        modifier = Modifier.padding(top = ElovaireSpacing.sm, bottom = ElovaireSpacing.xs),
     )
 }
 
@@ -452,38 +453,38 @@ private fun SmartPlaylistListRow(
                 onClick = { onClick(bounds.toExpandOrigin(screenSizePx.width.toFloat(), screenSizePx.height.toFloat())) },
                 onLongClick = {},
             )
-            .padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(vertical = ElovaireSpacing.md),
+        horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ArtworkImage(
             uri = songs.firstOrNull()?.artUri,
             title = title,
-            modifier = Modifier.size(62.dp),
+            modifier = Modifier.size(60.dp),
             cornerRadius = ElovaireRadii.artworkSmall,
             placeholderIconSize = 20.dp,
         )
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.xs),
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "${localizedCountLabel(songs.size, "song", language)} • ${copy.autoUpdating}",
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                style = MaterialTheme.typography.bodyMedium,
                 color = readableSecondaryTextColor(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = smartPlaylistSortLabel(language, result.playlist.sort.field),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-                color = readableSecondaryTextColor().copy(alpha = 0.7f),
+                style = MaterialTheme.typography.labelMedium,
+                color = readableSecondaryTextColor(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -576,21 +577,23 @@ internal fun PlaylistSelectionIndicator(
     selected: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val tint = MaterialTheme.colorScheme.onSurface
+    val selectedBg = MaterialTheme.colorScheme.primary
+    val selectedFg = MaterialTheme.colorScheme.onPrimary
+    val unselectedBorder = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.56f)
     val motionSpecs = rememberMotionSpecs()
     val background by animateColorAsState(
-        targetValue = if (selected) tint.copy(alpha = 0.3f) else Color.Transparent,
+        targetValue = if (selected) selectedBg else Color.Transparent,
         animationSpec = motionSpecs.tween(MotionDuration.Standard),
         label = "playlist_selection_background",
     )
     val border by animateColorAsState(
-        targetValue = tint.copy(alpha = if (selected) 0f else 0.64f),
+        targetValue = if (selected) selectedBg else unselectedBorder,
         animationSpec = motionSpecs.tween(MotionDuration.Standard),
         label = "playlist_selection_border",
     )
     Box(
         modifier = modifier
-            .size(26.dp)
+            .size(24.dp)
             .clip(CircleShape)
             .background(background)
             .border(
@@ -604,7 +607,7 @@ internal fun PlaylistSelectionIndicator(
             Icon(
                 painter = painterResource(id = R.drawable.ic_lucide_check),
                 contentDescription = null,
-                tint = tint,
+                tint = selectedFg,
                 modifier = Modifier.size(14.dp),
             )
         }
