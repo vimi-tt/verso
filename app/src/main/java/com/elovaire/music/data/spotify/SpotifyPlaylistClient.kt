@@ -162,6 +162,35 @@ internal class SpotifyPlaylistClient(
             return cached
         }
         val spDc = prefs.getString(KEY_SP_DC, null)?.takeIf { it.isNotBlank() } ?: return null
+        // 1. Try reading session script directly from open.spotify.com HTML.
+        val htmlRequest = Request.Builder()
+            .url("https://open.spotify.com/")
+            .header("Cookie", "sp_dc=$spDc")
+            .header("User-Agent", WEB_USER_AGENT)
+            .header("Accept", "text/html,application/xhtml+xml")
+            .get()
+            .build()
+        val htmlToken = runCatching {
+            httpClient.newCall(htmlRequest).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val html = resp.body?.string().orEmpty()
+                val match = Regex("""<script[^>]*id="session"[^>]*>(.*?)</script>""", setOf(RegexOption.DOT_MATCHES_ALL))
+                    .find(html)
+                val sessionJson = match?.groupValues?.getOrNull(1)?.let { runCatching { JSONObject(it) }.getOrNull() }
+                    ?: return@use null
+                if (sessionJson.optBoolean("isAnonymous", false)) return@use null
+                val token = sessionJson.optString("accessToken").takeIf { it.isNotBlank() } ?: return@use null
+                val exp = sessionJson.optLong("accessTokenExpirationTimestampMs", now + 3_300_000L)
+                prefs.edit()
+                    .putString(KEY_ACCESS_TOKEN, token)
+                    .putLong(KEY_EXPIRES_AT_MS, exp)
+                    .apply()
+                token
+            }
+        }.getOrNull()
+        if (!htmlToken.isNullOrBlank()) return htmlToken
+
+        // 2. Fallback to get_access_token endpoint.
         val request = Request.Builder()
             .url("https://open.spotify.com/get_access_token?reason=transport&productType=web_player")
             .header("Cookie", "sp_dc=$spDc")
@@ -173,8 +202,9 @@ internal class SpotifyPlaylistClient(
             if (!resp.isSuccessful) return@use null
             val body = resp.body?.string().orEmpty()
             val json = runCatching { JSONObject(body) }.getOrNull() ?: return@use null
+            if (json.optBoolean("isAnonymous", false)) return@use null
             val token = json.optString("accessToken").takeIf { it.isNotBlank() } ?: return@use null
-            val exp = json.optLong("accessTokenExpirationTimestampMs", now + 3_000_000L)
+            val exp = json.optLong("accessTokenExpirationTimestampMs", now + 3_300_000L)
             prefs.edit()
                 .putString(KEY_ACCESS_TOKEN, token)
                 .putLong(KEY_EXPIRES_AT_MS, exp)

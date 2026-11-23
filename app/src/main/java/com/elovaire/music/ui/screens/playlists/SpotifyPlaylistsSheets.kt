@@ -125,38 +125,45 @@ internal fun SpotifyLoginScreen(
         }
     }
 
-    fun tryExtractSpotifySession(view: WebView?, currentUrl: String?) {
+    fun dispatchCapturedSession(spDc: String, accessToken: String, expiresAtMs: Long) {
         if (loginDispatched) return
-        if (currentUrl?.startsWith(SPOTIFY_OPEN_HOST) != true) return
+        if (spDc.isBlank() || accessToken.isBlank()) return
+        loginDispatched = true
+        CookieManager.getInstance().flush()
+        onSessionCaptured(spDc, accessToken, expiresAtMs)
+    }
+
+    fun readSpDcCookie(): String {
         val cookies = CookieManager.getInstance().getCookie(SPOTIFY_OPEN_HOST).orEmpty()
-        val spDc = cookies
+        return cookies
             .split(';')
             .map { it.trim() }
             .firstOrNull { it.startsWith("sp_dc=") }
             ?.substringAfter("sp_dc=")
             ?.trim()
             .orEmpty()
+    }
+
+    fun tryExtractSpotifySession(view: WebView?, currentUrl: String?) {
+        if (loginDispatched) return
+        if (currentUrl?.startsWith(SPOTIFY_OPEN_HOST) != true) return
+        val spDc = readSpDcCookie()
         if (spDc.isBlank()) return
-        loginDispatched = true
-        CookieManager.getInstance().flush()
-        if (view != null) {
-            view.evaluateJavascript(
-                "(function(){var el=document.getElementById('session');return el?el.textContent:'';})();",
-            ) { raw ->
-                var token: String? = null
-                var exp = 0L
-                runCatching {
-                    val unquoted = org.json.JSONTokener(raw ?: "").nextValue()?.toString().orEmpty()
-                    if (unquoted.startsWith("{")) {
-                        val obj = JSONObject(unquoted)
-                        token = obj.optString("accessToken").takeIf { it.isNotBlank() }
-                        exp = obj.optLong("accessTokenExpirationTimestampMs", 0L)
+        view?.evaluateJavascript(
+            "(function(){var el=document.getElementById('session');return el?el.textContent:'';})();",
+        ) { raw ->
+            runCatching {
+                val unquoted = org.json.JSONTokener(raw ?: "").nextValue()?.toString().orEmpty()
+                if (unquoted.startsWith("{")) {
+                    val obj = JSONObject(unquoted)
+                    val token = obj.optString("accessToken").takeIf { it.isNotBlank() }
+                    val isAnonymous = obj.optBoolean("isAnonymous", false)
+                    val exp = obj.optLong("accessTokenExpirationTimestampMs", System.currentTimeMillis() + 3_300_000L)
+                    if (!token.isNullOrBlank() && !isAnonymous) {
+                        dispatchCapturedSession(spDc, token, exp)
                     }
                 }
-                onSessionCaptured(spDc, token, exp)
             }
-        } else {
-            onSessionCaptured(spDc, null, 0L)
         }
     }
 
@@ -252,17 +259,34 @@ internal fun SpotifyLoginScreen(
                                 return scheme != "https" && scheme != "about"
                             }
 
-                            override fun onPageFinished(view: WebView?, url: String?) {
-                                super.onPageFinished(view, url)
-                                tryExtractSpotifySession(view, url)
+                            override fun shouldInterceptRequest(
+                                view: WebView?,
+                                request: WebResourceRequest?,
+                            ): android.webkit.WebResourceResponse? {
+                                if (!loginDispatched && request != null) {
+                                    val host = request.url?.host?.lowercase().orEmpty()
+                                    if (host.endsWith("spotify.com")) {
+                                        val authHeader = request.requestHeaders?.entries
+                                            ?.firstOrNull { it.key.equals("authorization", ignoreCase = true) }
+                                            ?.value
+                                            .orEmpty()
+                                        if (authHeader.startsWith("Bearer ", ignoreCase = true)) {
+                                            val token = authHeader.substring(7).trim()
+                                            val spDc = readSpDcCookie()
+                                            if (token.isNotBlank() && spDc.isNotBlank()) {
+                                                val exp = System.currentTimeMillis() + 3_300_000L
+                                                view?.post {
+                                                    dispatchCapturedSession(spDc, token, exp)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                return super.shouldInterceptRequest(view, request)
                             }
 
-                            override fun doUpdateVisitedHistory(
-                                view: WebView?,
-                                url: String?,
-                                isReload: Boolean,
-                            ) {
-                                super.doUpdateVisitedHistory(view, url, isReload)
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                super.onPageFinished(view, url)
                                 tryExtractSpotifySession(view, url)
                             }
                         }
