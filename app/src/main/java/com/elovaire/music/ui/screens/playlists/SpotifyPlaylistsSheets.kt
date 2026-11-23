@@ -96,6 +96,14 @@ internal fun SpotifyLoginScreen(
     var capturedClientToken by remember { mutableStateOf<String?>(null) }
     var capturedAccessToken by remember { mutableStateOf<String?>(null) }
 
+    val mobileUserAgent = remember(context) {
+        android.webkit.WebSettings.getDefaultUserAgent(context)
+            .replace("; wv)", ")")
+            .replace(" wv)", ")")
+    }
+    val desktopUserAgent =
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
     val webView = remember(context) {
         WebView(context).apply {
             layoutParams = android.view.ViewGroup.LayoutParams(
@@ -115,10 +123,8 @@ internal fun SpotifyLoginScreen(
             settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
             @Suppress("DEPRECATION")
             settings.saveFormData = false
-            // Strip "; wv" token so accounts.spotify.com and OAuth providers render the mobile web login form.
-            settings.userAgentString = settings.userAgentString
-                .replace("; wv)", ")")
-                .replace(" wv)", ")")
+            // Use clean mobile Chrome UA during accounts.spotify.com login so anti-bot never blocks sign-in.
+            settings.userAgentString = mobileUserAgent
             val currentWebView = this
             CookieManager.getInstance().apply {
                 setAcceptCookie(true)
@@ -159,7 +165,7 @@ internal fun SpotifyLoginScreen(
             .orEmpty()
     }
 
-    fun scrapePlaylistsFromDom(view: WebView, attempt: Int = 0) {
+    fun scrapePlaylistsFromDom(view: WebView, attempt: Int = 0, stableCount: Int = -1) {
         if (loginDispatched) return
         val spDc = readSpDcCookie()
         if (spDc.isBlank()) return
@@ -167,32 +173,58 @@ internal fun SpotifyLoginScreen(
             (function() {
                 var seen = {};
                 var out = [];
-                var links = document.querySelectorAll('a[href*="/playlist/"]');
-                for (var i = 0; i < links.length; i++) {
-                    var a = links[i];
-                    var href = a.getAttribute('href') || '';
-                    var m = href.match(/\/playlist\/([A-Za-z0-9]+)/);
+                function addPlaylist(id, name, owner, imgUrl) {
+                    if (!id || seen[id]) return;
+                    name = (name || '').split('\n')[0].trim();
+                    if (!name) return;
+                    seen[id] = true;
+                    out.push({ id: id, name: name, owner: (owner || '').trim(), coverUrl: (imgUrl || '').trim() });
+                }
+                // 1. Desktop library sidebar rows (id="listrow-title-spotify:playlist:<id>")
+                var titleEls = document.querySelectorAll('[id*="spotify:playlist:"]');
+                for (var i = 0; i < titleEls.length; i++) {
+                    var el = titleEls[i];
+                    var elId = el.getAttribute('id') || '';
+                    if (elId.indexOf('subtitle') !== -1) continue;
+                    var m = elId.match(/spotify:playlist:([A-Za-z0-9]+)/);
                     if (!m) continue;
-                    var id = m[1];
-                    if (seen[id]) continue;
-                    var title = (a.getAttribute('title') || a.getAttribute('aria-label') || a.innerText || '').trim();
-                    if (!title) {
-                        var card = a.closest('[data-testid], li, [role="listitem"], [role="row"], div');
-                        if (card) {
-                            var p = card.querySelector('p, span');
-                            if (p) title = (p.innerText || '').trim();
-                        }
-                    }
-                    title = title.split('\n')[0].trim();
-                    if (!title || title.length < 1) continue;
+                    var pid = m[1];
+                    var title = (el.innerText || el.textContent || '').trim();
+                    var row = el.closest('[role="listitem"], li, [role="row"], [data-testid]');
+                    var owner = '';
                     var imgUrl = '';
-                    var container = a.closest('[data-testid], li, [role="listitem"], [role="row"], section, div');
-                    if (container) {
-                        var img = container.querySelector('img[src]');
+                    if (row) {
+                        var sub = row.querySelector('[id*="listrow-subtitle-spotify:playlist:' + pid + '"]');
+                        if (sub) {
+                            var subText = (sub.innerText || '').trim();
+                            var parts = subText.split('•');
+                            owner = parts.length > 1 ? parts[parts.length - 1].trim() : subText;
+                        }
+                        var img = row.querySelector('img[src]');
                         if (img) imgUrl = img.getAttribute('src') || '';
                     }
-                    seen[id] = true;
-                    out.push({ id: id, name: title, coverUrl: imgUrl });
+                    addPlaylist(pid, title, owner, imgUrl);
+                }
+                // 2. Any anchor links pointing to /playlist/<id>
+                var links = document.querySelectorAll('a[href*="/playlist/"]');
+                for (var j = 0; j < links.length; j++) {
+                    var a = links[j];
+                    var href = a.getAttribute('href') || '';
+                    var lm = href.match(/\/playlist\/([A-Za-z0-9]+)/);
+                    if (!lm) continue;
+                    var lid = lm[1];
+                    var lTitle = (a.getAttribute('title') || a.getAttribute('aria-label') || a.innerText || '').trim();
+                    var card = a.closest('[data-testid], li, [role="listitem"], [role="row"], section, div');
+                    var lImg = '';
+                    if (card) {
+                        if (!lTitle) {
+                            var p = card.querySelector('p, span');
+                            if (p) lTitle = (p.innerText || '').trim();
+                        }
+                        var cImg = card.querySelector('img[src]');
+                        if (cImg) lImg = cImg.getAttribute('src') || '';
+                    }
+                    addPlaylist(lid, lTitle, 'Spotify', lImg);
                 }
                 return JSON.stringify(out);
             })();
@@ -213,7 +245,7 @@ internal fun SpotifyLoginScreen(
                             SpotifyPlaylistSummary(
                                 id = id,
                                 name = name,
-                                owner = "Spotify",
+                                owner = obj.optString("owner").trim().ifBlank { "Spotify" },
                                 trackCount = 0,
                                 coverUrl = obj.optString("coverUrl").takeIf { it.isNotBlank() },
                             ),
@@ -222,10 +254,12 @@ internal fun SpotifyLoginScreen(
                 }
             }.getOrDefault(emptyList())
 
-            if (parsed.isNotEmpty() || attempt >= 16) {
+            // Wait one extra tick once playlists appear so the full sidebar finishes rendering.
+            if ((parsed.isNotEmpty() && parsed.size == stableCount) || attempt >= 16) {
                 dispatchCapturedSession(spDc, parsed)
             } else {
-                view.postDelayed({ scrapePlaylistsFromDom(view, attempt + 1) }, 650L)
+                val nextStable = if (parsed.isNotEmpty()) parsed.size else -1
+                view.postDelayed({ scrapePlaylistsFromDom(view, attempt + 1, nextStable) }, 700L)
             }
         }
     }
@@ -236,12 +270,14 @@ internal fun SpotifyLoginScreen(
         val spDc = readSpDcCookie()
         if (spDc.isBlank()) return
         isSyncingFromWeb = true
-        if (!currentUrl.contains("/collection/playlists") && !redirectedToPlaylists) {
+        // Switch to Desktop Chrome UA only AFTER login succeeds so Spotify renders the full library sidebar.
+        if (view.settings.userAgentString != desktopUserAgent) {
+            view.settings.userAgentString = desktopUserAgent
             redirectedToPlaylists = true
             view.loadUrl(SPOTIFY_PLAYLISTS_URL)
             return
         }
-        view.postDelayed({ scrapePlaylistsFromDom(view, 0) }, 900L)
+        view.postDelayed({ scrapePlaylistsFromDom(view, 0, -1) }, 900L)
     }
 
     val title = when (language) {
@@ -323,6 +359,17 @@ internal fun SpotifyLoginScreen(
                         webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 loadProgress = newProgress
+                            }
+
+                            override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
+                                val protectedMedia = request?.resources
+                                    ?.filter { it == android.webkit.PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID }
+                                    ?.toTypedArray()
+                                if (protectedMedia != null && protectedMedia.isNotEmpty()) {
+                                    request.grant(protectedMedia)
+                                } else {
+                                    request?.deny()
+                                }
                             }
                         }
                         webViewClient = object : WebViewClient() {
@@ -627,9 +674,13 @@ internal fun SpotifyPlaylistsModal(
                                         importingLabel
                                     } else {
                                         buildString {
-                                            append(localizedCountLabel(playlist.trackCount, "song", language))
-                                            if (playlist.owner.isNotBlank()) {
-                                                append(" • ")
+                                            if (playlist.trackCount > 0) {
+                                                append(localizedCountLabel(playlist.trackCount, "song", language))
+                                                if (playlist.owner.isNotBlank()) {
+                                                    append(" • ")
+                                                    append(playlist.owner)
+                                                }
+                                            } else if (playlist.owner.isNotBlank()) {
                                                 append(playlist.owner)
                                             }
                                         }

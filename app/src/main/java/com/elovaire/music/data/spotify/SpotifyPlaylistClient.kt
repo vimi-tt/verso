@@ -9,6 +9,8 @@ import androidx.security.crypto.MasterKey
 import elovaire.music.droidbeauty.app.data.settings.BackupTrackRef
 import elovaire.music.droidbeauty.app.data.settings.PlaylistLinkImporter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -112,6 +114,40 @@ internal class SpotifyPlaylistClient(
                 error = null,
             )
         }
+    }
+
+    suspend fun enrichMissingTrackCounts() {
+        val current = _state.value.playlists
+        val missing = current.filter { it.trackCount <= 0 }
+        if (missing.isEmpty()) return
+        val updates = withContext(Dispatchers.IO) {
+            val map = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, String?>>()
+            coroutineScope {
+                for (chunk in missing.chunked(4)) {
+                    chunk.map { item ->
+                        async {
+                            val embed = PlaylistLinkImporter.fetchSpotifyEmbedPlaylist(item.id)
+                            if (embed != null && embed.tracks.isNotEmpty()) {
+                                map[item.id] = embed.tracks.size to embed.coverArtUrl
+                            }
+                        }
+                    }.forEach { it.await() }
+                }
+            }
+            map
+        }
+        if (updates.isEmpty()) return
+        val enriched = _state.value.playlists.map { item ->
+            val info = updates[item.id] ?: return@map item
+            item.copy(
+                trackCount = info.first,
+                coverUrl = item.coverUrl ?: info.second,
+            )
+        }
+        encryptedPrefs?.edit()
+            ?.putString(KEY_CACHED_PLAYLISTS, serializePlaylists(enriched))
+            ?.apply()
+        _state.update { it.copy(playlists = enriched) }
     }
 
     private fun serializePlaylists(list: List<SpotifyPlaylistSummary>): String {

@@ -372,6 +372,8 @@ internal fun RootRouteGraph(
                 onSyncSpotify = { force ->
                     if (force || spotifyState.playlists.isEmpty()) {
                         navState.navigateTo(Routes.spotifyLogin())
+                    } else {
+                        scope.launch { spotifyClient.enrichMissingTrackCounts() }
                     }
                 },
                 onSignOutSpotify = {
@@ -912,6 +914,7 @@ internal fun RootRouteGraph(
             )
         }
         composable(RootRouteRegistry.SPOTIFY_LOGIN) {
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
             SpotifyLoginScreen(
                 onBack = routeActions::navigateUp,
                 onSessionCaptured = { spDc, token, exp, clientToken, playlists ->
@@ -922,6 +925,7 @@ internal fun RootRouteGraph(
                         clientToken = clientToken,
                         playlists = playlists,
                     )
+                    scope.launch { spotifyClient.enrichMissingTrackCounts() }
                     navState.navController.popBackStack()
                 },
             )
