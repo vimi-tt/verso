@@ -283,7 +283,7 @@ private fun SpeedDialTile(
                         colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)),
                     ),
                 )
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(

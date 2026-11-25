@@ -2091,7 +2091,6 @@ internal fun LibraryCollectionScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(ElovaireRadii.card))
                                 .elovaireClickable(
                                     interactionSource = rememberElovaireInteractionSource(),
                                     onClick = { onOpenYouTubeAlbum(ytAlbum) },

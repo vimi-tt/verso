@@ -732,7 +732,6 @@ private fun DownloadGridCard(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(ElovaireRadii.artwork))
             .semantics(mergeDescendants = true) { role = Role.Button }
             .elovaireClickable(onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(8.dp),

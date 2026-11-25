@@ -292,7 +292,7 @@ internal fun PinnedBackTopBar(
                 HeaderIconButton(
                     iconResId = R.drawable.ic_lucide_chevron_left,
                     contentDescription = navigationAccessibilityCopy(LocalAppLanguage.current).back,
-                    showBackground = false,
+                    showBackground = true,
                     onClick = onBack,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
@@ -327,7 +327,7 @@ internal fun PinnedBackTopBar(
                 HeaderIconButton(
                     iconResId = R.drawable.ic_lucide_chevron_left,
                     contentDescription = navigationAccessibilityCopy(LocalAppLanguage.current).back,
-                    showBackground = false,
+                    showBackground = true,
                     onClick = onBack,
                     modifier = Modifier.zIndex(1f),
                 )
@@ -592,7 +592,7 @@ internal fun SharedTopBarOverlay(
                 iconResId = R.drawable.ic_lucide_chevron_left,
                 contentDescription = navigationAccessibilityCopy(language).back,
                 enabled = spec !is SharedTopBarSpec.Unified,
-                showBackground = false,
+                showBackground = true,
                 onClick = {
                     when (val latest = currentSpec) {
                         is SharedTopBarSpec.Back -> latest.onBack()

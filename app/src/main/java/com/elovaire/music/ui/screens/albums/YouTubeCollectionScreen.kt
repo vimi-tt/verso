@@ -759,7 +759,7 @@ internal fun YouTubeCollectionScreen(
         )
 
         PinnedBackTopBar(
-            title = "",
+            title = resolvedTitle,
             onBack = onBack,
             modifier = Modifier.align(Alignment.TopCenter),
         )

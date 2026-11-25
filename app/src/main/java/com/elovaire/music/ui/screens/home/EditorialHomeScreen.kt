@@ -488,7 +488,6 @@ private fun EditorialResumeCard(
     Column(
         modifier = Modifier
             .width(160.dp)
-            .clip(RoundedCornerShape(ElovaireRadii.artwork))
             .semantics(mergeDescendants = true) { role = Role.Button }
             .elovaireClickable(onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
@@ -558,7 +557,6 @@ internal fun EditorialCollectionCard(
     Column(
         modifier = modifier
             .width(cardWidth)
-            .clip(RoundedCornerShape(ElovaireRadii.artwork))
             .semantics(mergeDescendants = true) { role = Role.Button }
             .elovaireClickable(onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(8.dp),
