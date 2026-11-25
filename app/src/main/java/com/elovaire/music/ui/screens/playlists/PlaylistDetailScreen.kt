@@ -224,11 +224,13 @@ internal fun PlaylistDetailScreen(
         animationSpec = motionSpecs.contentSize(),
         label = "playlist_edit_menu_top_inset",
     )
+    val deleteLabel = uiPhrase(language, UiPhrase.Delete)
     val topBarActions = remember(
         editMode,
         editDraft,
         playlistState.isSystem,
         rootCopy,
+        deleteLabel,
     ) {
         buildList {
             if (editMode && !playlistState.isSystem) {
@@ -245,7 +247,7 @@ internal fun PlaylistDetailScreen(
                     add(
                         TopBarActionSpec(
                             iconResId = R.drawable.ic_lucide_trash_2,
-                            contentDescription = uiPhrase(LocalAppLanguage.current, UiPhrase.Delete),
+                            contentDescription = deleteLabel,
                             onClick = { showDeleteConfirm = true },
                         ),
                     )
@@ -698,7 +700,7 @@ internal fun PlaylistDetailScreen(
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text(rootUiCopy(language).cancel)
+                    Text(uiPhrase(language, UiPhrase.Cancel))
                 }
             },
             confirmButton = {

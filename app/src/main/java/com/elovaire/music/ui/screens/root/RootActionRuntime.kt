@@ -72,8 +72,8 @@ internal fun rememberRootActionRuntime(
         youTubeCatalog = youTubeCatalog,
         songResolver = { songId ->
             derivedState.songsById[songId]
-                ?: playback.playbackState.value.currentSong?.takeIf { it.id == songId }
-                ?: playback.playbackState.value.queue.firstOrNull { it.id == songId }
+                ?: appState.playback.currentSong?.takeIf { it.id == songId }
+                ?: appState.playback.queue.firstOrNull { it.id == songId }
         },
         isFavoriteResolver = { songId -> songId in appState.favoriteSongIds },
     )
