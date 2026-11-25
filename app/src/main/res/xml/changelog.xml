@@ -6,6 +6,14 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
+    <release version="Cavaquinho 1">
+        <item>Extended the borderless progressive blur top bar and visible back button with collection titles across albums, playlists, library views, and artist pages</item>
+        <item>Redesigned artist pages with larger artwork, Outfit headings, cover-derived atmospheric gradients, and refined action controls</item>
+        <item>Balanced album and collection action bars with an Add to Playlist button, removed duplicate download badges, and added playlist deletion for app-created playlists</item>
+        <item>Synced in-app favorite toggles with YouTube Music likes</item>
+        <item>Fixed search history persistence to keep the last 5 searches visible with View All and Clear All actions, removed YouTube labels, and refined search results</item>
+        <item>Fixed artist name clipping on square artwork cards and upgraded Compasso with Unicode normalization, accurate band/title parsing, legacy Room key support, usable buffer counting, thread-safe queue fills, and background playback tracking</item>
+    </release>
     <release version="Banjo 2">
         <item>Refined the top bar with a simple progressive blur separating the greeting and tab title from the floating profile and menu pill</item>
         <item>Added Spotify account sign-in with Android Keystore encryption in Playlists to browse and open your Spotify playlists with track counts</item>
