@@ -869,7 +869,7 @@ internal fun AlbumScreen(
     }
 
     val albumSongMenuActions = LocalSongMenuActions.current
-    val targetSongsForPlaylist = if (selectionModeActive) selectedSongs else albumSongs
+    val targetSongsForPlaylist = if (selectionModeActive) selectedSongs else album.songs
     PlaylistSelectionDialog(
         visible = showPlaylistPicker && targetSongsForPlaylist.isNotEmpty(),
         title = uiPhrase(language, UiPhrase.AddToPlaylist),

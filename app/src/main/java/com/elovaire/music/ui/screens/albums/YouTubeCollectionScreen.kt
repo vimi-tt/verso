@@ -756,10 +756,6 @@ internal fun YouTubeCollectionScreen(
                     anyAdded
                 }
             },
-            isYouTubeLoggedIn = songMenuActions.isYouTubeLoggedIn,
-            isYouTubeSyncing = songMenuActions.isYouTubeSyncing,
-            onRefreshYouTubePlaylists = songMenuActions.onRefreshYouTubePlaylists,
-            importedCoverUris = songMenuActions.importedCoverUris,
         )
 
         PinnedBackTopBar(
