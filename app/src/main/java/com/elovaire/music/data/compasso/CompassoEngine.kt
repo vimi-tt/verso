@@ -495,8 +495,19 @@ internal class CompassoEngine(
                 activeSeedVideoId = currentSeed
             }
 
+            val tailArtists = currentQueue
+                .takeLast(ARTIST_WINDOW_LOOKBACK)
+                .map { TrackNormalizer.normalizePrimaryArtist(it.artist) }
+            val usableWaitingCount = usableWaitingBufferCount(
+                tailArtists = tailArtists,
+                excludedIds = excludedIds,
+                excludedKeys = excludedKeys,
+                blockedArtistKeys = blockedArtistKeys,
+                maxCount = targetCount,
+            )
+
             while (pagesFetched < MAX_PAGINATION_REQUESTS &&
-                (validFreshCount + waitingBuffer.size) < targetCount &&
+                (validFreshCount + usableWaitingCount) < targetCount &&
                 currentSeed != null
             ) {
                 pagesFetched += 1
@@ -601,10 +612,6 @@ internal class CompassoEngine(
             )
 
             // Score and reorder candidates using real-time session affinity + discoveryRatio + 1-in-5 artist window
-            val tailArtists = currentQueue
-                .takeLast(ARTIST_WINDOW_LOOKBACK)
-                .map { TrackNormalizer.normalizePrimaryArtist(it.artist) }
-
             var selected = selectAndInterleave(
                 discoveryCandidates = filteredDiscovery,
                 familiarCandidates = familiarPool,
@@ -882,6 +889,39 @@ internal class CompassoEngine(
             )
         }
         return out
+    }
+
+    private fun usableWaitingBufferCount(
+        tailArtists: List<String>,
+        excludedIds: Set<String>,
+        excludedKeys: Set<String>,
+        blockedArtistKeys: Set<String>,
+        maxCount: Int,
+    ): Int {
+        if (waitingBuffer.isEmpty() || maxCount <= 0) return 0
+        val window = ArrayDeque<String>(ARTIST_WINDOW_LOOKBACK)
+        tailArtists.takeLast(ARTIST_WINDOW_LOOKBACK).forEach { window.addLast(it) }
+        val seenIds = HashSet<String>()
+        val seenKeys = HashSet<String>()
+        var usable = 0
+        for (candidate in waitingBuffer) {
+            if (candidate.song.durationMs > MAX_TRACK_DURATION_MS) continue
+            val artistKey = TrackNormalizer.normalizePrimaryArtist(candidate.song.artist)
+            if (artistKey.isNotBlank() && artistKey in blockedArtistKeys) continue
+            val key = TrackNormalizer.normalizeKey(candidate.song.title, candidate.song.artist)
+            val usableKey = isUsableNormalizedKey(key)
+            if (candidate.videoId in excludedIds || (usableKey && key in excludedKeys)) continue
+            if (!seenIds.add(candidate.videoId)) continue
+            if (usableKey && !seenKeys.add(key)) continue
+            if (artistKey.isNotBlank() && artistKey in window) continue
+            usable += 1
+            if (usable >= maxCount) break
+            window.addLast(artistKey)
+            if (window.size > ARTIST_WINDOW_LOOKBACK) {
+                window.removeFirst()
+            }
+        }
+        return usable
     }
 
     private fun isUsableNormalizedKey(key: String): Boolean =

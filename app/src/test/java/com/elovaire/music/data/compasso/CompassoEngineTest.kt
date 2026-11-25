@@ -484,6 +484,63 @@ class CompassoEngineTest {
     }
 
     @Test
+    fun `fetch loop counts only usable waitingBuffer tracks instead of raw waitingBuffer size`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store = FakeCompassoStore()
+        // Page 1 has 15 tracks from Artist A + 14 from distinct artists (29 total >= TARGET_BUFFER_AHEAD=15).
+        // startFromSeed places A1 + 14 distinct (15 tracks) and leaves A2..A15 (14 tracks) in waitingBuffer,
+        // stopping before fetching page2.
+        val page1Candidates = buildList {
+            for (i in 1..15) add(candidate("a$i", "A$i", "Artist A"))
+            for (i in 1..14) add(candidate("d$i", "D$i", "Distinct $i"))
+        }
+        val radioSource = FakeRadioSource(
+            pages = mapOf(
+                ("vid_1" to null) to CompassoRadioPage(
+                    candidates = page1Candidates,
+                    continuationToken = "page2",
+                ),
+                ("vid_1" to "page2") to CompassoRadioPage(
+                    candidates = listOf(
+                        candidate("f1", "F1", "Artist F"),
+                        candidate("g1", "G1", "Artist G"),
+                        candidate("h1", "H1", "Artist H"),
+                        candidate("i1", "I1", "Artist I"),
+                    ),
+                    continuationToken = null,
+                ),
+            ),
+        )
+        val engine = createEngine(radioSource = radioSource, store = store, dispatcher = dispatcher)
+        engine.setActive(true)
+        engine.setDiscoveryRatio(1.0f)
+
+        val queue = mutableListOf(testSong(id = 1L, title = "Seed", artist = "Seed Artist"))
+        engine.startFromSeed(
+            seedSong = queue.first(),
+            currentQueue = queue.toList(),
+            onAppendTracks = { queue.addAll(it) },
+        )
+        // Queue now has Seed + 15 tracks (size 16), and waitingBuffer has A2..A15 (size 14).
+        assertEquals(16, queue.size)
+
+        val appendedSecond = mutableListOf<Song>()
+        // Advance to index 10 (5 tracks ahead <= PRELOAD_THRESHOLD_TRACKS=5, targetCount=10).
+        engine.onPlaybackPositionChanged(
+            currentQueue = queue.toList(),
+            currentIndex = 10,
+            onAppendTracks = { appendedSecond.addAll(it) },
+        )
+
+        // Only a small fraction of the 14 buffered Artist A tracks are usable in the 1-in-5 window;
+        // the engine must fetch page2 instead of short-circuiting on waitingBuffer.size == 14 >= 10.
+        assertTrue(
+            "Expected page2 tracks to be fetched instead of stopping at waitingBuffer.size",
+            appendedSecond.any { it.artist == "Artist F" },
+        )
+    }
+
+    @Test
     fun `DayPeriod fromHour maps all day periods accurately`() {
         assertEquals(DayPeriod.Dawn, DayPeriod.fromHour(0))
         assertEquals(DayPeriod.Dawn, DayPeriod.fromHour(5))
