@@ -48,6 +48,20 @@ class CompassoEngineTest {
         assertEquals(k1, k2)
     }
 
+    @Test
+    fun `TrackNormalizer preserves non-Latin scripts while still stripping Latin accents`() {
+        val jp = TrackNormalizer.normalizeKey("夜に駆ける", "YOASOBI")
+        val kr = TrackNormalizer.normalizeKey("밤편지", "아이유")
+        val cyrillic = TrackNormalizer.normalizeKey("Кино - Группа крови", "Кино")
+        val accented = TrackNormalizer.normalizeKey("Café Tacvba", "Café")
+
+        assertEquals("夜に駆ける|yoasobi", jp)
+        assertEquals("밤편지|아이유", kr)
+        assertTrue(jp != kr)
+        assertTrue(cyrillic.startsWith("кино группа крови|кино"))
+        assertEquals("cafe tacvba|cafe", accented)
+    }
+
     // -------------------------------------------------------------------------
     // 2. Artist diversity window (max 1 per artist in every 5 consecutive tracks)
     // -------------------------------------------------------------------------

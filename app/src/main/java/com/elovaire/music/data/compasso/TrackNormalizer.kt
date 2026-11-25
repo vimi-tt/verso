@@ -51,7 +51,7 @@ internal object TrackNormalizer {
     )
 
     private val DIACRITICS_REGEX = Regex("""\p{InCombiningDiacriticalMarks}+""")
-    private val NON_ALNUM_REGEX = Regex("""[^a-z0-9\s]""")
+    private val NON_ALNUM_REGEX = Regex("""[^\p{L}\p{N}\p{M}\s]""")
     private val MULTI_SPACE_REGEX = Regex("""\s+""")
 
     fun normalizeTitle(rawTitle: String): String {
@@ -80,6 +80,7 @@ internal object TrackNormalizer {
 
     private fun stripAccents(input: String): String {
         val decomposed = Normalizer.normalize(input, Normalizer.Form.NFD)
-        return DIACRITICS_REGEX.replace(decomposed, "")
+        val withoutLatinDiacritics = DIACRITICS_REGEX.replace(decomposed, "")
+        return Normalizer.normalize(withoutLatinDiacritics, Normalizer.Form.NFC)
     }
 }
