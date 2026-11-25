@@ -107,8 +107,7 @@ internal fun DetailListTopBar(
                 ),
         )
         if (!useSharedBackdrop) {
-            FrostedTopBarBackground(
-                darkTheme = darkTheme,
+            SimpleTopBarBlurBackdrop(
                 modifier = Modifier.matchParentSize(),
             )
         }

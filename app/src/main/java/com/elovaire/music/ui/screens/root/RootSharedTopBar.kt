@@ -277,8 +277,7 @@ internal fun PinnedBackTopBar(
                 .consumePointersWithoutSemantics(),
         )
         if (!useSharedBackdrop) {
-            FrostedTopBarBackground(
-                darkTheme = darkTheme,
+            SimpleTopBarBlurBackdrop(
                 modifier = Modifier.matchParentSize(),
             )
         }

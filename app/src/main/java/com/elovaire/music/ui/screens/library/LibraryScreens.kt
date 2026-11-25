@@ -1607,8 +1607,7 @@ internal fun TopBarSelectionMenu(
             .fillMaxWidth()
             .height(topBarHeight + 50.dp),
     ) {
-        FrostedTopBarBackground(
-            darkTheme = darkTheme,
+        SimpleTopBarBlurBackdrop(
             modifier = Modifier.matchParentSize(),
             hazeState = hazeState,
         )
@@ -1667,8 +1666,7 @@ internal fun TopBarDualActionMenu(
             .fillMaxWidth()
             .height(topBarHeight + 50.dp),
     ) {
-        FrostedTopBarBackground(
-            darkTheme = darkTheme,
+        SimpleTopBarBlurBackdrop(
             modifier = Modifier.matchParentSize(),
         )
         Row(

@@ -76,27 +76,14 @@ internal fun BoxScope.RootChromeHost(
         )
     }
     if (showSharedTopBarBackdrop && sharedTopBarSpec != null) {
-        if (sharedTopBarSpec is SharedTopBarSpec.Unified) {
-            SimpleTopBarBlurBackdrop(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(x = contentPaneStart)
-                    .width(contentPaneWidth)
-                    .height(sharedTopBarHeight + 16.dp)
-                    .zIndex(RootLayerZ.ChromeBackdrop),
-            )
-        } else {
-            FrostedTopBarBackground(
-                darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f,
-                showEdgeLine = true,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(x = contentPaneStart)
-                    .width(contentPaneWidth)
-                    .height(sharedTopBarHeight)
-                    .zIndex(RootLayerZ.ChromeBackdrop),
-            )
-        }
+        SimpleTopBarBlurBackdrop(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .offset(x = contentPaneStart)
+                .width(contentPaneWidth)
+                .height(sharedTopBarHeight + 16.dp)
+                .zIndex(RootLayerZ.ChromeBackdrop),
+        )
     }
     if (sharedTopBarSpec != null) {
         CompositionLocalProvider(LocalRenderSharedTopBarContent provides true) {
