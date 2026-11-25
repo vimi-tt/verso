@@ -207,6 +207,18 @@ internal class YouTubeStreamClient(
         return status.isBlank() || status.equals("STATUS_SUCCEEDED", ignoreCase = true)
     }
 
+    fun setVideoLikeStatus(videoId: String, liked: Boolean): Boolean {
+        if (videoId.isBlank() || !isLoggedIn()) return false
+        val client = org.json.JSONObject()
+            .put("clientName", "WEB_REMIX")
+            .put("clientVersion", "1.20250101.01.00")
+        val body = org.json.JSONObject()
+            .put("context", org.json.JSONObject().put("client", client))
+            .put("target", org.json.JSONObject().put("videoId", videoId))
+        val endpoint = if (liked) "like/like" else "like/removelike"
+        return musicApi.postMusicApi(endpoint, body) != null
+    }
+
     fun fetchAndStoreAccountProfile(): Triple<String?, String?, String?> {
         val profile = musicApi.fetchAccountProfile() ?: return Triple(
             activeAccountName(),

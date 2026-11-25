@@ -66,7 +66,17 @@ internal fun rememberRootActionRuntime(
         albumsById = derivedState.albumsById,
         openNowPlaying = uiRuntime.playerLayerController::requestOpen,
     )
-    val playlistActions = rememberRootPlaylistActions(playlistStore, favoritesStore)
+    val playlistActions = rememberRootPlaylistActions(
+        playlistStore = playlistStore,
+        favoritesStore = favoritesStore,
+        youTubeCatalog = youTubeCatalog,
+        songResolver = { songId ->
+            derivedState.songsById[songId]
+                ?: playback.playbackState.value.currentSong?.takeIf { it.id == songId }
+                ?: playback.playbackState.value.queue.firstOrNull { it.id == songId }
+        },
+        isFavoriteResolver = { songId -> songId in appState.favoriteSongIds },
+    )
     val routeState = rootRouteStateOf(
         appState = appState,
         derivedState = derivedState,

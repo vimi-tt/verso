@@ -14,7 +14,12 @@ import elovaire.music.droidbeauty.app.domain.model.Playlist
 import elovaire.music.droidbeauty.app.domain.model.Song
 import elovaire.music.droidbeauty.app.data.settings.FavoritesStore
 import elovaire.music.droidbeauty.app.data.settings.PlaylistStore
+import elovaire.music.droidbeauty.app.data.youtube.YouTubeCatalogRepository
+import elovaire.music.droidbeauty.app.data.youtube.YouTubeSongRegistry
+import elovaire.music.droidbeauty.app.data.youtube.YouTubeUri
 import elovaire.music.droidbeauty.app.domain.model.ALL_SONGS_PLAYBACK_SOURCE
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 internal fun audiobookResumeTarget(
     songs: List<Song>,
@@ -186,6 +191,10 @@ internal class RootPlaybackActions internal constructor(
 internal class RootPlaylistActions internal constructor(
     private val playlistStore: PlaylistStore,
     private val favoritesStore: FavoritesStore,
+    private val youTubeCatalog: YouTubeCatalogRepository? = null,
+    private val songResolver: (Long) -> Song? = { null },
+    private val isFavoriteResolver: (Long) -> Boolean = { false },
+    private val scope: CoroutineScope? = null,
 ) {
     fun createPlaylist(name: String): PlaylistMutationRequest = playlistStore.createPlaylist(name)
 
@@ -209,10 +218,32 @@ internal class RootPlaylistActions internal constructor(
         favorite: Boolean,
     ) {
         favoritesStore.setFavoriteSongs(songIds, favorite)
+        syncYouTubeLikes(songIds, favorite)
     }
 
     fun toggleFavorite(songId: Long) {
+        val willBeFavorite = !isFavoriteResolver(songId)
         favoritesStore.toggleFavoriteSong(songId)
+        syncYouTubeLikes(listOf(songId), willBeFavorite)
+    }
+
+    private fun syncYouTubeLikes(
+        songIds: List<Long>,
+        liked: Boolean,
+    ) {
+        val catalog = youTubeCatalog ?: return
+        val coroutineScope = scope ?: return
+        if (!catalog.accountState.value.isLoggedIn) return
+        val videoIds = songIds.mapNotNull { id ->
+            val song = songResolver(id) ?: YouTubeSongRegistry.find(id)
+            song?.let { YouTubeUri.videoId(it.uri) }
+        }.distinct()
+        if (videoIds.isEmpty()) return
+        coroutineScope.launch {
+            for (videoId in videoIds) {
+                runCatching { catalog.setVideoLikeStatus(videoId, liked) }
+            }
+        }
     }
 }
 
@@ -237,8 +268,21 @@ internal fun rememberRootPlaybackActions(
 internal fun rememberRootPlaylistActions(
     playlistStore: PlaylistStore,
     favoritesStore: FavoritesStore,
+    youTubeCatalog: YouTubeCatalogRepository? = null,
+    songResolver: (Long) -> Song? = { null },
+    isFavoriteResolver: (Long) -> Boolean = { false },
 ): RootPlaylistActions {
-    return remember(playlistStore, favoritesStore) { RootPlaylistActions(playlistStore, favoritesStore) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    return remember(playlistStore, favoritesStore, youTubeCatalog, songResolver, isFavoriteResolver, scope) {
+        RootPlaylistActions(
+            playlistStore = playlistStore,
+            favoritesStore = favoritesStore,
+            youTubeCatalog = youTubeCatalog,
+            songResolver = songResolver,
+            isFavoriteResolver = isFavoriteResolver,
+            scope = scope,
+        )
+    }
 }
 
 internal fun List<Song>.playbackSourceLabel(

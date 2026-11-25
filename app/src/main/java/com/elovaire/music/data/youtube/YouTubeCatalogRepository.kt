@@ -396,6 +396,26 @@ internal class YouTubeCatalogRepository(
         streamClient.removeVideoFromYouTubePlaylist(playlistId, videoId)
     }
 
+    suspend fun setVideoLikeStatus(videoId: String, liked: Boolean): Boolean = withContext(ioDispatcher) {
+        val ok = streamClient.setVideoLikeStatus(videoId, liked)
+        if (ok && _accountState.value.isLoggedIn) {
+            val current = _accountState.value
+            val updatedLiked = if (liked) {
+                val song = YouTubeSongRegistry.find(YouTubeUri.trackIdFor(videoId))
+                if (song != null && current.likedSongs.none { it.id == song.id }) {
+                    listOf(song) + current.likedSongs
+                } else {
+                    current.likedSongs
+                }
+            } else {
+                val targetId = YouTubeUri.trackIdFor(videoId)
+                current.likedSongs.filterNot { it.id == targetId || YouTubeUri.videoId(it.uri) == videoId }
+            }
+            _accountState.value = current.copy(likedSongs = updatedLiked)
+        }
+        ok
+    }
+
     suspend fun getAlbumSongs(browseId: String): List<Song> = withContext(ioDispatcher) {
         streamClient.catalog.getAlbumSongs(browseId).map { it.toElovaireSong() }
     }
