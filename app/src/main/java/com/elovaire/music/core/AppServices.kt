@@ -507,6 +507,50 @@ internal class AppServices(
         startupCoordinator.start()
     }
 
+    private val playbackTrackingCoordinatorDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        elovaire.music.droidbeauty.app.data.playback.PlaybackTrackingCoordinator(
+            playbackState = playbackManager.state,
+            progressState = playbackManager.progressState,
+            scope = appScope,
+            onEnqueueTracks = playbackManager::enqueueSongs,
+            onPositionChanged = { currentIndex, currentQueue, queueSnapshotProvider, onAppendTracks ->
+                compassoEngine.onPlaybackPositionChanged(
+                    currentIndex = currentIndex,
+                    currentQueue = currentQueue,
+                    autoActivateAtEndOfCollection = true,
+                    queueSnapshotProvider = queueSnapshotProvider,
+                    onAppendTracks = onAppendTracks,
+                )
+            },
+            onRecordOutcome = { song, playedMs, wasSkipped ->
+                compassoEngine.recordPlaybackOutcome(
+                    song = song,
+                    playedMs = playedMs,
+                    wasSkipped = wasSkipped,
+                )
+            },
+            onReportYouTubeHistory = { song, playedSeconds ->
+                youTubeCatalogRepository.reportPlaybackHistory(song, playedSeconds = playedSeconds)
+            },
+            onRecordRecentSong = listeningStatsStore::recordRecentSong,
+            onRecordSongPlayed = { song, initialListenedMs ->
+                listeningStatsStore.recordSongPlayed(song, initialListenedMs = initialListenedMs)
+            },
+            onAddListenedDuration = listeningStatsStore::addListenedDuration,
+            onSavePlaybackSession = listeningStatsStore::saveLastPlaybackSession,
+            onUpdateSongGenre = listeningStatsStore::updateSongGenre,
+            onUpdateNowPlaying = { song ->
+                lastFmClient.updateNowPlaying(song)
+                listenBrainzClient.updateNowPlaying(song)
+            },
+            onScrobble = { song ->
+                lastFmClient.scrobble(song)
+                listenBrainzClient.scrobble(song)
+            },
+            onResolveGenre = lastFmClient::resolveGenre,
+        )
+    }
+
     fun startPlayback() {
         startAudiobookProgressKeyMigration()
         appScope.launch(appDispatchers.io) {
@@ -516,6 +560,7 @@ internal class AppServices(
         mediaLibraryInvalidationCoordinator.start()
         startupCoordinator.startPlayback()
         portableUserDataBackupRuntime.start()
+        playbackTrackingCoordinatorDelegate.value.start()
     }
 
     internal fun onWidgetProvidersChanged() {
