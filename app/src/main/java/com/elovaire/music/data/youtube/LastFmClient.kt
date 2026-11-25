@@ -351,19 +351,27 @@ internal class LastFmClient(
             return existing
         }
         val artist = primaryArtist(song.artist)
-        val cacheKey = "${artist.lowercase()}|${song.title.trim().lowercase()}"
+        val cleanTitle = elovaire.music.droidbeauty.app.data.compasso.TrackNormalizer
+            .normalizeTitle(song.title)
+            .ifBlank { song.title.trim() }
+        val cacheKey = "${artist.lowercase()}|${cleanTitle.lowercase()}"
         genreCache[cacheKey]?.let { return it }
 
         return withContext(ioDispatcher) {
             val apiKey = _state.value.apiKey
             val fromLastFm = if (apiKey.isNotBlank() && artist.isNotBlank()) {
-                fetchLastFmGenreTag(artist = artist, track = song.title, apiKey = apiKey)
+                fetchLastFmGenreTag(artist = artist, track = cleanTitle, apiKey = apiKey)
             } else {
                 null
             }
-            val resolved = fromLastFm ?: fetchItunesGenre(artist = artist, title = song.title)
+            val resolved = fromLastFm
+                ?: fetchItunesGenre(artist = artist, title = cleanTitle)
+                ?: genreCache["artist:${artist.lowercase()}"]
             if (!resolved.isNullOrBlank()) {
                 genreCache[cacheKey] = resolved
+                if (artist.isNotBlank()) {
+                    genreCache.putIfAbsent("artist:${artist.lowercase()}", resolved)
+                }
             }
             resolved
         }
@@ -465,7 +473,8 @@ internal class LastFmClient(
         }
 
     private fun primaryArtist(artist: String): String =
-        artist.split(",", "&", "feat.", "ft.").firstOrNull()?.trim().orEmpty()
+        artist.split(Regex("""\s*(?:\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|;|•|·)\s*""", RegexOption.IGNORE_CASE))
+            .firstOrNull()?.trim().orEmpty()
 
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
 

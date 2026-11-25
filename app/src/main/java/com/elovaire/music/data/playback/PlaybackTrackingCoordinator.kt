@@ -88,6 +88,7 @@ internal class PlaybackTrackingCoordinator(
 
         var finalizedOutcome: Triple<Song, Long, Boolean>? = null
         var finalizedYouTubeReport: Pair<Song, Int>? = null
+        var finalizedTailDuration: Pair<Song, Long>? = null
         var startedNewTrack: Song? = null
         var shouldTriggerPositionChanged = false
 
@@ -109,6 +110,9 @@ internal class PlaybackTrackingCoordinator(
             if (trackChanged) {
                 if (prev != null) {
                     val prevPlayedMs = accumulatedPlayMs
+                    if (recordedCurrentTrack && prevPlayedMs > reportedExtraMs) {
+                        finalizedTailDuration = prev to (prevPlayedMs - reportedExtraMs)
+                    }
                     if (prevPlayedMs >= YOUTUBE_HISTORY_MIN_MS && !reportedYouTubeHistory) {
                         reportedYouTubeHistory = true
                         finalizedYouTubeReport = prev to (prevPlayedMs / 1_000L).toInt()
@@ -140,6 +144,9 @@ internal class PlaybackTrackingCoordinator(
             lastPlayTickElapsedMs = if (lastIsPlaying) nowElapsedMs() else null
         }
 
+        finalizedTailDuration?.let { (song, delta) ->
+            onAddListenedDuration(song, delta)
+        }
         finalizedYouTubeReport?.let { (song, playedSeconds) ->
             scope.launch {
                 runCatching { onReportYouTubeHistory(song, playedSeconds) }
@@ -175,6 +182,7 @@ internal class PlaybackTrackingCoordinator(
         val current = state.currentSong ?: return
         var finalizedOutcome: Triple<Song, Long, Boolean>? = null
         var finalizedYouTubeReport: Pair<Song, Int>? = null
+        var finalizedTailDuration: Pair<Song, Long>? = null
         var restartedTrack: Song? = null
 
         synchronized(lock) {
@@ -188,6 +196,9 @@ internal class PlaybackTrackingCoordinator(
             if (isRepeatRestart) {
                 flushElapsedLocked(nowElapsedMs())
                 val prevPlayedMs = accumulatedPlayMs
+                if (recordedCurrentTrack && prevPlayedMs > reportedExtraMs) {
+                    finalizedTailDuration = prev to (prevPlayedMs - reportedExtraMs)
+                }
                 if (prevPlayedMs >= YOUTUBE_HISTORY_MIN_MS && !reportedYouTubeHistory) {
                     reportedYouTubeHistory = true
                     finalizedYouTubeReport = prev to (prevPlayedMs / 1_000L).toInt()
@@ -207,6 +218,9 @@ internal class PlaybackTrackingCoordinator(
             lastObservedPositionMs = progress.positionMs
         }
 
+        finalizedTailDuration?.let { (song, delta) ->
+            onAddListenedDuration(song, delta)
+        }
         finalizedYouTubeReport?.let { (song, playedSeconds) ->
             scope.launch {
                 runCatching { onReportYouTubeHistory(song, playedSeconds) }

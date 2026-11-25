@@ -1,5 +1,6 @@
 package elovaire.music.droidbeauty.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,6 +34,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -44,12 +47,15 @@ import elovaire.music.droidbeauty.app.data.youtube.StatsPeriod
 import elovaire.music.droidbeauty.app.domain.model.AppLanguage
 import elovaire.music.droidbeauty.app.domain.model.Song
 import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
+import elovaire.music.droidbeauty.app.ui.components.rememberArtworkPaletteAccent
 import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
 import elovaire.music.droidbeauty.app.ui.i18n.commonUiCopy
 import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
 import elovaire.music.droidbeauty.app.ui.screens.common.ModuleCard
 import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
+import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
 
 private enum class StatsTab {
     Tracks,
@@ -138,8 +144,16 @@ internal fun StatsScreen(
     } else {
         "${totalMinutes}m"
     }
-    val resolvedGenre = stats.topGenre.ifBlank { "Music" }
+    val fallbackGenre = when (language) {
+        AppLanguage.Portuguese, AppLanguage.Spanish -> "Música"
+        else -> "Music"
+    }
+    val resolvedGenre = stats.topGenre.ifBlank { fallbackGenre }
     val topSongArt = stats.topSongs.firstOrNull()?.song?.artUri
+    val coverAccent by rememberArtworkPaletteAccent(topSongArt)
+    val heroAccent = (coverAccent ?: MaterialTheme.colorScheme.primary)
+        .copy(alpha = 0.36f)
+        .compositeOver(MaterialTheme.colorScheme.surfaceVariant)
 
     Box(
         modifier = Modifier
@@ -152,17 +166,17 @@ internal fun StatsScreen(
                 .fillMaxSize()
                 .ensureSingleItemRubberBand(listState),
             contentPadding = PaddingValues(
-                start = 20.dp,
-                end = 20.dp,
-                top = topBarOccupiedHeight() + 12.dp,
-                bottom = bottomPadding + 24.dp,
+                start = ElovaireSpacing.screenHorizontalPadding,
+                end = ElovaireSpacing.screenHorizontalPadding,
+                top = topBarOccupiedHeight() + ElovaireSpacing.md,
+                bottom = bottomPadding + ElovaireSpacing.xl,
             ),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.lg),
         ) {
             item(key = "stats_period_chips") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.sm),
                 ) {
                     val periods = listOf(
                         StatsPeriod.Month to copy.periodMonth,
@@ -171,116 +185,131 @@ internal fun StatsScreen(
                     )
                     periods.forEach { (period, label) ->
                         val selected = selectedPeriod == period
-                        Box(
+                        Surface(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(ElovaireRadii.pill))
-                                .background(
-                                    if (selected) {
-                                        Color(0xFFFF6E4A)
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.50f)
-                                    },
-                                )
-                                .elovaireClickable { onPeriodSelected(period) }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center,
+                                .elovaireClickable { onPeriodSelected(period) },
+                            shape = RoundedCornerShape(ElovaireRadii.pill),
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                            },
+                            border = if (selected) {
+                                null
+                            } else {
+                                BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                            },
                         ) {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Box(
+                                modifier = Modifier.padding(vertical = 9.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (selected) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                     }
                 }
             }
 
             item(key = "stats_recap_hero") {
-                Box(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(ElovaireRadii.card))
-                        .background(Color(0xFF14132D))
                         .elovaireClickable(enabled = stats.topSongs.isNotEmpty(), onClick = { onOpenRecap(selectedPeriod) }),
+                    shape = RoundedCornerShape(ElovaireRadii.module),
+                    color = heroAccent,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
                 ) {
-                    if (topSongArt != null) {
-                        ArtworkImage(
-                            uri = topSongArt,
-                            title = copy.recapTitle,
-                            modifier = Modifier
-                                .matchParentSize()
-                                .blur(36.dp)
-                                .alpha(0.38f),
-                            cornerRadius = 0.dp,
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color(0xFF19183D).copy(alpha = 0.88f),
-                                        Color(0xFF281B3D).copy(alpha = 0.72f),
-                                    ),
-                                ),
-                            ),
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                VersoOption1Icon(size = 24.dp)
-                                Text(
-                                    text = copy.recapTitle,
-                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White,
-                                )
-                            }
-                            Text(
-                                text = copy.recapSubtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.78f),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (stats.topSongs.isNotEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .padding(top = 4.dp)
-                                        .clip(RoundedCornerShape(ElovaireRadii.pill))
-                                        .background(Color(0xFFFF6E4A))
-                                        .padding(horizontal = 14.dp, vertical = 7.dp),
-                                ) {
-                                    Text(
-                                        text = copy.openRecap,
-                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                        color = Color.White,
-                                    )
-                                }
-                            }
-                        }
+                    Box(modifier = Modifier.fillMaxWidth()) {
                         if (topSongArt != null) {
                             ArtworkImage(
                                 uri = topSongArt,
                                 title = copy.recapTitle,
-                                modifier = Modifier.size(84.dp),
-                                cornerRadius = 14.dp,
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .blur(40.dp)
+                                    .alpha(0.32f),
+                                cornerRadius = 0.dp,
                             )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .background(
+                                    Brush.horizontalGradient(
+                                        colors = listOf(
+                                            heroAccent.copy(alpha = 0.88f),
+                                            heroAccent.copy(alpha = 0.62f),
+                                        ),
+                                    ),
+                                ),
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(18.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    VersoOption1Icon(size = 24.dp)
+                                    Text(
+                                        text = copy.recapTitle,
+                                        style = MaterialTheme.typography.headlineMedium.copy(
+                                            fontSize = elovaireScaledSp(21f),
+                                            fontWeight = FontWeight.Bold,
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                                Text(
+                                    text = copy.recapSubtitle,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = readableSecondaryTextColor(),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (stats.topSongs.isNotEmpty()) {
+                                    Surface(
+                                        modifier = Modifier.padding(top = 4.dp),
+                                        shape = RoundedCornerShape(ElovaireRadii.pill),
+                                        color = MaterialTheme.colorScheme.primary,
+                                    ) {
+                                        Text(
+                                            text = copy.openRecap,
+                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            if (topSongArt != null) {
+                                ArtworkImage(
+                                    uri = topSongArt,
+                                    title = copy.recapTitle,
+                                    modifier = Modifier.size(84.dp),
+                                    cornerRadius = ElovaireRadii.artwork,
+                                )
+                            }
                         }
                     }
                 }
@@ -321,32 +350,38 @@ internal fun StatsScreen(
                     )
                     tabs.forEach { (tab, label) ->
                         val selected = selectedTab == tab
-                        Box(
+                        Surface(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(ElovaireRadii.pill))
-                                .background(
-                                    if (selected) {
-                                        MaterialTheme.colorScheme.onSurface
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                                    },
-                                )
-                                .elovaireClickable { selectedTab = tab }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center,
+                                .elovaireClickable { selectedTab = tab },
+                            shape = RoundedCornerShape(ElovaireRadii.pill),
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                            },
+                            border = if (selected) {
+                                null
+                            } else {
+                                BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                            },
                         ) {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.surface
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Box(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (selected) {
+                                        MaterialTheme.colorScheme.surface
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                     }
                 }
@@ -449,14 +484,14 @@ private fun StatSummaryPill(
         ) {
             Text(
                 text = value,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = readableSecondaryTextColor(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -542,7 +577,7 @@ private fun LastFmRankedRow(
                     .fillMaxWidth(ratio)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(ElovaireRadii.pill))
-                    .background(Color(0xFFFF6E4A)),
+                    .background(MaterialTheme.colorScheme.primary),
             )
         }
     }

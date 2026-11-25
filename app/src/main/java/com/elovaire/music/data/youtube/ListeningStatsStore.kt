@@ -187,6 +187,13 @@ internal class ListeningStatsStore(
     }
 
     suspend fun backfillMissingGenres(resolveGenre: suspend (Song) -> String?) {
+        val knownGenresBySongId = HashMap<Long, String>()
+        for (event in _events.value) {
+            val g = event.song.genre.trim()
+            if (g.isNotBlank() && !g.equals("Unknown Genre", ignoreCase = true)) {
+                knownGenresBySongId[event.song.id] = g
+            }
+        }
         val missingSongs = _events.value
             .asReversed()
             .distinctBy { it.song.id }
@@ -194,9 +201,10 @@ internal class ListeningStatsStore(
             .filter {
                 it.genre.isBlank() || it.genre.equals("Unknown Genre", ignoreCase = true)
             }
-            .take(15)
+            .take(40)
         missingSongs.forEach { song ->
-            val resolved = runCatching { resolveGenre(song) }.getOrNull()
+            val resolved = knownGenresBySongId[song.id]
+                ?: runCatching { resolveGenre(song) }.getOrNull()
             if (!resolved.isNullOrBlank()) {
                 updateSongGenre(song.id, resolved)
             }
@@ -433,7 +441,13 @@ internal fun buildListeningStatsSnapshot(
 
     val topArtists = topSongs
         .filter { it.song.artist.isNotBlank() }
-        .groupBy { it.song.artist.split(",", "&", "feat.", "ft.").first().trim().ifBlank { it.song.artist } }
+        .groupBy {
+            it.song.artist
+                .split(Regex("""\s*(?:\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|;|•|·)\s*""", RegexOption.IGNORE_CASE))
+                .first()
+                .trim()
+                .ifBlank { it.song.artist }
+        }
         .map { (artistName, items) ->
             RankedArtistStat(
                 artist = artistName,
@@ -464,12 +478,15 @@ internal fun buildListeningStatsSnapshot(
     val topGenre = topSongs
         .mapNotNull { stat ->
             stat.song.genre
+                .trim()
                 .takeIf { it.isNotBlank() && !it.equals("Unknown Genre", ignoreCase = true) }
-                ?.let { it to stat.playCount }
+                ?.let { it to stat.listenedMs.coerceAtLeast(stat.playCount * 30_000L) }
         }
-        .groupBy({ it.first }, { it.second })
-        .maxByOrNull { (_, counts) -> counts.sum() }
-        ?.key
+        .groupBy({ it.first.lowercase() }, { it })
+        .maxByOrNull { (_, entries) -> entries.sumOf { it.second } }
+        ?.value
+        ?.firstOrNull()
+        ?.first
         .orEmpty()
 
     val totalPlays = topSongs.sumOf { it.playCount }
