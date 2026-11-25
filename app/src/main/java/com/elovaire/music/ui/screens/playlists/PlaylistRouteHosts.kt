@@ -206,5 +206,6 @@ internal fun PlaylistDetailRouteHost(
         },
         onRenamePlaylist = routeActions::renamePlaylist,
         onToggleFavorite = routeActions.playlists::toggleFavorite,
+        onDeletePlaylist = { id -> routeActions.deletePlaylists(setOf(id)) },
     )
 }

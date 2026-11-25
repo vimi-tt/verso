@@ -118,6 +118,7 @@ internal fun PlaylistDetailScreen(
     coverUriOverride: String? = null,
     downloadedVideoIds: Set<String> = emptySet(),
     onDownloadPlaylist: ((List<Song>, elovaire.music.droidbeauty.app.data.youtube.YouTubeDownloadedCollection) -> Unit)? = null,
+    onDeletePlaylist: ((Long) -> PlaylistMutationRequest)? = null,
 ) {
     val revealRegistry = rememberMotionRevealRegistry()
     val motionTransitions = rememberMotionTransitions()
@@ -190,6 +191,7 @@ internal fun PlaylistDetailScreen(
     var activelyDraggedSongId by rememberSaveable(playlistState.id) { mutableStateOf<Long?>(null) }
     var showEditModeMenu by rememberSaveable(playlistState.id) { mutableStateOf(false) }
     var showRenameDialog by rememberSaveable(playlistState.id) { mutableStateOf(false) }
+    var showDeleteConfirm by rememberSaveable(playlistState.id) { mutableStateOf(false) }
     var isSaving by rememberSaveable(playlistState.id) { mutableStateOf(false) }
     var autoScrollJob by remember { mutableStateOf<Job?>(null) }
     val language = LocalAppLanguage.current
@@ -239,6 +241,15 @@ internal fun PlaylistDetailScreen(
                 )
             }
             if (!playlistState.isSystem) {
+                if (!editMode && onDeletePlaylist != null) {
+                    add(
+                        TopBarActionSpec(
+                            iconResId = R.drawable.ic_lucide_trash_2,
+                            contentDescription = uiPhrase(LocalAppLanguage.current, UiPhrase.Delete),
+                            onClick = { showDeleteConfirm = true },
+                        ),
+                    )
+                }
                 add(
                     TopBarActionSpec(
                         iconResId = if (editMode) R.drawable.ic_lucide_check else R.drawable.ic_lucide_square_pen,
@@ -663,6 +674,52 @@ internal fun PlaylistDetailScreen(
             }
         },
     )
+    if (showDeleteConfirm && !playlistState.isSystem && onDeletePlaylist != null) {
+        val language = LocalAppLanguage.current
+        val isPt = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese
+        val isEs = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = {
+                Text(
+                    text = uiPhrase(language, UiPhrase.Delete),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                )
+            },
+            text = {
+                Text(
+                    text = when {
+                        isPt -> "Excluir a playlist \"${playlistState.name}\"?"
+                        isEs -> "¿Eliminar la playlist \"${playlistState.name}\"?"
+                        else -> "Delete playlist \"${playlistState.name}\"?"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text(rootUiCopy(language).cancel)
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        scope.launch {
+                            if (onDeletePlaylist(playlistState.id).await() is PlaylistMutationResult.Success) {
+                                onBack()
+                            }
+                        }
+                    },
+                ) {
+                    Text(
+                        text = uiPhrase(language, UiPhrase.Delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+        )
+    }
 }
 
 @Composable
