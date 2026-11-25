@@ -42,8 +42,12 @@ class CompassoEngineTest {
 
     @Test
     fun `TrackNormalizer strips featured artists and accents`() {
-        val k1 = TrackNormalizer.normalizeKey("Águas de Março (Official Audio)", "Elis Regina, Tom Jobim")
-        val k2 = TrackNormalizer.normalizeKey("Aguas de Marco feat. Tom Jobim", "Elis Regina & Tom Jobim")
+        val k1 = TrackNormalizer.normalizeKey(
+            title = "Águas de Março (Official Audio)",
+            artist = "Elis Regina, Tom Jobim",
+            structuredArtists = listOf("Elis Regina", "Tom Jobim"),
+        )
+        val k2 = TrackNormalizer.normalizeKey("Aguas de Marco feat. Tom Jobim", "Elis Regina feat. Tom Jobim")
         assertEquals("aguas de marco|elis regina", k1)
         assertEquals(k1, k2)
     }
@@ -60,6 +64,23 @@ class CompassoEngineTest {
         assertTrue(jp != kr)
         assertTrue(cyrillic.startsWith("кино группа крови|кино"))
         assertEquals("cafe tacvba|cafe", accented)
+    }
+
+    @Test
+    fun `TrackNormalizer does not truncate band names or real title words like Long Live`() {
+        assertEquals("ac dc", TrackNormalizer.normalizePrimaryArtist("AC/DC"))
+        assertEquals("simon garfunkel", TrackNormalizer.normalizePrimaryArtist("Simon & Garfunkel"))
+        assertEquals("earth wind fire", TrackNormalizer.normalizePrimaryArtist("Earth, Wind & Fire"))
+        assertEquals("tyler the creator", TrackNormalizer.normalizePrimaryArtist("Tyler, The Creator"))
+        assertEquals("long live", TrackNormalizer.normalizeTitle("Long Live"))
+        assertEquals("video games", TrackNormalizer.normalizeTitle("Video Games"))
+        assertEquals(
+            "elis regina",
+            TrackNormalizer.normalizePrimaryArtist(
+                rawArtist = "Elis Regina, Tom Jobim",
+                structuredArtists = listOf("Elis Regina", "Tom Jobim"),
+            ),
+        )
     }
 
     // -------------------------------------------------------------------------

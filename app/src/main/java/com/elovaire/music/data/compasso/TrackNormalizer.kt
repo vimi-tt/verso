@@ -41,12 +41,17 @@ internal object TrackNormalizer {
     )
 
     private val LOOSE_NOISE_REGEX = Regex(
-        pattern = """(?:\s*[-–—|•:]\s*|\s+)\b(?:${NOISE_TOKENS.joinToString("|")})\b(?:\s+\d{4})?""",
+        pattern = """(?:\s*[-–—|•:]\s+)\b(?:${NOISE_TOKENS.joinToString("|")})\b(?:\s+\d{4})?""",
+        option = RegexOption.IGNORE_CASE,
+    )
+
+    private val TRAILING_QUALITY_REGEX = Regex(
+        pattern = """\s+\b(?:hd|4k)\b\s*$""",
         option = RegexOption.IGNORE_CASE,
     )
 
     private val ARTIST_SPLIT_REGEX = Regex(
-        pattern = """\s*(?:,|&|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\bx\b|·|/)\s*""",
+        pattern = """\s*(?:\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|;|·|•)\s*""",
         option = RegexOption.IGNORE_CASE,
     )
 
@@ -60,21 +65,39 @@ internal object TrackNormalizer {
         cleaned = BRACKETED_NOISE_REGEX.replace(cleaned, " ")
         cleaned = TRAILING_FEAT_REGEX.replace(cleaned, " ")
         cleaned = LOOSE_NOISE_REGEX.replace(cleaned, " ")
+        cleaned = TRAILING_QUALITY_REGEX.replace(cleaned, " ")
         cleaned = NON_ALNUM_REGEX.replace(cleaned, " ")
         return MULTI_SPACE_REGEX.replace(cleaned, " ").trim()
     }
 
-    fun normalizePrimaryArtist(rawArtist: String): String {
-        if (rawArtist.isBlank()) return ""
-        val first = ARTIST_SPLIT_REGEX.split(rawArtist.trim()).firstOrNull().orEmpty()
+    fun normalizePrimaryArtist(
+        rawArtist: String,
+        structuredArtists: List<String> = emptyList(),
+        artistId: String? = null,
+    ): String {
+        val structuredPrimary = structuredArtists.firstOrNull { it.isNotBlank() }
+        val candidate = structuredPrimary ?: rawArtist
+        if (candidate.isBlank()) {
+            return artistId?.trim()?.takeIf { it.isNotBlank() }?.lowercase().orEmpty()
+        }
+        val first = if (structuredPrimary != null) {
+            structuredPrimary.trim()
+        } else {
+            ARTIST_SPLIT_REGEX.split(candidate.trim()).firstOrNull().orEmpty()
+        }
         val stripped = stripAccents(first).lowercase()
         val alnum = NON_ALNUM_REGEX.replace(stripped, " ")
         return MULTI_SPACE_REGEX.replace(alnum, " ").trim()
     }
 
-    fun normalizeKey(title: String, artist: String): String {
+    fun normalizeKey(
+        title: String,
+        artist: String,
+        structuredArtists: List<String> = emptyList(),
+        artistId: String? = null,
+    ): String {
         val normTitle = normalizeTitle(title)
-        val normArtist = normalizePrimaryArtist(artist)
+        val normArtist = normalizePrimaryArtist(artist, structuredArtists, artistId)
         return "$normTitle|$normArtist"
     }
 
