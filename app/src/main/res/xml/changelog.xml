@@ -6,6 +6,13 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
+    <release version="Cavaquinho 1.1">
+        <item>Kept Add to Playlist exclusive to albums so playlist action bars remain symmetrical</item>
+        <item>Always display the album title next to the back button on album detail pages and keep the back button pill visible</item>
+        <item>Redesigned Statistics to match Verso's brand blue palette, cover-derived Recap hero card, and Outfit/Geist typography</item>
+        <item>Improved genre resolution with clean title matching, artist-level fallback caching, full band name preservation, and time-weighted top genres</item>
+        <item>Flushed remaining playback seconds on track change, skip, or repeat for accurate listening time totals</item>
+    </release>
     <release version="Cavaquinho 1">
         <item>Extended the borderless progressive blur top bar and visible back button with collection titles across albums, playlists, library views, and artist pages</item>
         <item>Redesigned artist pages with larger artwork, Outfit headings, cover-derived atmospheric gradients, and refined action controls</item>

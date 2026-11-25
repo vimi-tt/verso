@@ -6,7 +6,9 @@ internal object AppVersionPolicy {
         val codenameMatch = CODENAME_REGEX.matchEntire(trimmed)
         if (codenameMatch != null) {
             val instrument = codenameMatch.groupValues[1].lowercase().replaceFirstChar { it.titlecase() }
-            val number = codenameMatch.groupValues[2].trimLeadingZeros()
+            val number = codenameMatch.groupValues[2]
+                .split(".")
+                .joinToString(".") { it.trimLeadingZeros() }
             return "$instrument $number"
         }
         return trimmed
@@ -144,16 +146,27 @@ internal object AppVersionPolicy {
         }
     }
 
-    private fun compareNumeric(left: String, right: String): Int = when {
-        left.length != right.length -> left.length.compareTo(right.length)
-        else -> left.compareTo(right)
+    private fun compareNumeric(left: String, right: String): Int {
+        val leftParts = left.split(".")
+        val rightParts = right.split(".")
+        val maxSize = maxOf(leftParts.size, rightParts.size)
+        for (i in 0 until maxSize) {
+            val l = leftParts.getOrElse(i) { "0" }.trimLeadingZeros()
+            val r = rightParts.getOrElse(i) { "0" }.trimLeadingZeros()
+            val cmp = when {
+                l.length != r.length -> l.length.compareTo(r.length)
+                else -> l.compareTo(r)
+            }
+            if (cmp != 0) return cmp
+        }
+        return 0
     }
 
     private val CODENAME_REGEX = Regex(
-        """^([A-Za-z]+)[-_ ]+(\d+)$""",
+        """^([A-Za-z]+)[-_ ]+(\d+(?:\.\d+)*)$""",
     )
     private val CODENAME_CANDIDATE_REGEX = Regex(
-        """\b([A-Za-z]{3,})[-_ ]+(\d+)\b""",
+        """\b([A-Za-z]{3,})[-_ ]+(\d+(?:\.\d+)*)\b""",
     )
     private val VERSION_REGEX = Regex(
         """(?i)^v?(\d+(?:\.\d+){0,2})(?:-([0-9a-z-]+(?:\.[0-9a-z-]+)*))?(?:\+[0-9a-z-]+(?:\.[0-9a-z-]+)*)?$""",
