@@ -179,6 +179,7 @@ internal class CompassoEngine(
         currentIndex: Int,
         currentQueue: List<Song>,
         autoActivateAtEndOfCollection: Boolean = true,
+        queueSnapshotProvider: (() -> Pair<Int, List<Song>>)? = null,
         onAppendTracks: (List<Song>) -> Unit,
     ) {
         val remainingAhead = (currentQueue.size - 1 - currentIndex).coerceAtLeast(0)
@@ -210,6 +211,7 @@ internal class CompassoEngine(
                 currentIndex = currentIndex,
                 currentQueue = currentQueue,
                 forceFetch = false,
+                queueSnapshotProvider = queueSnapshotProvider,
                 onAppendTracks = onAppendTracks,
             )
         }
@@ -406,9 +408,11 @@ internal class CompassoEngine(
         currentIndex: Int,
         currentQueue: List<Song>,
         forceFetch: Boolean = false,
+        queueSnapshotProvider: (() -> Pair<Int, List<Song>>)? = null,
         onAppendTracks: (List<Song>) -> Unit,
     ): List<Song> = fetchMutex.withLock {
-        val remainingAhead = (currentQueue.size - 1 - currentIndex).coerceAtLeast(0)
+        val (liveIndex, liveQueue) = queueSnapshotProvider?.invoke() ?: (currentIndex to currentQueue)
+        val remainingAhead = (liveQueue.size - 1 - liveIndex).coerceAtLeast(0)
         val needed = (TARGET_BUFFER_AHEAD - remainingAhead).coerceAtLeast(0)
         if (!forceFetch && needed <= 0) return@withLock emptyList()
         val targetCount = if (needed > 0) needed else TARGET_BUFFER_AHEAD
@@ -440,8 +444,8 @@ internal class CompassoEngine(
             val recentKeys = recentHistory.mapNotNullTo(HashSet()) {
                 resolvedHistoryKey(it).takeIf(::isUsableNormalizedKey)
             }
-            val queueIds = currentQueue.mapNotNullTo(HashSet()) { videoIdExtractor(it) }
-            val queueKeys = currentQueue.mapNotNullTo(HashSet()) {
+            val queueIds = liveQueue.mapNotNullTo(HashSet()) { videoIdExtractor(it) }
+            val queueKeys = liveQueue.mapNotNullTo(HashSet()) {
                 TrackNormalizer.normalizeKey(it.title, it.artist).takeIf(::isUsableNormalizedKey)
             }
 
@@ -469,20 +473,20 @@ internal class CompassoEngine(
             // Prefer the tail of the queue (or current song) when starting a fresh cycle so we
             // extend from the latest musical vibe instead of re-fetching an old seed's queue.
             var currentSeed = if (continuationToken.isNullOrBlank()) {
-                currentQueue.lastOrNull()?.let { videoIdExtractor(it) }
-                    ?: currentQueue.getOrNull(currentIndex)?.let { videoIdExtractor(it) }
+                liveQueue.lastOrNull()?.let { videoIdExtractor(it) }
+                    ?: liveQueue.getOrNull(liveIndex)?.let { videoIdExtractor(it) }
                     ?: activeSeedVideoId
                     ?: affinityTracker.bestFallbackSeed()
                     ?: positiveHistory.firstOrNull()?.videoId
             } else {
                 activeSeedVideoId
-                    ?: currentQueue.lastOrNull()?.let { videoIdExtractor(it) }
-                    ?: currentQueue.getOrNull(currentIndex)?.let { videoIdExtractor(it) }
+                    ?: liveQueue.lastOrNull()?.let { videoIdExtractor(it) }
+                    ?: liveQueue.getOrNull(liveIndex)?.let { videoIdExtractor(it) }
                     ?: affinityTracker.bestFallbackSeed()
                     ?: positiveHistory.firstOrNull()?.videoId
             }
             if (currentSeed == null) {
-                val anchorSong = currentQueue.getOrNull(currentIndex) ?: currentQueue.lastOrNull()
+                val anchorSong = liveQueue.getOrNull(liveIndex) ?: liveQueue.lastOrNull()
                 if (anchorSong != null) {
                     currentSeed = withContext(ioDispatcher) {
                         runCatching { radioSource.resolveAtvSeedVideoId(anchorSong) }.getOrNull()
@@ -495,7 +499,7 @@ internal class CompassoEngine(
                 activeSeedVideoId = currentSeed
             }
 
-            val tailArtists = currentQueue
+            val tailArtists = liveQueue
                 .takeLast(ARTIST_WINDOW_LOOKBACK)
                 .map { TrackNormalizer.normalizePrimaryArtist(it.artist) }
             val usableWaitingCount = usableWaitingBufferCount(
@@ -543,14 +547,14 @@ internal class CompassoEngine(
                 if (continuationToken.isNullOrBlank() || addedValidThisPage == 0) {
                     // Rotate to another seed: current song, another queue track, newly discovered
                     // candidate, session affinity, or positive history.
-                    val fallback = currentQueue.getOrNull(currentIndex)?.let { song ->
+                    val fallback = liveQueue.getOrNull(liveIndex)?.let { song ->
                         videoIdExtractor(song)?.takeIf {
                             it !in usedFallbackSeeds &&
                                 it !in blockedIds &&
                                 TrackNormalizer.normalizePrimaryArtist(song.artist) !in blockedArtistKeys
                         }
                     }
-                        ?: currentQueue.asReversed().firstNotNullOfOrNull { song ->
+                        ?: liveQueue.asReversed().firstNotNullOfOrNull { song ->
                             videoIdExtractor(song)?.takeIf {
                                 it !in usedFallbackSeeds &&
                                     it !in blockedIds &&
@@ -656,11 +660,11 @@ internal class CompassoEngine(
                     sessionNormalizedKeys.add(TrackNormalizer.normalizeKey(song.title, song.artist))
                 }
                 onAppendTracks(songsToAppend)
-                val updatedQueue = currentQueue + songsToAppend
+                val updatedQueue = liveQueue + songsToAppend
                 _uiState.update {
-                    it.copy(queuedAheadCount = (updatedQueue.size - 1 - currentIndex).coerceAtLeast(0))
+                    it.copy(queuedAheadCount = (updatedQueue.size - 1 - liveIndex).coerceAtLeast(0))
                 }
-                persistQueueState(updatedQueue, currentIndex)
+                persistQueueState(updatedQueue, liveIndex)
             }
             songsToAppend
         } catch (cancelled: CancellationException) {

@@ -7,9 +7,11 @@ import elovaire.music.droidbeauty.app.data.library.db.PersistedQueueEntity
 import elovaire.music.droidbeauty.app.data.library.db.PlaybackHistoryEntity
 import elovaire.music.droidbeauty.app.domain.model.AudioMediaKind
 import elovaire.music.droidbeauty.app.domain.model.Song
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -538,6 +540,65 @@ class CompassoEngineTest {
             "Expected page2 tracks to be fetched instead of stopping at waitingBuffer.size",
             appendedSecond.any { it.artist == "Artist F" },
         )
+    }
+
+    @Test
+    fun `concurrent fillAheadIfNeeded calls recompute needed count from live queue inside mutex`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store = FakeCompassoStore()
+        val page1Candidates = (1..20).map { i -> candidate("c$i", "Track $i", "Artist $i") }
+        val page2Candidates = (21..40).map { i -> candidate("c$i", "Track $i", "Artist $i") }
+        val radioSource = FakeRadioSource(
+            pages = mapOf(
+                ("vid_1" to null) to CompassoRadioPage(
+                    candidates = page1Candidates,
+                    continuationToken = "page2",
+                ),
+                ("vid_1" to "page2") to CompassoRadioPage(
+                    candidates = page2Candidates,
+                    continuationToken = null,
+                ),
+            ),
+        )
+        val engine = createEngine(radioSource = radioSource, store = store, dispatcher = dispatcher)
+        engine.setActive(true)
+        engine.setDiscoveryRatio(1.0f)
+
+        val liveQueue = mutableListOf(testSong(id = 1L, title = "Seed", artist = "Seed Artist"))
+        val staleSnapshot = liveQueue.toList()
+        var appendCount = 0
+
+        coroutineScope {
+            val job1 = launch(dispatcher) {
+                engine.fillAheadIfNeeded(
+                    currentIndex = 0,
+                    currentQueue = staleSnapshot,
+                    forceFetch = false,
+                    queueSnapshotProvider = { 0 to liveQueue.toList() },
+                    onAppendTracks = {
+                        appendCount += 1
+                        liveQueue.addAll(it)
+                    },
+                )
+            }
+            val job2 = launch(dispatcher) {
+                engine.fillAheadIfNeeded(
+                    currentIndex = 0,
+                    currentQueue = staleSnapshot,
+                    forceFetch = false,
+                    queueSnapshotProvider = { 0 to liveQueue.toList() },
+                    onAppendTracks = {
+                        appendCount += 1
+                        liveQueue.addAll(it)
+                    },
+                )
+            }
+            job1.join()
+            job2.join()
+        }
+
+        assertEquals(1, appendCount)
+        assertEquals(1 + CompassoEngine.TARGET_BUFFER_AHEAD, liveQueue.size)
     }
 
     @Test
