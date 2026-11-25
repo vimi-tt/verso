@@ -432,6 +432,58 @@ class CompassoEngineTest {
     }
 
     @Test
+    fun `legacy blocked artists and pipe keys remain accurate after normalizer update`() = runTest {
+        val store = FakeCompassoStore()
+        // Legacy blocked artist saved with old truncated key "simon"
+        store.insertBlockedArtist(
+            BlockedArtistEntity(
+                normalizedArtist = "simon",
+                artistName = "Simon & Garfunkel",
+                blockedAt = 1_000L,
+            ),
+        )
+        // Legacy blocked track with "|" key from old non-Latin stripping
+        store.insertBlockedTrack(
+            BlockedTrackEntity(
+                videoId = "old_blocked_vid",
+                normalizedKey = "|",
+                artistName = "",
+                blockedAt = 1_000L,
+            ),
+        )
+        val radioSource = FakeRadioSource(
+            pages = mapOf(
+                ("vid_1" to null) to CompassoRadioPage(
+                    candidates = listOf(
+                        candidate("sg_1", "Bridge Over Troubled Water", "Simon & Garfunkel"),
+                        candidate("simon_1", "Solo Track", "Simon"),
+                        candidate("empty_1", "!!!", "???"),
+                        candidate("good_1", "Good Track", "Good Artist"),
+                    ),
+                    continuationToken = null,
+                ),
+            ),
+        )
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val engine = createEngine(radioSource = radioSource, store = store, dispatcher = dispatcher)
+        engine.setActive(true)
+
+        val appended = mutableListOf<Song>()
+        val seed = testSong(id = 1L, title = "Seed", artist = "Seed Artist")
+        engine.startFromSeed(
+            seedSong = seed,
+            currentQueue = listOf(seed),
+            onAppendTracks = { appended.addAll(it) },
+        )
+
+        val titles = appended.map { it.title }
+        assertFalse("Legacy Simon & Garfunkel block must still block Simon & Garfunkel", titles.contains("Bridge Over Troubled Water"))
+        assertTrue("Legacy Simon & Garfunkel block must not falsely block Simon", titles.contains("Solo Track"))
+        assertTrue("Legacy '|' blocked key must not block unrelated tracks", titles.contains("!!!"))
+        assertTrue(titles.contains("Good Track"))
+    }
+
+    @Test
     fun `DayPeriod fromHour maps all day periods accurately`() {
         assertEquals(DayPeriod.Dawn, DayPeriod.fromHour(0))
         assertEquals(DayPeriod.Dawn, DayPeriod.fromHour(5))

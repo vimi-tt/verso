@@ -356,7 +356,14 @@ internal class CompassoEngine(
         val normalizedArtist = TrackNormalizer.normalizePrimaryArtist(artistName)
         if (normalizedArtist.isBlank()) return
         withContext(ioDispatcher) {
-            runCatching { store.removeBlockedArtist(normalizedArtist) }
+            runCatching {
+                store.removeBlockedArtist(normalizedArtist)
+                val legacyMatches = store.getAllBlockedArtists()
+                    .filter { resolvedBlockedArtistKey(it) == normalizedArtist && it.normalizedArtist != normalizedArtist }
+                for (legacy in legacyMatches) {
+                    store.removeBlockedArtist(legacy.normalizedArtist)
+                }
+            }
         }
     }
 
@@ -423,12 +430,20 @@ internal class CompassoEngine(
             }
 
             val blockedIds = blockedTracks.mapTo(HashSet()) { it.videoId }
-            val blockedKeys = blockedTracks.mapTo(HashSet()) { it.normalizedKey }
-            val blockedArtistKeys = blockedArtists.mapTo(HashSet()) { it.normalizedArtist }
+            val blockedKeys = blockedTracks.mapNotNullTo(HashSet()) {
+                it.normalizedKey.takeIf(::isUsableNormalizedKey)
+            }
+            val blockedArtistKeys = blockedArtists.mapNotNullTo(HashSet()) {
+                resolvedBlockedArtistKey(it).takeIf(String::isNotBlank)
+            }
             val recentIds = recentHistory.mapTo(HashSet()) { it.videoId }
-            val recentKeys = recentHistory.mapTo(HashSet()) { it.normalizedKey }
+            val recentKeys = recentHistory.mapNotNullTo(HashSet()) {
+                resolvedHistoryKey(it).takeIf(::isUsableNormalizedKey)
+            }
             val queueIds = currentQueue.mapNotNullTo(HashSet()) { videoIdExtractor(it) }
-            val queueKeys = currentQueue.mapTo(HashSet()) { TrackNormalizer.normalizeKey(it.title, it.artist) }
+            val queueKeys = currentQueue.mapNotNullTo(HashSet()) {
+                TrackNormalizer.normalizeKey(it.title, it.artist).takeIf(::isUsableNormalizedKey)
+            }
 
             val excludedIds = HashSet<String>().apply {
                 addAll(blockedIds)
@@ -500,8 +515,8 @@ internal class CompassoEngine(
                     val key = TrackNormalizer.normalizeKey(candidate.song.title, candidate.song.artist)
                     val artistKey = TrackNormalizer.normalizePrimaryArtist(candidate.song.artist)
                     if (candidate.videoId !in excludedIds &&
-                        key !in excludedKeys &&
-                        artistKey !in blockedArtistKeys &&
+                        (!isUsableNormalizedKey(key) || key !in excludedKeys) &&
+                        (artistKey.isBlank() || artistKey !in blockedArtistKeys) &&
                         (candidate.song.durationMs <= 0L || candidate.song.durationMs <= MAX_TRACK_DURATION_MS)
                     ) {
                         validFreshCount += 1
@@ -802,10 +817,12 @@ internal class CompassoEngine(
         return candidates.filter { candidate ->
             if (candidate.song.durationMs > MAX_TRACK_DURATION_MS) return@filter false
             val artistKey = TrackNormalizer.normalizePrimaryArtist(candidate.song.artist)
-            if (artistKey in blockedArtistKeys) return@filter false
+            if (artistKey.isNotBlank() && artistKey in blockedArtistKeys) return@filter false
             val key = TrackNormalizer.normalizeKey(candidate.song.title, candidate.song.artist)
-            if (candidate.videoId in excludedIds || key in excludedKeys) return@filter false
-            if (!localIds.add(candidate.videoId) || !localKeys.add(key)) return@filter false
+            val usableKey = isUsableNormalizedKey(key)
+            if (candidate.videoId in excludedIds || (usableKey && key in excludedKeys)) return@filter false
+            if (!localIds.add(candidate.videoId)) return@filter false
+            if (usableKey && !localKeys.add(key)) return@filter false
             true
         }
     }
@@ -826,9 +843,11 @@ internal class CompassoEngine(
 
         // Older positive history entries (outside the last 50 recent dedup window) with time-of-day match boost
         for (entry in positiveHistory) {
-            if (entry.videoId in blockedIds || entry.normalizedKey in blockedKeys) continue
+            val historyKey = resolvedHistoryKey(entry)
+            val usableKey = isUsableNormalizedKey(historyKey)
+            if (entry.videoId in blockedIds || (usableKey && historyKey in blockedKeys)) continue
             if (TrackNormalizer.normalizePrimaryArtist(entry.artistName) in blockedArtistKeys) continue
-            if (entry.videoId in queueIds || entry.normalizedKey in queueKeys) continue
+            if (entry.videoId in queueIds || (usableKey && historyKey in queueKeys)) continue
             if (entry.videoId in recentIds) continue
             if (!seenIds.add(entry.videoId)) continue
             val samePeriod = DayPeriod.fromTimestampMs(entry.playedAt) == currentPeriod
@@ -863,6 +882,23 @@ internal class CompassoEngine(
             )
         }
         return out
+    }
+
+    private fun isUsableNormalizedKey(key: String): Boolean =
+        key.isNotBlank() && key != "|"
+
+    private fun resolvedHistoryKey(entry: PlaybackHistoryEntity): String {
+        if (entry.title.isNotBlank() || entry.artistName.isNotBlank()) {
+            return TrackNormalizer.normalizeKey(entry.title, entry.artistName)
+        }
+        return entry.normalizedKey
+    }
+
+    private fun resolvedBlockedArtistKey(entry: BlockedArtistEntity): String {
+        if (entry.artistName.isNotBlank()) {
+            return TrackNormalizer.normalizePrimaryArtist(entry.artistName)
+        }
+        return entry.normalizedArtist
     }
 
     private fun PlaybackHistoryEntity.toDomainSong(): Song = Song(
