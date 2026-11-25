@@ -109,7 +109,9 @@ internal fun YouTubeCollectionScreen(
     var editMode by remember(collectionId, isAlbum) { mutableStateOf(false) }
     var showRenameDialog by remember(collectionId) { mutableStateOf(false) }
     var showAddTrackDialog by remember(collectionId) { mutableStateOf(false) }
+    var showPlaylistPicker by remember(collectionId) { mutableStateOf(false) }
     var editedTitle by remember(collectionId, initialTitle) { mutableStateOf<String?>(null) }
+    val songMenuActions = LocalSongMenuActions.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val isPt = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese
     val isEs = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish
@@ -318,34 +320,6 @@ internal fun YouTubeCollectionScreen(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        if (isCollectionDownloaded) {
-                            Row(
-                                modifier = Modifier
-                                    .padding(top = 2.dp)
-                                    .clip(RoundedCornerShape(ElovaireRadii.pill))
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
-                                    .border(
-                                        width = 1.dp,
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                                        shape = RoundedCornerShape(ElovaireRadii.pill),
-                                    )
-                                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_lucide_check),
-                                    contentDescription = dlCopy.downloadedAction,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(13.dp),
-                                )
-                                Text(
-                                    text = dlCopy.downloadedAction,
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -356,7 +330,7 @@ internal fun YouTubeCollectionScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         CollectionQuickAction(
@@ -430,6 +404,14 @@ internal fun YouTubeCollectionScreen(
                                 },
                             )
                         }
+                        CollectionQuickAction(
+                            label = elovaire.music.droidbeauty.app.ui.i18n.uiPhrase(
+                                language,
+                                elovaire.music.droidbeauty.app.ui.i18n.UiPhrase.AddToPlaylist,
+                            ),
+                            iconResId = R.drawable.ic_lucide_list_plus,
+                            onClick = { showPlaylistPicker = true },
+                        )
                         if (canEditYouTubePlaylist) {
                             CollectionQuickAction(
                                 label = when {
@@ -736,6 +718,50 @@ internal fun YouTubeCollectionScreen(
             )
         }
 
+        PlaylistSelectionDialog(
+            visible = showPlaylistPicker,
+            title = elovaire.music.droidbeauty.app.ui.i18n.uiPhrase(
+                language,
+                elovaire.music.droidbeauty.app.ui.i18n.UiPhrase.AddToPlaylist,
+            ),
+            subtitle = resolvedTitle,
+            playlists = songMenuActions.playlists.filterNot { it.isSystem },
+            playlistSongsById = songMenuActions.songsById,
+            onDismiss = { showPlaylistPicker = false },
+            onPlaylistSelected = { playlistId ->
+                var lastResult: elovaire.music.droidbeauty.app.data.settings.PlaylistMutationResult =
+                    elovaire.music.droidbeauty.app.data.settings.PlaylistMutationResult.InvalidInput
+                for (song in songs) {
+                    val res = songMenuActions.onAddToPlaylist(playlistId, song).await()
+                    if (res is elovaire.music.droidbeauty.app.data.settings.PlaylistMutationResult.Success) {
+                        lastResult = res
+                    }
+                }
+                if (lastResult is elovaire.music.droidbeauty.app.data.settings.PlaylistMutationResult.Success) {
+                    showPlaylistPicker = false
+                }
+                lastResult
+            },
+            onCreatePlaylist = songMenuActions.onCreatePlaylist,
+            youTubePlaylists = songMenuActions.youTubePlaylists,
+            onYouTubePlaylistSelected = songMenuActions.onAddToYouTubePlaylist?.let { fn ->
+                { ytId ->
+                    var anyAdded = false
+                    for (song in songs) {
+                        if (fn(ytId, song)) anyAdded = true
+                    }
+                    if (anyAdded) {
+                        showPlaylistPicker = false
+                    }
+                    anyAdded
+                }
+            },
+            isYouTubeLoggedIn = songMenuActions.isYouTubeLoggedIn,
+            isYouTubeSyncing = songMenuActions.isYouTubeSyncing,
+            onRefreshYouTubePlaylists = songMenuActions.onRefreshYouTubePlaylists,
+            importedCoverUris = songMenuActions.importedCoverUris,
+        )
+
         PinnedBackTopBar(
             title = "",
             onBack = onBack,
@@ -810,7 +836,7 @@ private fun CollectionQuickAction(
 ) {
     Column(
         modifier = Modifier
-            .width(68.dp)
+            .width(62.dp)
             .clip(RoundedCornerShape(12.dp))
             .semantics(mergeDescendants = true) { role = Role.Button }
             .elovaireClickable(onClick = onClick)

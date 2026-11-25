@@ -732,6 +732,14 @@ internal fun AlbumScreen(
                                 iconSize = 18.dp,
                                 onClick = { onShuffleAlbum(album) },
                             )
+                            AlbumHeaderActionButton(
+                                iconResId = R.drawable.ic_lucide_list_plus,
+                                contentDescription = uiPhrase(language, UiPhrase.AddToPlaylist),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                backgroundColor = MaterialTheme.colorScheme.surfaceVariant,
+                                iconSize = 18.dp,
+                                onClick = { showPlaylistPicker = true },
+                            )
                         }
                     }
                 }
@@ -861,15 +869,16 @@ internal fun AlbumScreen(
     }
 
     val albumSongMenuActions = LocalSongMenuActions.current
+    val targetSongsForPlaylist = if (selectionModeActive) selectedSongs else albumSongs
     PlaylistSelectionDialog(
-        visible = showPlaylistPicker && selectionModeActive,
+        visible = showPlaylistPicker && targetSongsForPlaylist.isNotEmpty(),
         title = uiPhrase(language, UiPhrase.AddToPlaylist),
-        subtitle = localizedSelectedCount(selectedSongs.size, "song", language),
+        subtitle = localizedSelectedCount(targetSongsForPlaylist.size, "song", language),
         playlists = playlists.filterNot { it.isSystem },
         playlistSongsById = playlistSongsById,
         onDismiss = { showPlaylistPicker = false },
         onPlaylistSelected = { playlistId ->
-            val result = onAddSongsToPlaylist(playlistId, selectedSongs.map(Song::id)).await()
+            val result = onAddSongsToPlaylist(playlistId, targetSongsForPlaylist.map(Song::id)).await()
             if (result is PlaylistMutationResult.Success) {
                 selectedSongIds = emptySet()
                 showPlaylistPicker = false
@@ -881,7 +890,7 @@ internal fun AlbumScreen(
         onYouTubePlaylistSelected = albumSongMenuActions.onAddToYouTubePlaylist?.let { fn ->
             { ytId ->
                 var anyAdded = false
-                for (song in selectedSongs) {
+                for (song in targetSongsForPlaylist) {
                     if (fn(ytId, song)) anyAdded = true
                 }
                 if (anyAdded) {
