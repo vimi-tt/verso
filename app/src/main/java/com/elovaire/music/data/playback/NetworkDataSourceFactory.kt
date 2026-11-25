@@ -116,16 +116,26 @@ private class RoutingDataSource(
             )
         } catch (failure: HttpDataSource.InvalidResponseCodeException) {
             if (failure.responseCode == 403 || failure.responseCode == 410) {
+                runCatching { httpSource.close() }
                 client.invalidateStream(videoId)
                 val freshUrl = client.resolvePlaybackUrlBlocking(videoId)
-                httpSource.open(
-                    dataSpec.buildUpon()
-                        .setUri(freshUrl)
-                        .build(),
-                )
+                try {
+                    httpSource.open(
+                        dataSpec.buildUpon()
+                            .setUri(freshUrl)
+                            .build(),
+                    )
+                } catch (retryFailure: Exception) {
+                    client.invalidateStream(videoId)
+                    throw retryFailure
+                }
             } else {
+                client.invalidateStream(videoId)
                 throw failure
             }
+        } catch (failure: IOException) {
+            client.invalidateStream(videoId)
+            throw failure
         }
     }
 
@@ -147,7 +157,19 @@ private class RoutingDataSource(
             if (read > 0) bytesTransferred(read)
             return read
         }
-        return delegate?.read(buffer, offset, length) ?: throw IOException("Data source is not open")
+        val activeDelegate = delegate ?: throw IOException("Data source is not open")
+        return try {
+            activeDelegate.read(buffer, offset, length)
+        } catch (failure: IOException) {
+            currentUri?.let { uri ->
+                if (YouTubeUri.isYouTubeUri(uri)) {
+                    YouTubeUri.videoId(uri)?.let { videoId ->
+                        youTubeClientProvider?.invoke()?.invalidateStream(videoId)
+                    }
+                }
+            }
+            throw failure
+        }
     }
 
     override fun getUri(): android.net.Uri? = delegate?.uri ?: currentUri

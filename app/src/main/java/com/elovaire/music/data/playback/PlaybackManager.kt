@@ -2307,6 +2307,11 @@ internal class PlaybackManager internal constructor(
                     player.playWhenReady = true
                     player.play()
                 }
+            } catch (failure: Exception) {
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                logDebug("recovery failed unexpectedly: ${failure::class.java.simpleName}")
+                enterSafeStoppedStateAfterRecoveryFailure(snapshot)
+                return@launch
             } finally {
                 runtimeStateMachine.complete(recovery)
             }

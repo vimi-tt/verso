@@ -54,7 +54,7 @@ internal class PlaybackPlayerFactory(
                     .setDataSourceFactory(dataSourceFactory),
             )
             .setAudioAttributes(playbackAudioAttributes, false)
-            .setWakeMode(C.WAKE_MODE_LOCAL)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .setHandleAudioBecomingNoisy(false)
             .build()
             .apply {
@@ -73,7 +73,7 @@ internal class PlaybackPlayerFactory(
                     .setDataSourceFactory(dataSourceFactory),
             )
             .setAudioAttributes(playbackAudioAttributes, false)
-            .setWakeMode(C.WAKE_MODE_LOCAL)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .setHandleAudioBecomingNoisy(false)
             .build()
             .apply {

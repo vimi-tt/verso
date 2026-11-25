@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Handler
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.annotation.OptIn
@@ -15,6 +16,7 @@ import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
 import elovaire.music.droidbeauty.app.ElovaireApp
 import elovaire.music.droidbeauty.app.BuildConfig
+import elovaire.music.droidbeauty.app.R
 import elovaire.music.droidbeauty.app.core.getParcelableExtraCompat
 
 @OptIn(UnstableApi::class)
@@ -33,37 +35,30 @@ class ElovaireMediaLibraryService : MediaLibraryService() {
         when (intent?.action) {
             ACTION_START -> {
                 removeForegroundNotificationOnDestroy = true
-                val notification = intent.getParcelableExtraCompat<Notification>(EXTRA_NOTIFICATION)
+                val requestGeneration = intent.getLongExtra(EXTRA_REQUEST_GENERATION, 0L)
                 val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, DEFAULT_NOTIFICATION_ID)
-                if (notification == null) {
-                    foregroundRequests.invalidate(intent.getLongExtra(EXTRA_REQUEST_GENERATION, 0L))
-                    if (!foregroundRequests.hasActiveRequest()) stopSelf(startId)
-                } else if (!foregroundRequests.isCurrentStart(
+                val notification = takePendingNotification(requestGeneration)
+                    ?: intent.getParcelableExtraCompat<Notification>(EXTRA_NOTIFICATION)
+                    ?: createFallbackNotification()
+                runCatching {
+                    ServiceCompat.startForeground(
+                        this,
                         notificationId,
-                        intent.getLongExtra(EXTRA_REQUEST_GENERATION, 0L),
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
                     )
-                ) {
-                    if (!foregroundRequests.hasActiveRequest()) stopSelf(startId)
-                } else {
-                    runCatching {
-                        ServiceCompat.startForeground(
-                            this,
-                            notificationId,
-                            notification,
-                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
-                        )
-                    }.onSuccess {
-                        foregroundRequests.completeStart(
-                            notificationId,
-                            intent.getLongExtra(EXTRA_REQUEST_GENERATION, 0L),
-                        )
-                    }.onFailure { throwable ->
-                        logForegroundFailure("Unable to promote media library service", throwable)
-                        foregroundRequests.invalidate(
-                            intent.getLongExtra(EXTRA_REQUEST_GENERATION, 0L),
-                        )
-                        if (!foregroundRequests.hasActiveRequest()) stopSelf(startId)
+                }.onSuccess {
+                    if (foregroundRequests.isCurrentStart(notificationId, requestGeneration)) {
+                        foregroundRequests.completeStart(notificationId, requestGeneration)
+                    } else if (!foregroundRequests.hasActiveRequest()) {
+                        removeForegroundNotificationOnDestroy = true
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf(startId)
                     }
+                }.onFailure { throwable ->
+                    logForegroundFailure("Unable to promote media library service", throwable)
+                    foregroundRequests.invalidate(requestGeneration)
+                    if (!foregroundRequests.hasActiveRequest()) stopSelf(startId)
                 }
             }
 
@@ -135,6 +130,17 @@ class ElovaireMediaLibraryService : MediaLibraryService() {
         private const val DEFAULT_NOTIFICATION_ID = 4101
 
         private val foregroundRequests = PlaybackForegroundRequests()
+        @Volatile
+        private var pendingNotificationGeneration: Long = 0L
+        @Volatile
+        private var pendingNotification: Notification? = null
+
+        private fun takePendingNotification(requestGeneration: Long): Notification? {
+            if (requestGeneration == 0L || pendingNotificationGeneration != requestGeneration) return null
+            val notification = pendingNotification
+            pendingNotification = null
+            return notification
+        }
 
         fun start(
             context: Context,
@@ -142,23 +148,29 @@ class ElovaireMediaLibraryService : MediaLibraryService() {
             notification: Notification,
         ) {
             val generation = foregroundRequests.requestStart(notificationId) ?: return
+            pendingNotificationGeneration = generation
+            pendingNotification = notification
             val intent = Intent(context, ElovaireMediaLibraryService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_NOTIFICATION_ID, notificationId)
-                putExtra(EXTRA_NOTIFICATION, notification)
                 putExtra(EXTRA_REQUEST_GENERATION, generation)
             }
             runCatching {
                 ContextCompat.startForegroundService(context, intent)
             }.onFailure { throwable ->
+                if (pendingNotificationGeneration == generation) pendingNotification = null
                 foregroundRequests.startDispatchFailed(generation)
                 logForegroundFailure("Unable to start media library foreground service", throwable)
             }
         }
 
         fun stop(context: Context) {
+            val hadPendingStart = foregroundRequests.hasPendingStart()
+            pendingNotification = null
             foregroundRequests.cancel()
-            context.stopService(Intent(context, ElovaireMediaLibraryService::class.java))
+            if (!hadPendingStart) {
+                context.stopService(Intent(context, ElovaireMediaLibraryService::class.java))
+            }
         }
 
         fun demote(context: Context) {
@@ -184,6 +196,13 @@ class ElovaireMediaLibraryService : MediaLibraryService() {
 
         private const val TAG = "MediaLibraryService"
     }
+
+    private fun createFallbackNotification(): Notification =
+        NotificationCompat.Builder(this, PlaybackNotificationController.NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_lucide_disc_3)
+            .setOngoing(true)
+            .setSilent(true)
+            .build()
 }
 
 internal class PlaybackForegroundRequests {
@@ -254,6 +273,9 @@ internal class PlaybackForegroundRequests {
             runningId = null
         }
     }
+
+    @Synchronized
+    fun hasPendingStart(): Boolean = pendingId != null
 
     @Synchronized
     fun hasActiveRequest(): Boolean = pendingId != null || runningId != null

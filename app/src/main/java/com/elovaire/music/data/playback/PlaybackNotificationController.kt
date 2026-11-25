@@ -172,10 +172,7 @@ internal class PlaybackNotificationController(
                         }
                         state.isPlaying -> {
                             pauseHideJob?.cancel()
-                            if (notificationDismissedWhilePaused) {
-                                updateNotificationPlayer(null)
-                                return@collectLatest
-                            }
+                            notificationDismissedWhilePaused = false
                             updateNotificationPlayer(playbackManager.playerInstance)
                         }
                         else -> {
