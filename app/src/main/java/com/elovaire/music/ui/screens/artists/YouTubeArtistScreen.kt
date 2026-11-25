@@ -1,7 +1,9 @@
 package elovaire.music.droidbeauty.app.ui.screens
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,6 +40,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -48,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import elovaire.music.droidbeauty.app.R
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeArtistPage
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeCatalogRepository
@@ -64,6 +69,8 @@ import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
 import elovaire.music.droidbeauty.app.ui.screens.common.ModuleCard
 import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
+import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
+import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -165,14 +172,15 @@ internal fun YouTubeArtistScreen(
                 val playableSongs = page.allSongs.ifEmpty { page.topSongs }
                 val bgColor = MaterialTheme.colorScheme.background
                 val paletteAccent by rememberArtworkPaletteAccent(page.bannerUri)
-                val headerAccent = (paletteAccent ?: MaterialTheme.colorScheme.primary)
-                    .copy(alpha = 0.62f)
+                val accentColor = paletteAccent ?: MaterialTheme.colorScheme.primary
+                val headerAccent = accentColor
+                    .copy(alpha = 0.68f)
                     .compositeOver(bgColor)
                 Box(modifier = Modifier.fillMaxSize()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(400.dp),
+                            .height(470.dp),
                     ) {
                         if (page.bannerUri != null) {
                             ArtworkImage(
@@ -180,8 +188,8 @@ internal fun YouTubeArtistScreen(
                                 title = page.name,
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .blur(56.dp)
-                                    .alpha(0.30f),
+                                    .blur(64.dp)
+                                    .alpha(0.38f),
                                 cornerRadius = 0.dp,
                             )
                         }
@@ -190,9 +198,9 @@ internal fun YouTubeArtistScreen(
                                 .fillMaxSize()
                                 .background(
                                     Brush.verticalGradient(
-                                        0.0f to headerAccent.copy(alpha = 0.90f),
-                                        0.55f to headerAccent.copy(alpha = 0.42f),
-                                        0.86f to bgColor.copy(alpha = 0.88f),
+                                        0.0f to headerAccent.copy(alpha = 0.92f),
+                                        0.52f to headerAccent.copy(alpha = 0.48f),
+                                        0.84f to bgColor.copy(alpha = 0.90f),
                                         1.0f to bgColor,
                                     ),
                                 ),
@@ -204,33 +212,47 @@ internal fun YouTubeArtistScreen(
                             .fillMaxSize()
                             .ensureSingleItemRubberBand(listState),
                         contentPadding = PaddingValues(
-                            top = topBarOccupiedHeight() + 14.dp,
-                            bottom = bottomPadding + 24.dp,
+                            top = topBarOccupiedHeight() + 18.dp,
+                            bottom = bottomPadding + 28.dp,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.xl),
+                        verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.xl),
                     ) {
                     item(key = "yt_artist_editorial_header") {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding),
+                                .padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.md),
+                            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.lg),
                         ) {
-                            ArtworkImage(
-                                uri = page.bannerUri,
-                                title = page.name,
-                                modifier = Modifier.size(172.dp),
-                                cornerRadius = ElovaireRadii.card,
-                                showArtworkGlow = true,
-                            )
+                            Surface(
+                                modifier = Modifier.size(236.dp),
+                                shape = RoundedCornerShape(ElovaireRadii.module),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.16f),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                                shadowElevation = 24.dp,
+                                tonalElevation = 0.dp,
+                            ) {
+                                ArtworkImage(
+                                    uri = page.bannerUri,
+                                    title = page.name,
+                                    modifier = Modifier.fillMaxSize(),
+                                    cornerRadius = ElovaireRadii.module,
+                                    showArtworkGlow = true,
+                                )
+                            }
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 Text(
                                     text = page.name,
-                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                    style = MaterialTheme.typography.displayLarge.copy(
+                                        fontSize = elovaireScaledSp(30f),
+                                        fontWeight = FontWeight.Bold,
+                                        lineHeight = elovaireScaledSp(34f),
+                                        letterSpacing = (-0.5).sp,
+                                    ),
                                     color = MaterialTheme.colorScheme.onBackground,
                                     textAlign = TextAlign.Center,
                                     maxLines = 2,
@@ -239,7 +261,7 @@ internal fun YouTubeArtistScreen(
                                 page.monthlyAudience?.takeIf(String::isNotBlank)?.let { audience ->
                                     Text(
                                         text = audience,
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                                         color = readableSecondaryTextColor(),
                                         textAlign = TextAlign.Center,
                                         maxLines = 1,
@@ -254,8 +276,8 @@ internal fun YouTubeArtistScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding, vertical = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.xs),
-                                horizontalArrangement = Arrangement.spacedBy(elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.lg, Alignment.CenterHorizontally),
+                                    .padding(horizontal = ElovaireSpacing.screenHorizontalPadding, vertical = ElovaireSpacing.xs),
+                                horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.lg, Alignment.CenterHorizontally),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 ArtistCircularQuickAction(
@@ -263,24 +285,27 @@ internal fun YouTubeArtistScreen(
                                     iconResId = R.drawable.ic_lucide_shuffle,
                                     onClick = { onShuffleSongs(playableSongs, page.name) },
                                 )
-                                Box(
+                                Surface(
                                     modifier = Modifier
-                                        .size(56.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary)
+                                        .size(62.dp)
                                         .semantics {
                                             role = Role.Button
                                             contentDescription = ytCopy.playAll
                                         }
                                         .elovaireClickable { onPlaySongs(playableSongs.first(), playableSongs, page.name) },
-                                    contentAlignment = Alignment.Center,
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shadowElevation = 10.dp,
+                                    tonalElevation = 0.dp,
                                 ) {
-                                    androidx.compose.material3.Icon(
-                                        painter = painterResource(id = R.drawable.ic_lucide_play),
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.size(22.dp),
-                                    )
+                                    Box(contentAlignment = Alignment.Center) {
+                                        androidx.compose.material3.Icon(
+                                            painter = painterResource(id = R.drawable.ic_lucide_play),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                    }
                                 }
                                 ArtistCircularQuickAction(
                                     label = ytCopy.radioLabel,
@@ -306,8 +331,8 @@ internal fun YouTubeArtistScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding),
-                                verticalArrangement = Arrangement.spacedBy(elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.md),
+                                    .padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
+                                verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -316,22 +341,25 @@ internal fun YouTubeArtistScreen(
                                 ) {
                                     Text(
                                         text = ytCopy.topSongsTitle,
-                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                                        style = MaterialTheme.typography.headlineMedium.copy(
+                                            fontSize = elovaireScaledSp(21f),
+                                            fontWeight = FontWeight.SemiBold,
+                                        ),
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(ElovaireRadii.pill))
-                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
-                                            .elovaireClickable {
-                                                onPlaySongs(page.topSongs.first(), playableSongs, page.name)
-                                            }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    Surface(
+                                        shape = RoundedCornerShape(ElovaireRadii.pill),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                                        modifier = Modifier.elovaireClickable {
+                                            onPlaySongs(page.topSongs.first(), playableSongs, page.name)
+                                        },
                                     ) {
                                         Text(
                                             text = ytCopy.playAll,
-                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
                                             color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
                                         )
                                     }
                                 }
@@ -379,21 +407,24 @@ internal fun YouTubeArtistScreen(
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(
                                     text = ytCopy.fansMightAlsoLike,
-                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    style = MaterialTheme.typography.headlineMedium.copy(
+                                        fontSize = elovaireScaledSp(21f),
+                                        fontWeight = FontWeight.SemiBold,
+                                    ),
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding),
+                                    modifier = Modifier.padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
                                 )
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .horizontalScroll(rememberScrollState())
-                                        .padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding),
-                                    horizontalArrangement = Arrangement.spacedBy(elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.md),
+                                        .padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
+                                    horizontalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
                                 ) {
                                     page.similarArtists.forEach { similar ->
                                         Column(
                                             modifier = Modifier
-                                                .width(96.dp)
+                                                .width(104.dp)
                                                 .elovaireClickable { onArtistSelected(similar.id) },
                                             horizontalAlignment = Alignment.CenterHorizontally,
                                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -402,14 +433,19 @@ internal fun YouTubeArtistScreen(
                                                 uri = similar.thumbnailUri,
                                                 title = similar.name,
                                                 modifier = Modifier
-                                                    .size(88.dp)
-                                                    .clip(CircleShape),
-                                                cornerRadius = 44.dp,
+                                                    .size(96.dp)
+                                                    .clip(CircleShape)
+                                                    .border(
+                                                        width = 1.dp,
+                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                                                        shape = CircleShape,
+                                                    ),
+                                                cornerRadius = 48.dp,
                                                 showArtworkGlow = false,
                                             )
                                             Text(
                                                 text = similar.name,
-                                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                                                 color = MaterialTheme.colorScheme.onSurface,
                                                 maxLines = 2,
                                                 overflow = TextOverflow.Ellipsis,
@@ -481,23 +517,28 @@ private fun ArtistCircularQuickAction(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)),
-            contentAlignment = Alignment.Center,
+        Surface(
+            modifier = Modifier.size(48.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+            tonalElevation = 0.dp,
         ) {
-            androidx.compose.material3.Icon(
-                painter = painterResource(id = iconResId),
-                contentDescription = label,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
-                modifier = Modifier.size(19.dp),
-            )
+            Box(contentAlignment = Alignment.Center) {
+                androidx.compose.material3.Icon(
+                    painter = painterResource(id = iconResId),
+                    contentDescription = label,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontSize = elovaireScaledSp(11.5f),
+                fontWeight = FontWeight.Medium,
+            ),
             color = readableSecondaryTextColor(),
             textAlign = TextAlign.Center,
             maxLines = 1,
@@ -515,9 +556,12 @@ private fun ArtistCollectionsCarousel(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontSize = elovaireScaledSp(21f),
+                fontWeight = FontWeight.SemiBold,
+            ),
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing.screenHorizontalPadding),
+            modifier = Modifier.padding(horizontal = ElovaireSpacing.screenHorizontalPadding),
         )
         Row(
             modifier = Modifier

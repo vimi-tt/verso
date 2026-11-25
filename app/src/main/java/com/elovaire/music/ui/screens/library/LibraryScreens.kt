@@ -3044,7 +3044,7 @@ private fun ArtistHeroHeader(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(356.dp)
+            .height(400.dp)
             .clip(
                 RoundedCornerShape(
                     bottomStart = ElovaireRadii.dialog,
