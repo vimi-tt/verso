@@ -6,7 +6,7 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
-    <release version="Cavaquinho 1.1">
+    <release version="Cavaquinho 2">
         <item>Kept Add to Playlist exclusive to albums so playlist action bars remain symmetrical</item>
         <item>Always display the album title next to the back button on album detail pages and keep the back button pill visible</item>
         <item>Redesigned Statistics to match Verso's brand blue palette, cover-derived Recap hero card, and Outfit/Geist typography</item>
