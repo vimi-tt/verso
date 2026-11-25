@@ -29,6 +29,23 @@ internal fun artistSearchHistoryEntry(song: Song): SearchHistoryEntry {
     )
 }
 
+internal fun querySearchHistoryEntry(
+    query: String,
+    artUri: android.net.Uri? = null,
+    subtitle: String = "",
+): SearchHistoryEntry {
+    val trimmed = query.trim()
+    val normalized = normalizeSearchText(trimmed)
+    return SearchHistoryEntry(
+        key = "query:$normalized",
+        kind = SearchHistoryKind.Query,
+        title = trimmed,
+        subtitle = subtitle.trim(),
+        artUri = artUri,
+        query = trimmed,
+    )
+}
+
 internal fun sanitizeSearchHistory(
     history: List<SearchHistoryEntry>,
     index: SearchIndex,
@@ -52,6 +69,19 @@ internal fun sanitizeSearchHistory(
                     artUri = artist.artUri,
                     query = artist.displayName,
                 )
+            }
+
+            SearchHistoryKind.Query -> {
+                val trimmed = (entry.query ?: entry.title).trim()
+                if (trimmed.isBlank()) {
+                    null
+                } else {
+                    entry.copy(
+                        key = "query:${normalizeSearchText(trimmed)}",
+                        title = trimmed,
+                        query = trimmed,
+                    )
+                }
             }
         }
         if (sanitizedEntry != null && seenKeys.add(sanitizedEntry.key)) {

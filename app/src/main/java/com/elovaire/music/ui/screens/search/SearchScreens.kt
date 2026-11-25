@@ -400,7 +400,16 @@ internal fun SearchRoute(
         onShowSearchSongSortOptionsChange = viewModel::onShowSearchSongSortOptionsChange,
         onSearchActiveChanged = onSearchActiveChanged,
         onSongSelected = { song, queue ->
-            viewModel.rememberArtistSearch(song)
+            val q = viewModel.uiState.value.query.trim()
+            if (q.isNotBlank() && elovaire.music.droidbeauty.app.data.youtube.YouTubeUri.isYouTubeUri(song.uri)) {
+                viewModel.rememberQuerySearch(
+                    query = q,
+                    artUri = song.artUri,
+                    subtitle = song.artist,
+                )
+            } else {
+                viewModel.rememberArtistSearch(song)
+            }
             onPlaySong(song, queue)
         },
         onAlbumSelected = { album, origin, rememberSearch ->
@@ -414,17 +423,46 @@ internal fun SearchRoute(
         onPlaylistSelected = onPlaylistSelected,
         onToggleFavorite = onToggleFavorite,
         onClearSearchHistory = viewModel::clearSearchHistory,
+        onRememberQuerySearch = viewModel::rememberQuerySearch,
         onClearQuery = viewModel::clearQuery,
         onResetSearchUi = viewModel::resetSearchUi,
         onRetryYouTubeSearch = viewModel::retryYouTubeSearch,
         onYouTubeAlbumSelected = { album ->
+            val q = viewModel.uiState.value.query.trim()
+            if (q.isNotBlank()) {
+                viewModel.rememberQuerySearch(
+                    query = q,
+                    artUri = album.artUri,
+                    subtitle = album.artist,
+                )
+            }
             val summary = viewModel.youtubeAlbumSummary(album.id)
             if (summary != null) {
                 onYouTubeCollectionSelected(summary, true)
             }
         },
-        onYouTubeArtistSelected = onYouTubeArtistSelected,
+        onYouTubeArtistSelected = { artistId ->
+            val stateVal = viewModel.uiState.value
+            val q = stateVal.query.trim()
+            val artist = stateVal.youtubeArtists.firstOrNull { it.id == artistId }
+            if (q.isNotBlank()) {
+                viewModel.rememberQuerySearch(
+                    query = q,
+                    artUri = artist?.thumbnailUri,
+                    subtitle = artist?.name.orEmpty(),
+                )
+            }
+            onYouTubeArtistSelected(artistId)
+        },
         onYouTubePlaylistSelected = { playlist ->
+            val q = viewModel.uiState.value.query.trim()
+            if (q.isNotBlank()) {
+                viewModel.rememberQuerySearch(
+                    query = q,
+                    artUri = playlist.thumbnailUri,
+                    subtitle = playlist.title,
+                )
+            }
             onYouTubeCollectionSelected(playlist, false)
         },
         onSelectYouTubeFilter = viewModel::selectYouTubeFilter,
@@ -452,6 +490,7 @@ private fun SearchScreen(
     onPlaylistSelected: (Playlist) -> Unit,
     onToggleFavorite: (Long) -> Unit,
     onClearSearchHistory: () -> Unit,
+    onRememberQuerySearch: (String, android.net.Uri?, String) -> Unit,
     onClearQuery: () -> Unit,
     onResetSearchUi: () -> Unit,
     onRetryYouTubeSearch: () -> Unit,
@@ -481,6 +520,7 @@ private fun SearchScreen(
     }
     val allSongsListState = rememberElovaireLazyListState("search_all_songs", trimmedQuery, state.searchSongSortMode)
     var isFieldFocused by remember { mutableStateOf(false) }
+    var showAllHistoryDialog by remember { mutableStateOf(false) }
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val isSearchUiActive = trimmedQuery.isNotBlank() || isFieldFocused || state.showAllSongResults
     val collapseAllSongResults: () -> Unit = {
@@ -588,7 +628,14 @@ private fun SearchScreen(
             shape = RoundedCornerShape(ElovaireRadii.input),
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { dismissSearchInput() }),
+            keyboardActions = KeyboardActions(
+                onSearch = {
+                    if (trimmedQuery.isNotBlank()) {
+                        onRememberQuerySearch(trimmedQuery, null, "")
+                    }
+                    dismissSearchInput()
+                },
+            ),
             placeholder = { Text(copy.placeholder) },
             leadingIcon = {
                 Icon(
@@ -793,16 +840,22 @@ private fun SearchScreen(
                                 Column(verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.md)) {
                                     SearchHistorySectionHeader(
                                         showClearAction = true,
+                                        showViewAllAction = state.recentSearches.size > 5,
+                                        onViewAllHistory = { showAllHistoryDialog = true },
                                         onClearHistory = onClearSearchHistory,
                                     )
                                     SearchHistoryListCard(
-                                        entries = state.recentSearches.take(6),
+                                        entries = state.recentSearches.take(5),
                                         onAlbumSelected = { albumId ->
                                             libraryState.albums.firstOrNull { it.id == albumId }?.let { album ->
                                                 selectAlbum(album, ExpandOrigin(), false)
                                             }
                                         },
                                         onArtistSelected = selectArtist,
+                                        onQuerySelected = { q ->
+                                            onQueryChange(q)
+                                            dismissSearchInput()
+                                        },
                                     )
                                 }
                             }
@@ -860,9 +913,14 @@ private fun SearchScreen(
                             ) {
                                 val ytCopy = youtubeCopy(language)
                                 val picks = state.youtubeRecommendations.take(10)
+                                val recTitle = when (language) {
+                                    elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese -> "Recomendados para você"
+                                    elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish -> "Recomendado para ti"
+                                    else -> "Recommended for you"
+                                }
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     SearchResultsCategoryHeader(
-                                        title = ytCopy.recommendationsTitle,
+                                        title = recTitle,
                                         subtitle = ytCopy.recommendationsSubtitle,
                                         iconResId = R.drawable.ic_lucide_disc_3,
                                     )
@@ -912,18 +970,22 @@ private fun SearchScreen(
                             ) {
                                 filters.forEach { (filter, label) ->
                                     val selected = state.selectedYouTubeFilter == filter
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(ElovaireRadii.pill))
-                                            .background(
-                                                if (selected) {
-                                                    MaterialTheme.colorScheme.onSurface
-                                                } else {
-                                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                                                },
+                                    Surface(
+                                        shape = RoundedCornerShape(ElovaireRadii.pill),
+                                        color = if (selected) {
+                                            MaterialTheme.colorScheme.onSurface
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                        },
+                                        border = if (selected) {
+                                            null
+                                        } else {
+                                            androidx.compose.foundation.BorderStroke(
+                                                1.dp,
+                                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
                                             )
-                                            .elovaireClickable { onSelectYouTubeFilter(filter) }
-                                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                                        },
+                                        modifier = Modifier.elovaireClickable { onSelectYouTubeFilter(filter) },
                                     ) {
                                         Text(
                                             text = label,
@@ -934,6 +996,7 @@ private fun SearchScreen(
                                                 MaterialTheme.colorScheme.onSurface
                                             },
                                             maxLines = 1,
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                         )
                                     }
                                 }
@@ -947,11 +1010,10 @@ private fun SearchScreen(
                                 key = "search_youtube_artists",
                                 contentType = "search_youtube_artists",
                             ) {
-                                val ytCopy = youtubeCopy(language)
                                 val topArtist = state.youtubeArtists.first()
                                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     SearchResultsCategoryHeader(
-                                        title = "${ytCopy.sectionTitle} · ${commonUiCopy(language).artists}",
+                                        title = commonUiCopy(language).artists,
                                         subtitle = copy.matchingArtists(state.youtubeArtists.size, language),
                                         iconResId = R.drawable.ic_lucide_mic_vocal,
                                     )
@@ -972,18 +1034,18 @@ private fun SearchScreen(
                                                 uri = topArtist.thumbnailUri,
                                                 title = topArtist.name,
                                                 modifier = Modifier
-                                                    .size(56.dp)
+                                                    .size(64.dp)
                                                     .clip(androidx.compose.foundation.shape.CircleShape),
-                                                cornerRadius = 28.dp,
+                                                cornerRadius = 32.dp,
                                                 showArtworkGlow = false,
                                             )
                                             Column(
                                                 modifier = Modifier.weight(1f),
-                                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                                verticalArrangement = Arrangement.spacedBy(3.dp),
                                             ) {
                                                 Text(
                                                     text = topArtist.name,
-                                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                                                     color = MaterialTheme.colorScheme.onSurface,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
@@ -991,7 +1053,7 @@ private fun SearchScreen(
                                                 topArtist.subscriberCount?.takeIf(String::isNotBlank)?.let { sub ->
                                                     Text(
                                                         text = sub,
-                                                        style = MaterialTheme.typography.bodySmall,
+                                                        style = MaterialTheme.typography.bodyMedium,
                                                         color = readableSecondaryTextColor(),
                                                         maxLines = 1,
                                                     )
@@ -1066,7 +1128,7 @@ private fun SearchScreen(
                                     ) {
                                         Box(modifier = Modifier.weight(1f)) {
                                             SearchResultsCategoryHeader(
-                                                title = ytCopy.sectionTitle,
+                                                title = commonUiCopy(language).songs,
                                                 subtitle = when {
                                                     state.isYouTubeSearchLoading -> ytCopy.searchingLabel
                                                     state.youtubeSearchFailed -> ytCopy.loadErrorMessage
@@ -1117,23 +1179,29 @@ private fun SearchScreen(
                                         }
                                     } else {
                                         val ytPreview = state.youtubeSongs.take(10)
-                                        ytPreview.forEachIndexed { index, song ->
-                                            Box(
-                                                modifier = Modifier.elovaireListReveal(
-                                                    itemKey = song.id,
-                                                    index = index,
-                                                    registry = revealRegistry,
-                                                ),
-                                            ) {
-                                                HomeRecentSongRow(
-                                                    song = song,
-                                                    isFavorite = song.id in favoriteSongIds,
-                                                    onClick = {
-                                                        selectSong(song, state.youtubeSongs)
-                                                    },
-                                                    onToggleFavorite = { onToggleFavorite(song.id) },
-                                                    showDivider = index != ytPreview.lastIndex,
-                                                )
+                                        ModuleCard(
+                                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                        ) {
+                                            Column {
+                                                ytPreview.forEachIndexed { index, song ->
+                                                    Box(
+                                                        modifier = Modifier.elovaireListReveal(
+                                                            itemKey = song.id,
+                                                            index = index,
+                                                            registry = revealRegistry,
+                                                        ),
+                                                    ) {
+                                                        HomeRecentSongRow(
+                                                            song = song,
+                                                            isFavorite = song.id in favoriteSongIds,
+                                                            onClick = {
+                                                                selectSong(song, state.youtubeSongs)
+                                                            },
+                                                            onToggleFavorite = { onToggleFavorite(song.id) },
+                                                            showDivider = index != ytPreview.lastIndex,
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1148,13 +1216,12 @@ private fun SearchScreen(
                                 key = "search_youtube_albums",
                                 contentType = "search_youtube_album_module",
                             ) {
-                                val ytCopy = youtubeCopy(language)
                                 ModuleCard(
                                     contentPadding = PaddingValues(start = 18.dp, top = 18.dp, end = 18.dp, bottom = 2.dp),
                                 ) {
                                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                         SearchResultsCategoryHeader(
-                                            title = "${ytCopy.sectionTitle} · ${commonUiCopy(language).albums}",
+                                            title = commonUiCopy(language).albums,
                                             subtitle = copy.matchingAlbums(state.youtubeAlbums.size, language),
                                             iconResId = R.drawable.ic_lucide_disc_album,
                                         )
@@ -1177,10 +1244,9 @@ private fun SearchScreen(
                                 key = "search_youtube_playlists",
                                 contentType = "search_youtube_playlists",
                             ) {
-                                val ytCopy = youtubeCopy(language)
                                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     SearchResultsCategoryHeader(
-                                        title = "${ytCopy.sectionTitle} · ${commonUiCopy(language).playlists}",
+                                        title = commonUiCopy(language).playlists,
                                         subtitle = localizedCountLabel(state.youtubePlaylists.size, "playlist", language),
                                         iconResId = R.drawable.ic_lucide_list_music,
                                     )
@@ -1310,6 +1376,70 @@ private fun SearchScreen(
             }
         }
     }
+    if (showAllHistoryDialog) {
+        val isPt = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese
+        val isEs = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showAllHistoryDialog = false },
+            title = {
+                Text(
+                    text = copy.recentlySearched,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                )
+            },
+            text = {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp),
+                ) {
+                    itemsIndexed(
+                        items = state.recentSearches,
+                        key = { _, entry -> "all_hist_${entry.key}" },
+                    ) { index, entry ->
+                        SearchHistoryListRow(
+                            entry = entry,
+                            onClick = {
+                                showAllHistoryDialog = false
+                                when (entry.kind) {
+                                    SearchHistoryKind.Album -> entry.albumId?.let { id ->
+                                        libraryState.albums.firstOrNull { it.id == id }?.let { album ->
+                                            selectAlbum(album, ExpandOrigin(), false)
+                                        }
+                                    }
+                                    SearchHistoryKind.Artist -> selectArtist(entry.query ?: entry.title)
+                                    SearchHistoryKind.Query -> {
+                                        onQueryChange(entry.query ?: entry.title)
+                                        dismissSearchInput()
+                                    }
+                                }
+                            },
+                        )
+                        if (index != state.recentSearches.lastIndex) {
+                            DividerLine()
+                        }
+                    }
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        onClearSearchHistory()
+                        showAllHistoryDialog = false
+                    },
+                ) {
+                    Text(copy.clearHistory)
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { showAllHistoryDialog = false },
+                ) {
+                    Text(if (isPt) "Fechar" else if (isEs) "Cerrar" else "Close")
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -1356,11 +1486,18 @@ private fun SearchQuickPick(
 @Composable
 private fun SearchHistorySectionHeader(
     showClearAction: Boolean,
+    showViewAllAction: Boolean = false,
+    onViewAllHistory: () -> Unit = {},
     onClearHistory: () -> Unit,
 ) {
     val language = LocalAppLanguage.current
     val copy = searchCopy(language)
     val interactionSource = rememberElovaireInteractionSource()
+    val viewAllLabel = when (language) {
+        elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese -> "Ver tudo"
+        elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish -> "Ver todo"
+        else -> "View all"
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1368,38 +1505,57 @@ private fun SearchHistorySectionHeader(
     ) {
         Text(
             text = copy.recentlySearched,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface,
         )
-        InlineActionMotionHost(
-            visible = showClearAction,
-            surfaceId = "search.history",
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                modifier = Modifier.elovaireActionBump(
-                    interactionSource = interactionSource,
-                    label = "search_clear_history_bump",
-                ),
-                onClick = onClearHistory,
-                interactionSource = interactionSource,
-                shape = RoundedCornerShape(ElovaireRadii.pill),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                contentColor = if (MaterialTheme.colorScheme.primary.luminance() > 0.5f) InkText else Color.White,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+            if (showViewAllAction) {
+                Surface(
+                    onClick = onViewAllHistory,
+                    shape = RoundedCornerShape(ElovaireRadii.pill),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_lucide_trash_2),
-                        contentDescription = null,
-                        modifier = Modifier.size(15.dp),
-                    )
                     Text(
-                        text = copy.clearHistory,
+                        text = viewAllLabel,
                         style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     )
+                }
+            }
+            InlineActionMotionHost(
+                visible = showClearAction,
+                surfaceId = "search.history",
+            ) {
+                Surface(
+                    modifier = Modifier.elovaireActionBump(
+                        interactionSource = interactionSource,
+                        label = "search_clear_history_bump",
+                    ),
+                    onClick = onClearHistory,
+                    interactionSource = interactionSource,
+                    shape = RoundedCornerShape(ElovaireRadii.pill),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                    contentColor = if (MaterialTheme.colorScheme.primary.luminance() > 0.5f) InkText else Color.White,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_lucide_trash_2),
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp),
+                        )
+                        Text(
+                            text = copy.clearHistory,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
                 }
             }
         }
@@ -1489,7 +1645,10 @@ private fun SearchResultsCategoryHeader(
         Column(verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontSize = elovaireScaledSp(20f),
+                    fontWeight = FontWeight.SemiBold,
+                ),
                 color = MaterialTheme.colorScheme.onSurface,
             )
             subtitle?.takeIf(String::isNotBlank)?.let {
@@ -1731,6 +1890,7 @@ private fun SearchHistoryListCard(
     entries: List<SearchHistoryEntry>,
     onAlbumSelected: (Long) -> Unit,
     onArtistSelected: (String) -> Unit,
+    onQuerySelected: (String) -> Unit = {},
 ) {
     Surface(
         shape = RoundedCornerShape(ElovaireRadii.card),
@@ -1744,6 +1904,7 @@ private fun SearchHistoryListCard(
                         when (entry.kind) {
                             SearchHistoryKind.Album -> entry.albumId?.let(onAlbumSelected)
                             SearchHistoryKind.Artist -> onArtistSelected(entry.query ?: entry.title)
+                            SearchHistoryKind.Query -> onQuerySelected(entry.query ?: entry.title)
                         }
                     },
                 )
@@ -1764,10 +1925,12 @@ private fun SearchHistoryListRow(
     val title = when (entry.kind) {
         SearchHistoryKind.Album -> localizedAlbumTitle(entry.title, language)
         SearchHistoryKind.Artist -> localizedArtistName(entry.title, language)
+        SearchHistoryKind.Query -> entry.title
     }
     val subtitle = when (entry.kind) {
         SearchHistoryKind.Album -> localizedArtistName(entry.subtitle, language)
         SearchHistoryKind.Artist -> localizedAlbumTitle(entry.subtitle, language)
+        SearchHistoryKind.Query -> entry.subtitle
     }
     Row(
         modifier = Modifier
@@ -1779,15 +1942,32 @@ private fun SearchHistoryListRow(
         ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ArtworkImage(
-            uri = entry.artUri,
-            title = title,
-            modifier = Modifier.size(
-                if (entry.kind == SearchHistoryKind.Artist) 50.dp else 46.dp,
-            ),
-            cornerRadius = if (entry.kind == SearchHistoryKind.Artist) ElovaireRadii.pill else ElovaireRadii.artworkSmall,
-            showArtworkGlow = entry.kind == SearchHistoryKind.Album,
-        )
+        if (entry.kind == SearchHistoryKind.Query && entry.artUri == null) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(ElovaireRadii.artworkSmall))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_lucide_search),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        } else {
+            ArtworkImage(
+                uri = entry.artUri,
+                title = title,
+                modifier = Modifier.size(
+                    if (entry.kind == SearchHistoryKind.Artist) 50.dp else 46.dp,
+                ),
+                cornerRadius = if (entry.kind == SearchHistoryKind.Artist) ElovaireRadii.pill else ElovaireRadii.artworkSmall,
+                showArtworkGlow = entry.kind == SearchHistoryKind.Album,
+            )
+        }
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.mediaTextStackGap),
@@ -1798,15 +1978,17 @@ private fun SearchHistoryListRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (subtitle.isNotBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        if (entry.kind == SearchHistoryKind.Artist) {
+        if (entry.kind == SearchHistoryKind.Artist || entry.kind == SearchHistoryKind.Query) {
             Icon(
                 painter = painterResource(id = R.drawable.ic_lucide_chevron_left),
                 contentDescription = null,

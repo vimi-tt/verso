@@ -503,6 +503,23 @@ internal class SearchViewModel(
         searchHistory.addSearchHistoryEntry(artistSearchHistoryEntry(song))
     }
 
+    fun rememberQuerySearch(
+        query: String,
+        artUri: android.net.Uri? = null,
+        subtitle: String = "",
+    ) {
+        val trimmed = query.trim()
+        if (trimmed.isNotBlank()) {
+            searchHistory.addSearchHistoryEntry(
+                elovaire.music.droidbeauty.app.domain.search.querySearchHistoryEntry(
+                    query = trimmed,
+                    artUri = artUri,
+                    subtitle = subtitle,
+                ),
+            )
+        }
+    }
+
     fun playbackSourceLabelFor(queue: List<Song>, fallbackAlbum: String): String {
         return queue.playbackSourceLabel(fallbackAlbum = fallbackAlbum)
     }

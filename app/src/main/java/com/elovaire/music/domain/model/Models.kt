@@ -161,6 +161,7 @@ enum class AppLanguage(
 enum class SearchHistoryKind {
     Album,
     Artist,
+    Query,
 }
 
 data class SearchHistoryEntry(
