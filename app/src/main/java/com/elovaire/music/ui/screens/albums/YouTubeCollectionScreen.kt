@@ -404,14 +404,16 @@ internal fun YouTubeCollectionScreen(
                                 },
                             )
                         }
-                        CollectionQuickAction(
-                            label = elovaire.music.droidbeauty.app.ui.i18n.uiPhrase(
-                                language,
-                                elovaire.music.droidbeauty.app.ui.i18n.UiPhrase.AddToPlaylist,
-                            ),
-                            iconResId = R.drawable.ic_lucide_list_plus,
-                            onClick = { showPlaylistPicker = true },
-                        )
+                        if (isAlbum) {
+                            CollectionQuickAction(
+                                label = elovaire.music.droidbeauty.app.ui.i18n.uiPhrase(
+                                    language,
+                                    elovaire.music.droidbeauty.app.ui.i18n.UiPhrase.AddToPlaylist,
+                                ),
+                                iconResId = R.drawable.ic_lucide_list_plus,
+                                onClick = { showPlaylistPicker = true },
+                            )
+                        }
                         if (canEditYouTubePlaylist) {
                             CollectionQuickAction(
                                 label = when {

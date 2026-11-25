@@ -509,11 +509,7 @@ internal fun AlbumScreen(
     val detailTopPadding = detailTopBarOccupiedHeight()
     val selectionHazeState = rememberHazeState()
     val topBarBottomPx = with(density) { detailTopPadding.roundToPx() }
-    val detailTopBarTitle = if ((albumTitleBounds?.top ?: Float.MAX_VALUE) < topBarBottomPx) {
-        album.title
-    } else {
-        collapsedTopBarTitle
-    }
+    val detailTopBarTitle = localizedAlbumTitle(album.title, LocalAppLanguage.current)
     var selectedSongIds by rememberSaveable(album.id) { mutableStateOf(setOf<Long>()) }
     var showPlaylistPicker by rememberSaveable(album.id) { mutableStateOf(false) }
     val selectionModeActive = selectedSongIds.isNotEmpty()

@@ -122,7 +122,7 @@ internal fun DetailListTopBar(
             HeaderIconButton(
                 iconResId = R.drawable.ic_lucide_chevron_left,
                 contentDescription = navigationAccessibilityCopy(LocalAppLanguage.current).back,
-                showBackground = false,
+                showBackground = true,
                 onClick = onBack,
                 modifier = Modifier.zIndex(1f),
             )
