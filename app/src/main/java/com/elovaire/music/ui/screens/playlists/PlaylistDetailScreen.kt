@@ -198,6 +198,8 @@ internal fun PlaylistDetailScreen(
     var showDeleteConfirm by rememberSaveable(playlistState.id) { mutableStateOf(false) }
     var isSaving by rememberSaveable(playlistState.id) { mutableStateOf(false) }
     var isExportingToYouTube by rememberSaveable(playlistState.id) { mutableStateOf(false) }
+    var pendingCropUri by remember(playlistState.id) { mutableStateOf<android.net.Uri?>(null) }
+    var isSavingCover by remember(playlistState.id) { mutableStateOf(false) }
     var autoScrollJob by remember { mutableStateOf<Job?>(null) }
     val language = LocalAppLanguage.current
     val rootCopy = rootUiCopy(language)
@@ -208,13 +210,7 @@ internal fun PlaylistDetailScreen(
         contract = ActivityResultContracts.GetContent(),
     ) { pickedUri ->
         if (pickedUri != null && !playlistState.isSystem && onUpdateCoverImage != null) {
-            scope.launch {
-                val savedUri = elovaire.music.droidbeauty.app.data.settings.PlaylistCoverImageHelper
-                    .saveLocalPlaylistCover(context, playlistState.id, pickedUri)
-                if (savedUri != null) {
-                    onUpdateCoverImage(playlistState.id, savedUri)
-                }
-            }
+            pendingCropUri = pickedUri
         }
     }
     LaunchedEffect(playlistState.id, editMode) {
@@ -739,6 +735,26 @@ internal fun PlaylistDetailScreen(
                 )
             }
         }
+    }
+
+    pendingCropUri?.let { cropUri ->
+        PlaylistCoverCropDialog(
+            imageUri = cropUri,
+            isSaving = isSavingCover,
+            onDismiss = { pendingCropUri = null },
+            onConfirmCropped = { bytes ->
+                isSavingCover = true
+                scope.launch {
+                    val savedUri = elovaire.music.droidbeauty.app.data.settings.PlaylistCoverImageHelper
+                        .saveLocalPlaylistCoverBytes(context, playlistState.id, bytes)
+                    if (savedUri != null) {
+                        onUpdateCoverImage?.invoke(playlistState.id, savedUri)
+                    }
+                    isSavingCover = false
+                    pendingCropUri = null
+                }
+            },
+        )
     }
 
     if (showAddSongsPicker && !playlistState.isSystem) {

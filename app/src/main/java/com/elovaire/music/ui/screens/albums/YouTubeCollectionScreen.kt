@@ -125,6 +125,7 @@ internal fun YouTubeCollectionScreen(
     var editedTitle by remember(collectionId, initialTitle) { mutableStateOf<String?>(null) }
     var playlistDescription by remember(collectionId) { mutableStateOf<String?>(null) }
     var editedArtUri by remember(collectionId) { mutableStateOf<Uri?>(null) }
+    var pendingCropUri by remember(collectionId) { mutableStateOf<Uri?>(null) }
     var isUploadingThumbnail by remember(collectionId) { mutableStateOf(false) }
     var isDeletingPlaylist by remember(collectionId) { mutableStateOf(false) }
     val songMenuActions = LocalSongMenuActions.current
@@ -138,19 +139,7 @@ internal fun YouTubeCollectionScreen(
         contract = ActivityResultContracts.GetContent(),
     ) { pickedUri ->
         if (pickedUri != null && canEditYouTubePlaylist) {
-            isUploadingThumbnail = true
-            scope.launch {
-                val bytes = PlaylistCoverImageHelper.readCompressedJpegBytes(context, pickedUri)
-                val ok = if (bytes != null) {
-                    youTubeCatalog.updateYouTubePlaylistThumbnail(collectionId, bytes)
-                } else {
-                    false
-                }
-                isUploadingThumbnail = false
-                if (ok) {
-                    editedArtUri = pickedUri
-                }
-            }
+            pendingCropUri = pickedUri
         }
     }
 
@@ -835,6 +824,29 @@ internal fun YouTubeCollectionScreen(
                         onClick = { showDeleteConfirm = false },
                     ) {
                         Text(editCopy.cancel)
+                    }
+                },
+            )
+        }
+
+        pendingCropUri?.let { cropUri ->
+            PlaylistCoverCropDialog(
+                imageUri = cropUri,
+                isSaving = isUploadingThumbnail,
+                onDismiss = { pendingCropUri = null },
+                onConfirmCropped = { bytes ->
+                    isUploadingThumbnail = true
+                    scope.launch {
+                        val ok = youTubeCatalog.updateYouTubePlaylistThumbnail(collectionId, bytes)
+                        if (ok) {
+                            val previewFile = java.io.File(
+                                context.cacheDir,
+                                "yt_cover_${collectionId}_${System.currentTimeMillis()}.jpg",
+                            ).apply { writeBytes(bytes) }
+                            editedArtUri = Uri.fromFile(previewFile)
+                        }
+                        isUploadingThumbnail = false
+                        pendingCropUri = null
                     }
                 },
             )

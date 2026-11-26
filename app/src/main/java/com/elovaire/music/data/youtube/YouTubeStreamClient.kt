@@ -219,17 +219,11 @@ internal class YouTubeStreamClient(
     fun setYouTubePlaylistThumbnail(playlistId: String, imageBytes: ByteArray): Boolean {
         if (imageBytes.isEmpty() || !isLoggedIn()) return false
         val blobId = musicApi.uploadMusicPlaylistThumbnail(imageBytes) ?: return false
-        val crop = org.json.JSONObject()
-            .put("left", 0.0)
-            .put("top", 0.0)
-            .put("right", 1.0)
-            .put("bottom", 1.0)
-        val customThumb = org.json.JSONObject()
-            .put("encryptedBlobId", blobId)
-            .put("imageCrop", crop)
+        val addedCustomThumbnail = org.json.JSONObject()
+            .put("playlistScottyEncryptedBlobId", blobId)
         val action = org.json.JSONObject()
             .put("action", "ACTION_SET_CUSTOM_THUMBNAIL")
-            .put("customThumbnail", customThumb)
+            .put("addedCustomThumbnail", addedCustomThumbnail)
         return editYouTubePlaylist(playlistId, org.json.JSONArray().put(action))
     }
 

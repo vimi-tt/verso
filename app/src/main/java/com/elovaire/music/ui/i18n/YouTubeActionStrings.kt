@@ -71,6 +71,8 @@ internal data class PlaylistEditActionUiCopy(
     val save: String,
     val cancel: String,
     val delete: String,
+    val cropCoverTitle: String = "Crop cover",
+    val cropCoverHint: String = "Drag and pinch to fit the square cover",
 )
 
 @Suppress("CyclomaticComplexMethod")
@@ -115,4 +117,48 @@ internal fun playlistEditActionCopy(language: AppLanguage): PlaylistEditActionUi
     AppLanguage.Slovak -> PlaylistEditActionUiCopy("Upraviť popis", "Popis", "Zmeniť obrázok", "Odstrániť playlist", "Odstrániť tento YouTube playlist?", "Pridať na YouTube", "Pridáva sa na YouTube...", "Pridané na YouTube", "Nepodarilo sa pridať na YouTube", "Posunúť hore", "Posunúť dole", "Uložiť", "Zrušiť", "Odstrániť")
     AppLanguage.Slovenian -> PlaylistEditActionUiCopy("Uredi opis", "Opis", "Spremeni sliko", "Izbriši seznam", "Izbrisati ta seznam YouTube?", "Dodaj v YouTube", "Dodajanje v YouTube...", "Dodano v YouTube", "Ni mogoče dodati v YouTube", "Premakni gor", "Premakni dol", "Shrani", "Prekliči", "Izbriši")
     AppLanguage.Swedish -> PlaylistEditActionUiCopy("Redigera beskrivning", "Beskrivning", "Byt bild", "Radera spellista", "Radera denna YouTube-spellista?", "Lägg till på YouTube", "Lägger till på YouTube...", "Tillagd på YouTube", "Kunde inte lägga till på YouTube", "Flytta upp", "Flytta ner", "Spara", "Avbryt", "Radera")
+}
+
+@Suppress("CyclomaticComplexMethod")
+internal fun cropCoverCopy(language: AppLanguage): Pair<String, String> = when (language) {
+    AppLanguage.English -> "Crop cover" to "Drag and pinch to fit the square cover"
+    AppLanguage.Portuguese -> "Recortar capa" to "Arraste e aproxime para ajustar ao quadrado"
+    AppLanguage.Spanish -> "Recortar portada" to "Arrastra y pellizca para ajustar al cuadrado"
+    AppLanguage.French -> "Recadrer la pochette" to "Faites glisser et pincez pour ajuster au carré"
+    AppLanguage.German -> "Cover zuschneiden" to "Ziehen und zoomen zum Anpassen ans Quadrat"
+    AppLanguage.Italian -> "Ritaglia copertina" to "Trascina e pizzica per adattare al quadrato"
+    AppLanguage.Dutch -> "Omslag bijsnijden" to "Sleep en knijp om in het vierkant te passen"
+    AppLanguage.Polish -> "Przytnij okładkę" to "Przeciągnij i powiększ, aby dopasować do kwadratu"
+    AppLanguage.Russian -> "Обрезать обложку" to "Перетащите и масштабируйте под квадрат"
+    AppLanguage.Ukrainian -> "Обрізати обкладинку" to "Перетягніть і масштабуйте під квадрат"
+    AppLanguage.Japanese -> "カバーを切り抜く" to "ドラッグとピンチで正方形に合わせます"
+    AppLanguage.Korean -> "커버 자르기" to "드래그 및 확대/축소하여 정사각형에 맞추세요"
+    AppLanguage.ChineseSimplified -> "裁剪封面" to "拖动和双指缩放以适应方形封面"
+    AppLanguage.Hindi -> "कवर क्रॉप करें" to "वर्गाकार कवर में फ़िट करने के लिए खींचें और पिंच करें"
+    AppLanguage.Bengali -> "কভার ক্রপ করুন" to "বর্গাকার কভারে ফিট করতে টানুন ও পিঞ্চ করুন"
+    AppLanguage.Punjabi -> "ਕਵਰ ਕੱਟੋ" to "ਵਰਗਾਕਾਰ ਕਵਰ ਵਿੱਚ ਫਿੱਟ ਕਰਨ ਲਈ ਖਿੱਚੋ ਅਤੇ ਪਿੰਚ ਕਰੋ"
+    AppLanguage.Urdu -> "کور کاٹیں" to "مربع کور میں فٹ کرنے کے لیے گھسیٹیں اور پنچ کریں"
+    AppLanguage.Indonesian -> "Pangkas sampul" to "Seret dan cubit agar pas dengan kotak"
+    AppLanguage.Malay -> "Pangkas muka depan" to "Seret dan cubit untuk muat segi empat"
+    AppLanguage.Thai -> "ครอบตัดปก" to "ลากและบีบนิ้วเพื่อปรับให้พอดีกับสี่เหลี่ยมจัตุรัส"
+    AppLanguage.Albanian -> "Prit kapakun" to "Zvarrit dhe zmadho për ta përshtatur në katror"
+    AppLanguage.Bosnian -> "Izreži omot" to "Prevucite i zumirajte da stane u kvadrat"
+    AppLanguage.Bulgarian -> "Изрежи обложката" to "Плъзнете и мащабирайте в квадрата"
+    AppLanguage.Catalan -> "Retalla la portada" to "Arrossega i pessiga per ajustar al quadrat"
+    AppLanguage.Croatian -> "Izreži omot" to "Povucite i zumirajte za kvadratni okvir"
+    AppLanguage.Czech -> "Oříznout obal" to "Tažením a sevřením přizpůsobte čtverci"
+    AppLanguage.Danish -> "Beskær cover" to "Træk og knib for at tilpasse kvadratet"
+    AppLanguage.Estonian -> "Kärbi kaant" to "Lohista ja suumi ruutu sobitamiseks"
+    AppLanguage.Finnish -> "Rajaa kansikuva" to "Vedä ja nipistä sovittaaksesi neliöön"
+    AppLanguage.Greek -> "Περικοπή εξωφύλλου" to "Σύρετε και τσιμπήστε για προσαρμογή στο τετράγωνο"
+    AppLanguage.Hungarian -> "Borító vágása" to "Húzza és nagyítsa a négyzethez igazításhoz"
+    AppLanguage.Latvian -> "Apgriezt vāku" to "Velciet un tuviniet, lai pielāgotu kvadrātam"
+    AppLanguage.Lithuanian -> "Apkarpyti viršelį" to "Vilkite ir priartinkite prie kvadrato"
+    AppLanguage.Macedonian -> "Исечи обвивка" to "Повлечете и зумирајте за да одговара на квадратот"
+    AppLanguage.Norwegian -> "Beskjær omslag" to "Dra og klyp for å tilpasse kvadratet"
+    AppLanguage.Romanian -> "Decupează coperta" to "Trage și ciupește pentru a potrivi în pătrat"
+    AppLanguage.Serbian -> "Исеци омот" to "Превуците и зумирајте да стане у квадрат"
+    AppLanguage.Slovak -> "Orezať obal" to "Potiahnutím a zovretím prispôsobte štvorcu"
+    AppLanguage.Slovenian -> "Obreži naslovnico" to "Povlecite in približajte za kvadrat"
+    AppLanguage.Swedish -> "Beskär omslag" to "Dra och nyp för att passa kvadraten"
 }
