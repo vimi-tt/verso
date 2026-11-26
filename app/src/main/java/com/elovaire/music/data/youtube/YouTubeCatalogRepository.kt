@@ -1,6 +1,7 @@
 package elovaire.music.droidbeauty.app.data.youtube
 
 import android.net.Uri
+import com.vimi.k7.innertube.catalog.MetrolistMusicCatalogDataSource
 import com.vimi.k7.innertube.model.ArtistItem
 import com.vimi.k7.innertube.model.ArtistPage
 import com.vimi.k7.innertube.model.MusicShelfItem
@@ -32,6 +33,20 @@ internal data class YouTubeCollectionSummary(
     val itemCount: Int,
     val thumbnailUri: Uri?,
     val releaseYear: Int?,
+)
+
+internal data class YouTubePlaylistTrack(
+    val song: Song,
+    val setVideoId: String?,
+)
+
+internal data class YouTubePlaylistDetails(
+    val id: String,
+    val title: String,
+    val description: String?,
+    val thumbnailUri: Uri?,
+    val isEditable: Boolean,
+    val tracks: List<YouTubePlaylistTrack>,
 )
 
 internal data class YouTubeSearchResults(
@@ -382,12 +397,101 @@ internal class YouTubeCatalogRepository(
         streamClient.catalog.getPlaylist(playlistId).map { it.toElovaireSong() }
     }
 
+    suspend fun getPlaylistDetails(playlistId: String): YouTubePlaylistDetails? = withContext(ioDispatcher) {
+        val metrolistSource = streamClient.catalog as? MetrolistMusicCatalogDataSource ?: return@withContext null
+        val details = metrolistSource.getPlaylistDetails(playlistId) ?: return@withContext null
+        YouTubePlaylistDetails(
+            id = details.id,
+            title = details.title,
+            description = details.description,
+            thumbnailUri = details.thumbnailUrl?.let(Uri::parse),
+            isEditable = details.isEditable,
+            tracks = details.tracks.map { track ->
+                YouTubePlaylistTrack(
+                    song = track.song.toElovaireSong(),
+                    setVideoId = track.setVideoId,
+                )
+            },
+        )
+    }
+
     suspend fun renameYouTubePlaylist(playlistId: String, newName: String): Boolean = withContext(ioDispatcher) {
         val ok = streamClient.renameYouTubePlaylist(playlistId, newName)
         if (ok) {
             syncAccountLibrary(force = true)
         }
         ok
+    }
+
+    suspend fun updateYouTubePlaylistDescription(playlistId: String, description: String): Boolean = withContext(ioDispatcher) {
+        val ok = streamClient.setYouTubePlaylistDescription(playlistId, description)
+        if (ok) {
+            syncAccountLibrary(force = true)
+        }
+        ok
+    }
+
+    suspend fun moveVideoInYouTubePlaylist(
+        playlistId: String,
+        setVideoId: String,
+        successorSetVideoId: String?,
+    ): Boolean = withContext(ioDispatcher) {
+        streamClient.moveVideoInYouTubePlaylist(playlistId, setVideoId, successorSetVideoId)
+    }
+
+    suspend fun updateYouTubePlaylistThumbnail(
+        playlistId: String,
+        imageBytes: ByteArray,
+    ): Boolean = withContext(ioDispatcher) {
+        val ok = streamClient.setYouTubePlaylistThumbnail(playlistId, imageBytes)
+        if (ok) {
+            syncAccountLibrary(force = true)
+        }
+        ok
+    }
+
+    suspend fun deleteYouTubePlaylist(playlistId: String): Boolean = withContext(ioDispatcher) {
+        val ok = streamClient.deleteYouTubePlaylist(playlistId)
+        if (ok) {
+            val cleanId = playlistId.removePrefix("VL")
+            _accountState.update { current ->
+                current.copy(
+                    userPlaylists = current.userPlaylists.filterNot {
+                        it.id.removePrefix("VL") == cleanId
+                    },
+                )
+            }
+            syncAccountLibrary(force = true)
+        }
+        ok
+    }
+
+    suspend fun exportLocalPlaylistToYouTube(
+        title: String,
+        songs: List<Song>,
+    ): String? = withContext(ioDispatcher) {
+        if (!streamClient.isLoggedIn()) return@withContext null
+        val videoIds = mutableListOf<String>()
+        for (song in songs) {
+            val directId = YouTubeUri.videoId(song.uri)
+            if (!directId.isNullOrBlank()) {
+                videoIds.add(directId)
+            } else {
+                val query = "${song.title} ${song.artist}".trim()
+                if (query.isNotBlank()) {
+                    val matched = runCatching { searchSongs(query).firstOrNull() }.getOrNull()
+                    matched?.let { YouTubeUri.videoId(it.uri) }?.let { videoIds.add(it) }
+                }
+            }
+        }
+        val createdId = streamClient.createYouTubePlaylist(
+            title = title,
+            videoIds = videoIds.distinct(),
+        )
+        if (createdId != null) {
+            syncAccountLibrary(force = true)
+        }
+        createdId
     }
 
     suspend fun addVideoToYouTubePlaylist(playlistId: String, videoId: String): Boolean = withContext(ioDispatcher) {

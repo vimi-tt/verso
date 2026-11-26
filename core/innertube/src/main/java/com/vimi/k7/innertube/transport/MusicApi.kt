@@ -263,6 +263,46 @@ class MusicApi(
         }
     }
 
+    /**
+     * Upload a custom playlist thumbnail image to YouTube Music and return its
+     * `encryptedBlobId` for use with `browse/edit_playlist` (`ACTION_SET_CUSTOM_THUMBNAIL`).
+     */
+    fun uploadMusicPlaylistThumbnail(
+        imageBytes: ByteArray,
+        mimeType: String = "image/jpeg",
+    ): String? {
+        if (imageBytes.isEmpty()) return null
+        val session = sessionManager.captureSession() ?: return null
+        if (YouTubeAuthUtils.getSapisid(session.cookies) == null) return null
+        val request = Request.Builder()
+            .url("https://music.youtube.com/playlist_image_upload/playlist_custom_thumbnail")
+            .post(imageBytes.toRequestBody(mimeType.toMediaType()))
+            .authenticate(session)
+            .addHeader("User-Agent", BROWSER_USER_AGENT)
+            .addHeader("Origin", "https://music.youtube.com")
+            .addHeader("X-Origin", "https://music.youtube.com")
+            .addHeader("X-YouTube-Client-Name", "67")
+            .addHeader("X-YouTube-Client-Version", WEB_REMIX_VERSION)
+            .addHeader("X-Goog-Upload-Protocol", "raw")
+            .addHeader("X-Goog-Upload-Command", "upload, finalize")
+            .addHeader("X-Goog-Upload-Header-Content-Length", imageBytes.size.toString())
+            .addHeader("X-Goog-Upload-Header-Content-Type", mimeType)
+            .build()
+        return try {
+            http.okHttpClient.newCall(request).execute().use { response ->
+                val raw = response.body?.string()
+                if (!response.isSuccessful || raw.isNullOrBlank()) {
+                    KLog.w(YOUTUBE_TAG, "playlist thumbnail upload HTTP ${response.code}")
+                    return null
+                }
+                JSONObject(raw).optString("encryptedBlobId").takeIf { it.isNotBlank() }
+            }
+        } catch (e: Exception) {
+            KLog.e(YOUTUBE_TAG, "playlist thumbnail upload failed", e)
+            null
+        }
+    }
+
     data class AccountProfileInfo(
         val name: String,
         val avatarUrl: String?,
