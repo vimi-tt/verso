@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -105,6 +106,7 @@ internal fun YouTubeCollectionScreen(
     val shuffleLabel = remember(language) { editorialHomeCopy(language).shuffle }
     val scope = rememberCoroutineScope()
     val listState = rememberElovaireLazyListState("yt_collection_$collectionId")
+    val pendingThumbnails by youTubeCatalog.pendingPlaylistThumbnails.collectAsStateWithLifecycle()
 
     var songs by remember(collectionId, isAlbum, offlineCollection) {
         mutableStateOf(offlineCollection?.songs.orEmpty())
@@ -194,8 +196,9 @@ internal fun YouTubeCollectionScreen(
             .ifBlank { offlineCollection?.title.orEmpty() }
             .ifBlank { if (isAlbum) commonCopy.albums else commonCopy.playlists }
     val resolvedSubtitle = initialSubtitle.ifBlank { offlineCollection?.subtitle.orEmpty() }
-    val resolvedArtUri = remember(editedArtUri, initialArtUri, offlineCollection, songs) {
+    val resolvedArtUri = remember(editedArtUri, pendingThumbnails, collectionId, initialArtUri, offlineCollection, songs) {
         editedArtUri
+            ?: pendingThumbnails[collectionId.removePrefix("VL").trim()]
             ?: initialArtUri?.takeIf(String::isNotBlank)?.let(Uri::parse)
             ?: offlineCollection?.thumbnailUri
             ?: songs.firstOrNull()?.artUri
@@ -837,13 +840,20 @@ internal fun YouTubeCollectionScreen(
                 onConfirmCropped = { bytes ->
                     isUploadingThumbnail = true
                     scope.launch {
-                        val ok = youTubeCatalog.updateYouTubePlaylistThumbnail(collectionId, bytes)
+                        val previewFile = java.io.File(
+                            context.cacheDir,
+                            "yt_cover_${collectionId}_${System.currentTimeMillis()}.jpg",
+                        ).apply { writeBytes(bytes) }
+                        val previewUri = Uri.fromFile(previewFile)
+                        val ok = youTubeCatalog.updateYouTubePlaylistThumbnail(
+                            playlistId = collectionId,
+                            imageBytes = bytes,
+                            localPreviewUri = previewUri,
+                        )
                         if (ok) {
-                            val previewFile = java.io.File(
-                                context.cacheDir,
-                                "yt_cover_${collectionId}_${System.currentTimeMillis()}.jpg",
-                            ).apply { writeBytes(bytes) }
-                            editedArtUri = Uri.fromFile(previewFile)
+                            editedArtUri = previewUri
+                        } else {
+                            previewFile.delete()
                         }
                         isUploadingThumbnail = false
                         pendingCropUri = null

@@ -12,7 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal object PlaylistCoverImageHelper {
-    private const val OUTPUT_SQUARE_PX = 1024
+    private const val OUTPUT_SQUARE_PX = 1200
     private const val CROP_SOURCE_MAX_PX = 2048
 
     suspend fun loadBitmapForCrop(

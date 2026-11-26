@@ -219,11 +219,26 @@ internal class YouTubeStreamClient(
     fun setYouTubePlaylistThumbnail(playlistId: String, imageBytes: ByteArray): Boolean {
         if (imageBytes.isEmpty() || !isLoggedIn()) return false
         val blobId = musicApi.uploadMusicPlaylistThumbnail(imageBytes) ?: return false
+        val imageKey = org.json.JSONObject()
+            .put("type", "PLAYLIST_IMAGE_TYPE_CUSTOM_THUMBNAIL")
+            .put("name", "studio_square_thumbnail")
         val addedCustomThumbnail = org.json.JSONObject()
+            .put("imageKey", imageKey)
             .put("playlistScottyEncryptedBlobId", blobId)
         val action = org.json.JSONObject()
             .put("action", "ACTION_SET_CUSTOM_THUMBNAIL")
             .put("addedCustomThumbnail", addedCustomThumbnail)
+        return editYouTubePlaylist(playlistId, org.json.JSONArray().put(action))
+    }
+
+    fun removeYouTubePlaylistThumbnail(playlistId: String): Boolean {
+        if (!isLoggedIn()) return false
+        val deletedCustomThumbnail = org.json.JSONObject()
+            .put("type", "PLAYLIST_IMAGE_TYPE_CUSTOM_THUMBNAIL")
+            .put("name", "studio_square_thumbnail")
+        val action = org.json.JSONObject()
+            .put("action", "ACTION_REMOVE_CUSTOM_THUMBNAIL")
+            .put("deletedCustomThumbnail", deletedCustomThumbnail)
         return editYouTubePlaylist(playlistId, org.json.JSONArray().put(action))
     }
 
@@ -282,11 +297,8 @@ internal class YouTubeStreamClient(
     private fun editYouTubePlaylist(playlistId: String, actions: org.json.JSONArray): Boolean {
         val cleanId = playlistId.removePrefix("VL").trim()
         if (cleanId.isBlank()) return false
-        val client = org.json.JSONObject()
-            .put("clientName", "WEB_REMIX")
-            .put("clientVersion", "1.20250101.01.00")
         val body = org.json.JSONObject()
-            .put("context", org.json.JSONObject().put("client", client))
+            .put("context", musicApi.musicContext())
             .put("playlistId", cleanId)
             .put("actions", actions)
         val response = musicApi.postMusicApi("browse/edit_playlist", body) ?: return false

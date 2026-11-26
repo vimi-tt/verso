@@ -144,6 +144,8 @@ internal class YouTubeCatalogRepository(
         ),
     )
     val accountState: StateFlow<YouTubeAccountUiState> = _accountState.asStateFlow()
+    private val _pendingPlaylistThumbnails = MutableStateFlow<Map<String, Uri>>(emptyMap())
+    val pendingPlaylistThumbnails: StateFlow<Map<String, Uri>> = _pendingPlaylistThumbnails.asStateFlow()
     val qualityState: StateFlow<YouTubeQualitySettings> = streamClient.qualityPreferences.state
     val resolvedFormatUpdates: StateFlow<Long> = streamClient.resolvedFormatUpdates
 
@@ -442,9 +444,14 @@ internal class YouTubeCatalogRepository(
     suspend fun updateYouTubePlaylistThumbnail(
         playlistId: String,
         imageBytes: ByteArray,
+        localPreviewUri: Uri? = null,
     ): Boolean = withContext(ioDispatcher) {
         val ok = streamClient.setYouTubePlaylistThumbnail(playlistId, imageBytes)
         if (ok) {
+            if (localPreviewUri != null) {
+                val cleanId = playlistId.removePrefix("VL").trim()
+                _pendingPlaylistThumbnails.update { it + (cleanId to localPreviewUri) }
+            }
             syncAccountLibrary(force = true)
         }
         ok
