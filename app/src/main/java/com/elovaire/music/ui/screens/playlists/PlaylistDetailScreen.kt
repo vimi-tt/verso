@@ -4,6 +4,8 @@ import elovaire.music.droidbeauty.app.ui.interaction.elovaireCombinedClickable
 import elovaire.music.droidbeauty.app.ui.screens.common.readableSecondaryTextColor
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -119,6 +121,8 @@ internal fun PlaylistDetailScreen(
     downloadedVideoIds: Set<String> = emptySet(),
     onDownloadPlaylist: ((List<Song>, elovaire.music.droidbeauty.app.data.youtube.YouTubeDownloadedCollection) -> Unit)? = null,
     onDeletePlaylist: ((Long) -> PlaylistMutationRequest)? = null,
+    onUpdateCoverImage: ((Long, String) -> Unit)? = null,
+    onExportToYouTube: (suspend (String, List<Song>) -> Boolean)? = null,
 ) {
     val revealRegistry = rememberMotionRevealRegistry()
     val motionTransitions = rememberMotionTransitions()
@@ -193,10 +197,22 @@ internal fun PlaylistDetailScreen(
     var showRenameDialog by rememberSaveable(playlistState.id) { mutableStateOf(false) }
     var showDeleteConfirm by rememberSaveable(playlistState.id) { mutableStateOf(false) }
     var isSaving by rememberSaveable(playlistState.id) { mutableStateOf(false) }
+    var isExportingToYouTube by rememberSaveable(playlistState.id) { mutableStateOf(false) }
+    var pendingCropUri by remember(playlistState.id) { mutableStateOf<android.net.Uri?>(null) }
+    var isSavingCover by remember(playlistState.id) { mutableStateOf(false) }
     var autoScrollJob by remember { mutableStateOf<Job?>(null) }
     val language = LocalAppLanguage.current
     val rootCopy = rootUiCopy(language)
+    val editCopy = remember(language) { elovaire.music.droidbeauty.app.ui.i18n.playlistEditActionCopy(language) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
+    val coverPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { pickedUri ->
+        if (pickedUri != null && !playlistState.isSystem && onUpdateCoverImage != null) {
+            pendingCropUri = pickedUri
+        }
+    }
     LaunchedEffect(playlistState.id, editMode) {
         if (!editMode) {
             editDraft = PlaylistEditDraft.fromPersisted(playlistState)
@@ -347,22 +363,34 @@ internal fun PlaylistDetailScreen(
                                 horizontalArrangement = Arrangement.spacedBy(18.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                if (!coverUriOverride.isNullOrBlank()) {
-                                    ArtworkImage(
-                                        uri = android.net.Uri.parse(coverUriOverride),
-                                        title = playlistState.name,
-                                        placeholderIconResId = R.drawable.ic_lucide_list_music,
-                                        modifier = Modifier.size(artworkWidth),
-                                        cornerRadius = ElovaireRadii.card,
-                                    )
-                                } else {
-                                    PlaylistArtworkPreview(
-                                        songs = playlistSongs,
-                                        title = playlistState.name,
-                                        modifier = Modifier.width(artworkWidth),
-                                        placeholderIconSize = 30.dp,
-                                        cornerRadius = 8.dp,
-                                    )
+                                Box(
+                                    modifier = Modifier.then(
+                                        if (editMode && !playlistState.isSystem && onUpdateCoverImage != null) {
+                                            Modifier.elovaireClickable {
+                                                coverPickerLauncher.launch("image/*")
+                                            }
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
+                                ) {
+                                    if (!coverUriOverride.isNullOrBlank()) {
+                                        ArtworkImage(
+                                            uri = android.net.Uri.parse(coverUriOverride),
+                                            title = playlistState.name,
+                                            placeholderIconResId = R.drawable.ic_lucide_list_music,
+                                            modifier = Modifier.size(artworkWidth),
+                                            cornerRadius = ElovaireRadii.card,
+                                        )
+                                    } else {
+                                        PlaylistArtworkPreview(
+                                            songs = playlistSongs,
+                                            title = playlistState.name,
+                                            modifier = Modifier.width(artworkWidth),
+                                            placeholderIconSize = 30.dp,
+                                            cornerRadius = 8.dp,
+                                        )
+                                    }
                                 }
                                 Column(
                                     modifier = Modifier.weight(1f),
@@ -467,6 +495,65 @@ internal fun PlaylistDetailScreen(
                                         }
                                     },
                                 )
+                            }
+                            if (!playlistState.isSystem && onExportToYouTube != null && playlistSongs.isNotEmpty()) {
+                                AlbumHeaderActionButton(
+                                    iconResId = R.drawable.ic_lucide_share_2,
+                                    contentDescription = editCopy.addToYouTube,
+                                    tint = if (isExportingToYouTube) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                    backgroundColor = if (isExportingToYouTube) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    },
+                                    iconSize = 18.dp,
+                                    onClick = {
+                                        if (!isExportingToYouTube) {
+                                            isExportingToYouTube = true
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                editCopy.addingToYouTube,
+                                                android.widget.Toast.LENGTH_SHORT,
+                                            ).show()
+                                            scope.launch {
+                                                val ok = try {
+                                                    onExportToYouTube(playlistState.name, playlistSongs)
+                                                } finally {
+                                                    isExportingToYouTube = false
+                                                }
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    if (ok) editCopy.addedToYouTube else editCopy.exportToYouTubeFailed,
+                                                    android.widget.Toast.LENGTH_SHORT,
+                                                ).show()
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                        if (editMode && !playlistState.isSystem && onUpdateCoverImage != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                                        .elovaireClickable { coverPickerLauncher.launch("image/*") }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                ) {
+                                    Text(
+                                        text = editCopy.changeImage,
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
                             }
                         }
                     }
@@ -648,6 +735,26 @@ internal fun PlaylistDetailScreen(
                 )
             }
         }
+    }
+
+    pendingCropUri?.let { cropUri ->
+        PlaylistCoverCropDialog(
+            imageUri = cropUri,
+            isSaving = isSavingCover,
+            onDismiss = { pendingCropUri = null },
+            onConfirmCropped = { bytes ->
+                isSavingCover = true
+                scope.launch {
+                    val savedUri = elovaire.music.droidbeauty.app.data.settings.PlaylistCoverImageHelper
+                        .saveLocalPlaylistCoverBytes(context, playlistState.id, bytes)
+                    if (savedUri != null) {
+                        onUpdateCoverImage?.invoke(playlistState.id, savedUri)
+                    }
+                    isSavingCover = false
+                    pendingCropUri = null
+                }
+            },
+        )
     }
 
     if (showAddSongsPicker && !playlistState.isSystem) {

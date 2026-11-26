@@ -6,6 +6,13 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
+    <release version="Cavaquinho 3">
+        <item>Added full YouTube Music playlist editing: reorder tracks, edit descriptions, delete playlists, upload square-cropped covers, and export app playlists to YouTube</item>
+        <item>Added custom square cover image cropping and replacement for both YouTube Music and app-created playlists</item>
+        <item>Added a favorite toggle button directly in the playback notification player synced with YouTube Music likes</item>
+        <item>Added Follow and Following controls on YouTube Music artist pages synced with your YouTube subscriptions</item>
+        <item>Fixed album detail navigation so the top bar back button stays visible across screen transitions</item>
+    </release>
     <release version="Cavaquinho 2">
         <item>Kept Add to Playlist exclusive to albums so playlist action bars remain symmetrical</item>
         <item>Always display the album title next to the back button on album detail pages and keep the back button pill visible</item>

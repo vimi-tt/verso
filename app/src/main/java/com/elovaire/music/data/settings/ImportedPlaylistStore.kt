@@ -50,6 +50,22 @@ internal class ImportedPlaylistStore(context: Context) {
         }
     }
 
+    fun updatePlaylistCover(
+        playlistId: Long,
+        coverUri: String?,
+    ) {
+        synchronized(lock) {
+            val existing = entries[playlistId]
+            entries[playlistId] = ImportedPlaylistMetadata(
+                playlistId = playlistId,
+                coverUri = coverUri?.takeIf { it.isNotBlank() },
+                songs = existing?.songs.orEmpty(),
+            )
+            persistLocked()
+            _snapshot.value = buildSnapshotLocked()
+        }
+    }
+
     fun registerSongForPlaylist(
         playlistId: Long,
         song: Song,

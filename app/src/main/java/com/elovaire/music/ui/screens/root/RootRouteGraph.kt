@@ -39,6 +39,7 @@ internal fun RootRouteGraph(
     onImportPlaylistLink: suspend (String, String?) -> Int = { _, _ -> 0 },
     onImportSpotifyPlaylist: suspend (String, String?, List<elovaire.music.droidbeauty.app.data.settings.BackupTrackRef>) -> Long? = { _, _, _ -> null },
     importedCoverUris: Map<Long, String> = emptyMap(),
+    onUpdatePlaylistCover: (Long, String) -> Unit = { _, _ -> },
     viewModelFactory: ElovaireViewModelFactory,
     artistImageRepository: ArtistImageReader,
     audiobookChapterReader: AudiobookChapterReader,
@@ -431,6 +432,7 @@ internal fun RootRouteGraph(
         ) { backStackEntry ->
             val detailId = backStackEntry.playlistRouteId()
             val downloadsState by youTubeDownloadManager.state.collectAsStateWithLifecycle()
+            val ytAccountState by youTubeCatalog.accountState.collectAsStateWithLifecycle()
             PlaylistDetailRouteHost(
                 playlistId = detailId,
                 state = routeState,
@@ -440,6 +442,14 @@ internal fun RootRouteGraph(
                 downloadedVideoIds = downloadsState.downloadedVideoIds,
                 onDownloadPlaylist = { songs, collection ->
                     youTubeDownloadManager.enqueueCollection(songs, collection)
+                },
+                onUpdateCoverImage = onUpdatePlaylistCover,
+                onExportToYouTube = if (ytAccountState.isLoggedIn) {
+                    { title, songs ->
+                        youTubeCatalog.exportLocalPlaylistToYouTube(title, songs) != null
+                    }
+                } else {
+                    null
                 },
             )
         }

@@ -155,6 +155,8 @@ internal fun PlaylistDetailRouteHost(
     coverUriOverride: String? = null,
     downloadedVideoIds: Set<String> = emptySet(),
     onDownloadPlaylist: ((List<elovaire.music.droidbeauty.app.domain.model.Song>, elovaire.music.droidbeauty.app.data.youtube.YouTubeDownloadedCollection) -> Unit)? = null,
+    onUpdateCoverImage: ((Long, String) -> Unit)? = null,
+    onExportToYouTube: (suspend (String, List<elovaire.music.droidbeauty.app.domain.model.Song>) -> Boolean)? = null,
 ) {
     val playlist = playlistId?.let { id -> state.appState.playlists.firstOrNull { it.id == id } }
     PlaylistDetailScreen(
@@ -164,6 +166,8 @@ internal fun PlaylistDetailRouteHost(
         coverUriOverride = coverUriOverride,
         downloadedVideoIds = downloadedVideoIds,
         onDownloadPlaylist = onDownloadPlaylist,
+        onUpdateCoverImage = onUpdateCoverImage,
+        onExportToYouTube = onExportToYouTube,
         favoriteSongIds = state.appState.favoriteSongIds,
         currentSongId = state.appState.playback.currentSong?.id,
         isCurrentSongPlaying = state.isPlaybackActuallyPlaying,

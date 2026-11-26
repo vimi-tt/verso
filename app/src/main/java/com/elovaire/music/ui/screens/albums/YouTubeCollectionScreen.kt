@@ -1,11 +1,15 @@
 package elovaire.music.droidbeauty.app.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,11 +36,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -52,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import elovaire.music.droidbeauty.app.R
+import elovaire.music.droidbeauty.app.data.settings.PlaylistCoverImageHelper
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeCatalogRepository
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeDownloadedCollection
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeUri
@@ -62,6 +69,7 @@ import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
 import elovaire.music.droidbeauty.app.ui.i18n.commonUiCopy
 import elovaire.music.droidbeauty.app.ui.i18n.editorialHomeCopy
 import elovaire.music.droidbeauty.app.ui.i18n.localizedCountLabel
+import elovaire.music.droidbeauty.app.ui.i18n.playlistEditActionCopy
 import elovaire.music.droidbeauty.app.ui.i18n.youtubeCopy
 import elovaire.music.droidbeauty.app.ui.i18n.youtubeDownloadCopy
 import elovaire.music.droidbeauty.app.ui.interaction.elovaireClickable
@@ -70,6 +78,7 @@ import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun YouTubeCollectionScreen(
     collectionId: String,
@@ -91,15 +100,18 @@ internal fun YouTubeCollectionScreen(
 ) {
     val language = LocalAppLanguage.current
     val ytCopy = remember(language) { youtubeCopy(language) }
+    val editCopy = remember(language) { playlistEditActionCopy(language) }
     val dlCopy = remember(language) { youtubeDownloadCopy(language) }
     val commonCopy = remember(language) { commonUiCopy(language) }
     val shuffleLabel = remember(language) { editorialHomeCopy(language).shuffle }
     val scope = rememberCoroutineScope()
     val listState = rememberElovaireLazyListState("yt_collection_$collectionId")
+    val pendingThumbnails by youTubeCatalog.pendingPlaylistThumbnails.collectAsStateWithLifecycle()
 
     var songs by remember(collectionId, isAlbum, offlineCollection) {
         mutableStateOf(offlineCollection?.songs.orEmpty())
     }
+    var setVideoIdsBySongId by remember(collectionId) { mutableStateOf<Map<Long, String>>(emptyMap()) }
     var isLoading by remember(collectionId, isAlbum, offlineCollection) {
         mutableStateOf(offlineCollection?.songs.isNullOrEmpty())
     }
@@ -108,15 +120,30 @@ internal fun YouTubeCollectionScreen(
     var searchQuery by remember(collectionId, isAlbum) { mutableStateOf("") }
     var editMode by remember(collectionId, isAlbum) { mutableStateOf(false) }
     var showRenameDialog by remember(collectionId) { mutableStateOf(false) }
+    var showDescriptionDialog by remember(collectionId) { mutableStateOf(false) }
+    var showDeleteConfirm by remember(collectionId) { mutableStateOf(false) }
     var showAddTrackDialog by remember(collectionId) { mutableStateOf(false) }
     var showPlaylistPicker by remember(collectionId) { mutableStateOf(false) }
     var editedTitle by remember(collectionId, initialTitle) { mutableStateOf<String?>(null) }
+    var playlistDescription by remember(collectionId) { mutableStateOf<String?>(null) }
+    var editedArtUri by remember(collectionId) { mutableStateOf<Uri?>(null) }
+    var pendingCropUri by remember(collectionId) { mutableStateOf<Uri?>(null) }
+    var isUploadingThumbnail by remember(collectionId) { mutableStateOf(false) }
+    var isDeletingPlaylist by remember(collectionId) { mutableStateOf(false) }
     val songMenuActions = LocalSongMenuActions.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val isPt = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Portuguese
     val isEs = language == elovaire.music.droidbeauty.app.domain.model.AppLanguage.Spanish
     val canEditYouTubePlaylist = !isAlbum && youTubeCatalog.accountState.value.isLoggedIn &&
         collectionId != "LM" && collectionId != "VLLM"
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { pickedUri ->
+        if (pickedUri != null && canEditYouTubePlaylist) {
+            pendingCropUri = pickedUri
+        }
+    }
 
     LaunchedEffect(collectionId, isAlbum, retryNonce) {
         val hasOfflineSongs = !offlineCollection?.songs.isNullOrEmpty()
@@ -125,12 +152,32 @@ internal fun YouTubeCollectionScreen(
         }
         hasError = false
         try {
-            val loaded = youTubeCatalog.getCollectionSongs(collectionId, isAlbum)
-            if (loaded.isNotEmpty()) {
-                songs = loaded
-                hasError = false
-            } else if (!hasOfflineSongs) {
-                hasError = true
+            if (!isAlbum) {
+                val details = youTubeCatalog.getPlaylistDetails(collectionId)
+                if (details != null && details.tracks.isNotEmpty()) {
+                    songs = details.tracks.map { it.song }
+                    setVideoIdsBySongId = details.tracks.mapNotNull { track ->
+                        track.setVideoId?.let { track.song.id to it }
+                    }.toMap()
+                    playlistDescription = details.description
+                    hasError = false
+                } else {
+                    val loaded = youTubeCatalog.getCollectionSongs(collectionId, isAlbum = false)
+                    if (loaded.isNotEmpty()) {
+                        songs = loaded
+                        hasError = false
+                    } else if (!hasOfflineSongs) {
+                        hasError = true
+                    }
+                }
+            } else {
+                val loaded = youTubeCatalog.getCollectionSongs(collectionId, isAlbum = true)
+                if (loaded.isNotEmpty()) {
+                    songs = loaded
+                    hasError = false
+                } else if (!hasOfflineSongs) {
+                    hasError = true
+                }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -149,8 +196,10 @@ internal fun YouTubeCollectionScreen(
             .ifBlank { offlineCollection?.title.orEmpty() }
             .ifBlank { if (isAlbum) commonCopy.albums else commonCopy.playlists }
     val resolvedSubtitle = initialSubtitle.ifBlank { offlineCollection?.subtitle.orEmpty() }
-    val resolvedArtUri = remember(initialArtUri, offlineCollection, songs) {
-        initialArtUri?.takeIf(String::isNotBlank)?.let(Uri::parse)
+    val resolvedArtUri = remember(editedArtUri, pendingThumbnails, collectionId, initialArtUri, offlineCollection, songs) {
+        editedArtUri
+            ?: pendingThumbnails[collectionId.removePrefix("VL").trim()]
+            ?: initialArtUri?.takeIf(String::isNotBlank)?.let(Uri::parse)
             ?: offlineCollection?.thumbnailUri
             ?: songs.firstOrNull()?.artUri
     }
@@ -266,13 +315,42 @@ internal fun YouTubeCollectionScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    ArtworkImage(
-                        uri = resolvedArtUri,
-                        title = resolvedTitle,
-                        modifier = Modifier.size(204.dp),
-                        cornerRadius = 16.dp,
-                        showArtworkGlow = true,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(204.dp)
+                            .then(
+                                if (canEditYouTubePlaylist && editMode) {
+                                    Modifier.elovaireClickable(enabled = !isUploadingThumbnail) {
+                                        imagePickerLauncher.launch("image/*")
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    ) {
+                        ArtworkImage(
+                            uri = resolvedArtUri,
+                            title = resolvedTitle,
+                            modifier = Modifier.fillMaxSize(),
+                            cornerRadius = 16.dp,
+                            showArtworkGlow = true,
+                        )
+                        if (isUploadingThumbnail) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color.Black.copy(alpha = 0.45f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(28.dp),
+                                    strokeWidth = 2.5.dp,
+                                    color = Color.White,
+                                )
+                            }
+                        }
+                    }
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -318,6 +396,17 @@ internal fun YouTubeCollectionScreen(
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        playlistDescription?.takeIf { it.isNotBlank() }?.let { desc ->
+                            Text(
+                                text = desc,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = readableSecondaryTextColor(),
+                                textAlign = TextAlign.Center,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 16.dp),
                             )
                         }
                     }
@@ -433,10 +522,10 @@ internal fun YouTubeCollectionScreen(
                 }
                 if (canEditYouTubePlaylist && editMode) {
                     item(key = "yt_collection_edit_bar") {
-                        Row(
+                        FlowRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Box(
                                 modifier = Modifier
@@ -458,6 +547,34 @@ internal fun YouTubeCollectionScreen(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                                    .elovaireClickable { showDescriptionDialog = true }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                            ) {
+                                Text(
+                                    text = editCopy.editDescription,
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                                    .elovaireClickable(enabled = !isUploadingThumbnail) {
+                                        imagePickerLauncher.launch("image/*")
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                            ) {
+                                Text(
+                                    text = editCopy.changeImage,
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(ElovaireRadii.pill))
                                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
                                     .elovaireClickable { showAddTrackDialog = true }
                                     .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -470,6 +587,21 @@ internal fun YouTubeCollectionScreen(
                                     },
                                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                                     color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(ElovaireRadii.pill))
+                                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.16f))
+                                    .elovaireClickable(enabled = !isDeletingPlaylist) {
+                                        showDeleteConfirm = true
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                            ) {
+                                Text(
+                                    text = editCopy.deletePlaylist,
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.error,
                                 )
                             }
                         }
@@ -534,14 +666,66 @@ internal fun YouTubeCollectionScreen(
                     ) { index, song ->
                         val trackDownloaded = isCollectionDownloaded ||
                             (YouTubeUri.videoId(song.uri) in downloadedVideoIds)
+                        val canReorder = canEditYouTubePlaylist && editMode && searchQuery.isBlank()
+                        val currentSetId = setVideoIdsBySongId[song.id]
+                        val canMoveUp = canReorder && index > 0 && currentSetId != null &&
+                            setVideoIdsBySongId[songs[index - 1].id] != null
+                        val canMoveDown = canReorder && index < songs.lastIndex && currentSetId != null &&
+                            setVideoIdsBySongId[songs[index + 1].id] != null
                         NumberedCollectionTrackRow(
                             index = index + 1,
                             song = song,
                             isFavorite = song.id in favoriteSongIds,
                             isDownloaded = trackDownloaded,
                             downloadedCd = dlCopy.downloadedAction,
+                            moveUpCd = editCopy.moveUpCd,
+                            moveDownCd = editCopy.moveDownCd,
                             onClick = { onPlaySongs(song, filteredSongs, resolvedTitle) },
                             onToggleFavorite = { onToggleFavorite(song.id) },
+                            onMoveUp = if (canMoveUp) {
+                                {
+                                    val movedId = currentSetId ?: return@NumberedCollectionTrackRow
+                                    val successorId = setVideoIdsBySongId[songs[index - 1].id]
+                                    val previousSongs = songs
+                                    val reordered = songs.toMutableList().apply {
+                                        val item = removeAt(index)
+                                        add(index - 1, item)
+                                    }
+                                    songs = reordered
+                                    scope.launch {
+                                        val ok = youTubeCatalog.moveVideoInYouTubePlaylist(
+                                            collectionId,
+                                            movedId,
+                                            successorId,
+                                        )
+                                        if (!ok) songs = previousSongs
+                                    }
+                                }
+                            } else {
+                                null
+                            },
+                            onMoveDown = if (canMoveDown) {
+                                {
+                                    val movedId = currentSetId ?: return@NumberedCollectionTrackRow
+                                    val successorId = songs.getOrNull(index + 2)?.let { setVideoIdsBySongId[it.id] }
+                                    val previousSongs = songs
+                                    val reordered = songs.toMutableList().apply {
+                                        val item = removeAt(index)
+                                        add(index + 1, item)
+                                    }
+                                    songs = reordered
+                                    scope.launch {
+                                        val ok = youTubeCatalog.moveVideoInYouTubePlaylist(
+                                            collectionId,
+                                            movedId,
+                                            successorId,
+                                        )
+                                        if (!ok) songs = previousSongs
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                             onRemoveTrack = if (canEditYouTubePlaylist && editMode) {
                                 {
                                     val videoId = YouTubeUri.videoId(song.uri)
@@ -563,6 +747,119 @@ internal fun YouTubeCollectionScreen(
                     }
                 }
             }
+        }
+
+        if (showDescriptionDialog) {
+            var draftDescription by remember(playlistDescription) {
+                mutableStateOf(playlistDescription.orEmpty())
+            }
+            var savingDescription by remember { mutableStateOf(false) }
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { if (!savingDescription) showDescriptionDialog = false },
+                title = { Text(editCopy.editDescription) },
+                text = {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = draftDescription,
+                        onValueChange = { draftDescription = it },
+                        label = { Text(editCopy.descriptionLabel) },
+                        minLines = 2,
+                        maxLines = 4,
+                        enabled = !savingDescription,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(
+                        enabled = !savingDescription,
+                        onClick = {
+                            savingDescription = true
+                            scope.launch {
+                                val trimmed = draftDescription.trim()
+                                val ok = youTubeCatalog.updateYouTubePlaylistDescription(collectionId, trimmed)
+                                savingDescription = false
+                                showDescriptionDialog = false
+                                if (ok) {
+                                    playlistDescription = trimmed.ifBlank { null }
+                                }
+                            }
+                        },
+                    ) {
+                        Text(editCopy.save)
+                    }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(
+                        enabled = !savingDescription,
+                        onClick = { showDescriptionDialog = false },
+                    ) {
+                        Text(editCopy.cancel)
+                    }
+                },
+            )
+        }
+
+        if (showDeleteConfirm) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { if (!isDeletingPlaylist) showDeleteConfirm = false },
+                title = { Text(editCopy.deletePlaylist) },
+                text = { Text(editCopy.deletePlaylistConfirm) },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(
+                        enabled = !isDeletingPlaylist,
+                        onClick = {
+                            isDeletingPlaylist = true
+                            scope.launch {
+                                val ok = youTubeCatalog.deleteYouTubePlaylist(collectionId)
+                                isDeletingPlaylist = false
+                                showDeleteConfirm = false
+                                if (ok) {
+                                    onBack()
+                                }
+                            }
+                        },
+                    ) {
+                        Text(editCopy.delete, color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(
+                        enabled = !isDeletingPlaylist,
+                        onClick = { showDeleteConfirm = false },
+                    ) {
+                        Text(editCopy.cancel)
+                    }
+                },
+            )
+        }
+
+        pendingCropUri?.let { cropUri ->
+            PlaylistCoverCropDialog(
+                imageUri = cropUri,
+                isSaving = isUploadingThumbnail,
+                onDismiss = { pendingCropUri = null },
+                onConfirmCropped = { bytes ->
+                    isUploadingThumbnail = true
+                    scope.launch {
+                        val previewFile = java.io.File(
+                            context.cacheDir,
+                            "yt_cover_${collectionId}_${System.currentTimeMillis()}.jpg",
+                        ).apply { writeBytes(bytes) }
+                        val previewUri = Uri.fromFile(previewFile)
+                        val ok = youTubeCatalog.updateYouTubePlaylistThumbnail(
+                            playlistId = collectionId,
+                            imageBytes = bytes,
+                            localPreviewUri = previewUri,
+                        )
+                        if (ok) {
+                            editedArtUri = previewUri
+                        } else {
+                            previewFile.delete()
+                        }
+                        isUploadingThumbnail = false
+                        pendingCropUri = null
+                    }
+                },
+            )
         }
 
         if (showRenameDialog) {
@@ -892,8 +1189,12 @@ private fun NumberedCollectionTrackRow(
     isFavorite: Boolean,
     isDownloaded: Boolean,
     downloadedCd: String,
+    moveUpCd: String,
+    moveDownCd: String,
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
     onRemoveTrack: (() -> Unit)? = null,
 ) {
     Row(
@@ -945,6 +1246,27 @@ private fun NumberedCollectionTrackRow(
             }
         }
         if (onRemoveTrack != null) {
+            if (onMoveUp != null) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_lucide_chevron_down),
+                    contentDescription = moveUpCd,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .rotate(180f)
+                        .elovaireClickable(onClick = onMoveUp),
+                )
+            }
+            if (onMoveDown != null) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_lucide_chevron_down),
+                    contentDescription = moveDownCd,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .elovaireClickable(onClick = onMoveDown),
+                )
+            }
             Icon(
                 painter = painterResource(id = R.drawable.ic_lucide_trash_2),
                 contentDescription = null,

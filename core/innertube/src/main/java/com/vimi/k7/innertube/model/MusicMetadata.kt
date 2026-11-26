@@ -182,13 +182,21 @@ internal object MusicMetadata {
      * header (e.g. a discography page). Verified September 2026.
      */
     fun artistHeader(root: JSONObject): ArtistHeader? {
-        val header = objects(root, "musicImmersiveHeaderRenderer").firstOrNull() ?: return null
+        val header = objects(root, "musicImmersiveHeaderRenderer").firstOrNull()
+            ?: objects(root, "musicVisualHeaderRenderer").firstOrNull()
+            ?: return null
         val name = text(header.optJSONObject("title")).takeIf(String::isNotBlank) ?: return null
+        val subscribeRenderer = header.optJSONObject("subscriptionButton")
+            ?.optJSONObject("subscribeButtonRenderer")
+            ?: header.optJSONObject("subscriptionButton2")
+                ?.optJSONObject("subscribeButtonRenderer")
         return ArtistHeader(
             name = name,
             bio = text(header.optJSONObject("description")).takeIf(String::isNotBlank),
             monthlyAudience = text(header.optJSONObject("monthlyListenerCount")).takeIf(String::isNotBlank),
             bannerUrl = thumbnail(header),
+            isSubscribed = subscribeRenderer?.optBoolean("subscribed", false) ?: false,
+            channelId = subscribeRenderer?.optString("channelId")?.takeIf(String::isNotBlank),
         )
     }
 

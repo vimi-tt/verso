@@ -263,6 +263,86 @@ class MusicApi(
         }
     }
 
+    /**
+     * Upload a custom playlist thumbnail image to YouTube Music using the 2-step
+     * Scotty resumable upload protocol and return its `encryptedBlobId` for
+     * `browse/edit_playlist` (`ACTION_SET_CUSTOM_THUMBNAIL`).
+     */
+    fun uploadMusicPlaylistThumbnail(
+        imageBytes: ByteArray,
+        mimeType: String = "image/jpeg",
+    ): String? {
+        if (imageBytes.isEmpty()) return null
+        val session = sessionManager.captureSession() ?: return null
+        if (YouTubeAuthUtils.getSapisid(session.cookies) == null) return null
+        val uploadEndpoint = "https://music.youtube.com/playlist_image_upload/playlist_custom_thumbnail"
+
+        // Step 1: Reserve resumable upload slot
+        val startRequest = Request.Builder()
+            .url(uploadEndpoint)
+            .post(ByteArray(0).toRequestBody(null))
+            .authenticate(session)
+            .addHeader("User-Agent", BROWSER_USER_AGENT)
+            .addHeader("Origin", "https://music.youtube.com")
+            .addHeader("X-Origin", "https://music.youtube.com")
+            .addHeader("X-YouTube-Client-Name", "67")
+            .addHeader("X-YouTube-Client-Version", WEB_REMIX_VERSION)
+            .addHeader("X-Goog-Upload-Protocol", "resumable")
+            .addHeader("X-Goog-Upload-Command", "start")
+            .addHeader("X-Goog-Upload-Header-Content-Length", imageBytes.size.toString())
+            .addHeader("X-Goog-Upload-Header-Content-Type", mimeType)
+            .build()
+        val uploadUrl = try {
+            http.okHttpClient.newCall(startRequest).execute().use { response ->
+                if (!response.isSuccessful) {
+                    KLog.w(YOUTUBE_TAG, "playlist thumbnail start HTTP ${response.code}")
+                    return null
+                }
+                response.header("X-Goog-Upload-URL")?.takeIf { it.isNotBlank() }
+                    ?: response.header("x-guploader-uploadid")?.takeIf { it.isNotBlank() }?.let { id ->
+                        "$uploadEndpoint?upload_id=$id&upload_protocol=resumable"
+                    }
+            }
+        } catch (e: Exception) {
+            KLog.e(YOUTUBE_TAG, "playlist thumbnail start failed", e)
+            return null
+        } ?: return null
+
+        // Step 2: Upload and finalize image bytes
+        val uploadRequest = Request.Builder()
+            .url(uploadUrl)
+            .post(imageBytes.toRequestBody(mimeType.toMediaType()))
+            .authenticate(session)
+            .addHeader("User-Agent", BROWSER_USER_AGENT)
+            .addHeader("Origin", "https://music.youtube.com")
+            .addHeader("X-Origin", "https://music.youtube.com")
+            .addHeader("X-YouTube-Client-Name", "67")
+            .addHeader("X-YouTube-Client-Version", WEB_REMIX_VERSION)
+            .addHeader("X-Goog-Upload-Protocol", "resumable")
+            .addHeader("X-Goog-Upload-Command", "upload, finalize")
+            .addHeader("X-Goog-Upload-Offset", "0")
+            .build()
+        return try {
+            http.okHttpClient.newCall(uploadRequest).execute().use { response ->
+                val raw = response.body?.string()?.trim()
+                if (!response.isSuccessful || raw.isNullOrBlank()) {
+                    KLog.w(YOUTUBE_TAG, "playlist thumbnail upload HTTP ${response.code}")
+                    return null
+                }
+                if (raw.startsWith("{")) {
+                    val obj = JSONObject(raw)
+                    obj.optString("encryptedBlobId").takeIf { it.isNotBlank() }
+                        ?: obj.optString("playlistScottyEncryptedBlobId").takeIf { it.isNotBlank() }
+                } else {
+                    raw
+                }
+            }
+        } catch (e: Exception) {
+            KLog.e(YOUTUBE_TAG, "playlist thumbnail upload failed", e)
+            null
+        }
+    }
+
     data class AccountProfileInfo(
         val name: String,
         val avatarUrl: String?,

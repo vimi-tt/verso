@@ -192,14 +192,113 @@ internal class YouTubeStreamClient(
         return editYouTubePlaylist(playlistId, org.json.JSONArray().put(action))
     }
 
-    private fun editYouTubePlaylist(playlistId: String, actions: org.json.JSONArray): Boolean {
+    fun setYouTubePlaylistDescription(playlistId: String, description: String): Boolean {
+        val action = org.json.JSONObject()
+            .put("action", "ACTION_SET_PLAYLIST_DESCRIPTION")
+            .put("playlistDescription", description.trim())
+        return editYouTubePlaylist(playlistId, org.json.JSONArray().put(action))
+    }
+
+    fun moveVideoInYouTubePlaylist(
+        playlistId: String,
+        setVideoId: String,
+        successorSetVideoId: String?,
+    ): Boolean {
+        if (setVideoId.isBlank()) return false
+        val action = org.json.JSONObject()
+            .put("action", "ACTION_MOVE_VIDEO_BEFORE")
+            .put("setVideoId", setVideoId)
+            .apply {
+                if (!successorSetVideoId.isNullOrBlank()) {
+                    put("movedSetVideoIdSuccessor", successorSetVideoId)
+                }
+            }
+        return editYouTubePlaylist(playlistId, org.json.JSONArray().put(action))
+    }
+
+    fun setYouTubePlaylistThumbnail(playlistId: String, imageBytes: ByteArray): Boolean {
+        if (imageBytes.isEmpty() || !isLoggedIn()) return false
+        val blobId = musicApi.uploadMusicPlaylistThumbnail(imageBytes) ?: return false
+        val imageKey = org.json.JSONObject()
+            .put("type", "PLAYLIST_IMAGE_TYPE_CUSTOM_THUMBNAIL")
+            .put("name", "studio_square_thumbnail")
+        val addedCustomThumbnail = org.json.JSONObject()
+            .put("imageKey", imageKey)
+            .put("playlistScottyEncryptedBlobId", blobId)
+        val action = org.json.JSONObject()
+            .put("action", "ACTION_SET_CUSTOM_THUMBNAIL")
+            .put("addedCustomThumbnail", addedCustomThumbnail)
+        return editYouTubePlaylist(playlistId, org.json.JSONArray().put(action))
+    }
+
+    fun removeYouTubePlaylistThumbnail(playlistId: String): Boolean {
+        if (!isLoggedIn()) return false
+        val deletedCustomThumbnail = org.json.JSONObject()
+            .put("type", "PLAYLIST_IMAGE_TYPE_CUSTOM_THUMBNAIL")
+            .put("name", "studio_square_thumbnail")
+        val action = org.json.JSONObject()
+            .put("action", "ACTION_REMOVE_CUSTOM_THUMBNAIL")
+            .put("deletedCustomThumbnail", deletedCustomThumbnail)
+        return editYouTubePlaylist(playlistId, org.json.JSONArray().put(action))
+    }
+
+    fun deleteYouTubePlaylist(playlistId: String): Boolean {
         val cleanId = playlistId.removePrefix("VL").trim()
-        if (cleanId.isBlank()) return false
+        if (cleanId.isBlank() || !isLoggedIn()) return false
         val client = org.json.JSONObject()
             .put("clientName", "WEB_REMIX")
             .put("clientVersion", "1.20250101.01.00")
         val body = org.json.JSONObject()
             .put("context", org.json.JSONObject().put("client", client))
+            .put("playlistId", cleanId)
+        return musicApi.postMusicApi("playlist/delete", body) != null
+    }
+
+    fun createYouTubePlaylist(
+        title: String,
+        description: String = "",
+        privacyStatus: String = "PRIVATE",
+        videoIds: List<String> = emptyList(),
+    ): String? {
+        val cleanTitle = title.trim()
+        if (cleanTitle.isBlank() || !isLoggedIn()) return null
+        val client = org.json.JSONObject()
+            .put("clientName", "WEB_REMIX")
+            .put("clientVersion", "1.20250101.01.00")
+        val initialBatch = videoIds.take(50)
+        val body = org.json.JSONObject()
+            .put("context", org.json.JSONObject().put("client", client))
+            .put("title", cleanTitle)
+            .put("privacyStatus", privacyStatus)
+            .apply {
+                if (description.isNotBlank()) put("description", description.trim())
+                if (initialBatch.isNotEmpty()) put("videoIds", org.json.JSONArray(initialBatch))
+            }
+        val raw = musicApi.postMusicApi("playlist/create", body) ?: return null
+        val createdId = runCatching {
+            org.json.JSONObject(raw).optString("playlistId").takeIf { it.isNotBlank() }
+        }.getOrNull() ?: return null
+        val remaining = videoIds.drop(50)
+        if (remaining.isNotEmpty()) {
+            val actions = org.json.JSONArray().apply {
+                remaining.forEach { vid ->
+                    put(
+                        org.json.JSONObject()
+                            .put("action", "ACTION_ADD_VIDEO")
+                            .put("addedVideoId", vid),
+                    )
+                }
+            }
+            editYouTubePlaylist(createdId, actions)
+        }
+        return createdId
+    }
+
+    private fun editYouTubePlaylist(playlistId: String, actions: org.json.JSONArray): Boolean {
+        val cleanId = playlistId.removePrefix("VL").trim()
+        if (cleanId.isBlank()) return false
+        val body = org.json.JSONObject()
+            .put("context", musicApi.musicContext())
             .put("playlistId", cleanId)
             .put("actions", actions)
         val response = musicApi.postMusicApi("browse/edit_playlist", body) ?: return false
@@ -216,6 +315,19 @@ internal class YouTubeStreamClient(
             .put("context", org.json.JSONObject().put("client", client))
             .put("target", org.json.JSONObject().put("videoId", videoId))
         val endpoint = if (liked) "like/like" else "like/removelike"
+        return musicApi.postMusicApi(endpoint, body) != null
+    }
+
+    fun setArtistSubscription(channelId: String, subscribed: Boolean): Boolean {
+        val cleanId = channelId.trim()
+        if (cleanId.isBlank() || !isLoggedIn()) return false
+        val client = org.json.JSONObject()
+            .put("clientName", "WEB_REMIX")
+            .put("clientVersion", "1.20250101.01.00")
+        val body = org.json.JSONObject()
+            .put("context", org.json.JSONObject().put("client", client))
+            .put("channelIds", org.json.JSONArray().put(cleanId))
+        val endpoint = if (subscribed) "subscription/subscribe" else "subscription/unsubscribe"
         return musicApi.postMusicApi(endpoint, body) != null
     }
 

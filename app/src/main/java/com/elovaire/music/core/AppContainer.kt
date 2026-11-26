@@ -16,6 +16,7 @@ import elovaire.music.droidbeauty.app.data.library.LibraryReader
 import elovaire.music.droidbeauty.app.data.settings.AppearanceSettingsStore
 import elovaire.music.droidbeauty.app.data.settings.FavoritesStore
 import elovaire.music.droidbeauty.app.data.settings.PlaylistStore
+import elovaire.music.droidbeauty.app.data.youtube.YouTubeUri
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
@@ -134,6 +135,19 @@ class AppContainer internal constructor(
             scope = appScope,
             language = services.preferenceStore.appLanguage,
             resourceTracker = backendDiagnostics.resources,
+            favoriteSongIds = services.userDataStore.favoriteSongIds,
+            onToggleFavorite = { song ->
+                val willBeFavorite = song.id !in services.userDataStore.favoriteSongIds.value
+                services.userDataStore.toggleFavoriteSong(song.id)
+                val videoId = YouTubeUri.videoId(song.uri)
+                if (videoId != null && services.youTubeCatalogRepository.accountState.value.isLoggedIn) {
+                    appScope.launch {
+                        runCatching {
+                            services.youTubeCatalogRepository.setVideoLikeStatus(videoId, willBeFavorite)
+                        }
+                    }
+                }
+            },
         )
     }
     private val openNowPlayingChannel = Channel<Unit>(capacity = Channel.CONFLATED)

@@ -60,6 +60,40 @@ class PlaybackNotificationStateTest {
         assertEquals(false, state.isPlaying)
     }
 
+    @Test
+    fun notificationCustomActionIds_includesFavoriteStateBeforeShuffle() {
+        assertEquals(
+            listOf(
+                PlaybackNotificationController.ACTION_FAVORITE_ON,
+                PlaybackNotificationController.ACTION_SHUFFLE,
+            ),
+            notificationCustomActionIds(
+                currentSongId = 42L,
+                favoriteSongIds = listOf(42L),
+                supportsFavoriteAction = true,
+            ),
+        )
+        assertEquals(
+            listOf(
+                PlaybackNotificationController.ACTION_FAVORITE_OFF,
+                PlaybackNotificationController.ACTION_SHUFFLE,
+            ),
+            notificationCustomActionIds(
+                currentSongId = 42L,
+                favoriteSongIds = listOf(10L),
+                supportsFavoriteAction = true,
+            ),
+        )
+        assertEquals(
+            listOf(PlaybackNotificationController.ACTION_SHUFFLE),
+            notificationCustomActionIds(
+                currentSongId = null,
+                favoriteSongIds = listOf(42L),
+                supportsFavoriteAction = true,
+            ),
+        )
+    }
+
     private fun testSong(
         title: String,
         artist: String,

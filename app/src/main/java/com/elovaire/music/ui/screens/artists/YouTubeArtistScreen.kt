@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -55,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import elovaire.music.droidbeauty.app.R
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeArtistPage
+import elovaire.music.droidbeauty.app.data.youtube.YouTubeArtistSummary
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeCatalogRepository
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeCollectionSummary
 import elovaire.music.droidbeauty.app.data.youtube.YouTubeUri
@@ -62,6 +64,7 @@ import elovaire.music.droidbeauty.app.domain.model.Song
 import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
 import elovaire.music.droidbeauty.app.ui.components.rememberArtworkPaletteAccent
 import elovaire.music.droidbeauty.app.ui.i18n.LocalAppLanguage
+import elovaire.music.droidbeauty.app.ui.i18n.artistFollowCopy
 import elovaire.music.droidbeauty.app.ui.i18n.commonUiCopy
 import elovaire.music.droidbeauty.app.ui.i18n.smartPlaylistActionCopy
 import elovaire.music.droidbeauty.app.ui.i18n.youtubeCopy
@@ -89,8 +92,10 @@ internal fun YouTubeArtistScreen(
 ) {
     val language = LocalAppLanguage.current
     val ytCopy = remember(language) { youtubeCopy(language) }
+    val followCopy = remember(language) { artistFollowCopy(language) }
     val commonCopy = remember(language) { commonUiCopy(language) }
     val shuffleLabel = remember(language) { smartPlaylistActionCopy(language).shuffle }
+    val accountState by youTubeCatalog.accountState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val listState = rememberElovaireLazyListState("yt_artist_$artistId")
 
@@ -99,6 +104,8 @@ internal fun YouTubeArtistScreen(
     var hasError by remember(artistId) { mutableStateOf(false) }
     var retryNonce by remember(artistId) { mutableIntStateOf(0) }
     var bioExpanded by remember(artistId) { mutableStateOf(false) }
+    var subscriptionOverride by remember(artistId) { mutableStateOf<Boolean?>(null) }
+    var isUpdatingSubscription by remember(artistId) { mutableStateOf(false) }
 
     LaunchedEffect(artistId, retryNonce) {
         isLoading = true
@@ -266,6 +273,89 @@ internal fun YouTubeArtistScreen(
                                         textAlign = TextAlign.Center,
                                         maxLines = 1,
                                     )
+                                }
+                                if (accountState.isLoggedIn) {
+                                    val isFollowing = subscriptionOverride ?: (
+                                        page.isSubscribed ||
+                                            accountState.userArtists.any {
+                                                it.id == page.id || it.id == page.channelId
+                                            }
+                                        )
+                                    val followContainerColor = if (isFollowing) {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                                    } else {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                    }
+                                    val followBorderColor = if (isFollowing) {
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+                                    } else {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                                    }
+                                    val followContentColor = if (isFollowing) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(ElovaireRadii.pill),
+                                        color = followContainerColor,
+                                        border = BorderStroke(1.dp, followBorderColor),
+                                        modifier = Modifier
+                                            .padding(top = 6.dp)
+                                            .semantics {
+                                                role = Role.Button
+                                                contentDescription = if (isFollowing) {
+                                                    followCopy.unfollowCd(page.name)
+                                                } else {
+                                                    followCopy.followCd(page.name)
+                                                }
+                                            }
+                                            .elovaireClickable(enabled = !isUpdatingSubscription) {
+                                                val targetSubscribed = !isFollowing
+                                                subscriptionOverride = targetSubscribed
+                                                isUpdatingSubscription = true
+                                                scope.launch {
+                                                    val ok = try {
+                                                        youTubeCatalog.setArtistSubscription(
+                                                            channelId = page.channelId,
+                                                            artistSummary = YouTubeArtistSummary(
+                                                                id = page.id,
+                                                                name = page.name,
+                                                                thumbnailUri = page.bannerUri,
+                                                                subscriberCount = page.monthlyAudience,
+                                                            ),
+                                                            subscribed = targetSubscribed,
+                                                        )
+                                                    } finally {
+                                                        isUpdatingSubscription = false
+                                                    }
+                                                    if (!ok) {
+                                                        subscriptionOverride = null
+                                                    }
+                                                }
+                                            },
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            androidx.compose.material3.Icon(
+                                                painter = painterResource(
+                                                    id = if (isFollowing) R.drawable.ic_lucide_check else R.drawable.ic_lucide_plus,
+                                                ),
+                                                contentDescription = null,
+                                                tint = followContentColor,
+                                                modifier = Modifier.size(15.dp),
+                                            )
+                                            Text(
+                                                text = if (isFollowing) followCopy.following else followCopy.follow,
+                                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                                color = followContentColor,
+                                                maxLines = 1,
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

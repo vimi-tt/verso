@@ -709,6 +709,58 @@ class MetrolistMusicCatalogDataSource(
         )
     }
 
+    suspend fun getPlaylistDetails(playlistId: String): PlaylistDetails? =
+        withContext(Dispatchers.IO) {
+            val cleanId = playlistId.trim().removePrefix("VL")
+            if (cleanId.isEmpty()) return@withContext null
+            runCatching {
+                checkRateLimit()
+                val initial = kotlinx.coroutines.withTimeoutOrNull(7000L) {
+                    metrolistClient.playlist(cleanId)
+                } ?: return@withContext null
+                val allSongs = initial.songs.toMutableList()
+                var continuation = initial.songsContinuation ?: initial.continuation
+                var pageCount = 0
+                while (!continuation.isNullOrBlank() && pageCount < 8) {
+                    val token = continuation
+                    val nextPage = kotlinx.coroutines.withTimeoutOrNull(5000L) {
+                        metrolistClient.playlistContinuation(token)
+                    } ?: break
+                    if (nextPage.songs.isEmpty()) break
+                    allSongs.addAll(nextPage.songs)
+                    continuation = nextPage.continuation
+                    pageCount++
+                }
+                PlaylistDetails(
+                    id = initial.playlist.id,
+                    title = initial.playlist.title,
+                    description = initial.playlist.description?.takeIf { it.isNotBlank() },
+                    thumbnailUrl = initial.playlist.thumbnail?.takeIf { it.isNotBlank() },
+                    isEditable = initial.playlist.isEditable,
+                    tracks = allSongs.map { item ->
+                        PlaylistTrack(
+                            song = item.toCurioSong(),
+                            setVideoId = item.setVideoId,
+                        )
+                    },
+                )
+            }.onFailure { if (it is CancellationException) throw it }.getOrNull()
+        }
+
+    data class PlaylistTrack(
+        val song: Song,
+        val setVideoId: String?,
+    )
+
+    data class PlaylistDetails(
+        val id: String,
+        val title: String,
+        val description: String?,
+        val thumbnailUrl: String?,
+        val isEditable: Boolean,
+        val tracks: List<PlaylistTrack>,
+    )
+
     override suspend fun getLikedMusic(): List<Song> =
         legacy.getLikedMusic()
 

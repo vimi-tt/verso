@@ -26,6 +26,7 @@ import elovaire.music.droidbeauty.app.domain.model.AppLanguage
 import elovaire.music.droidbeauty.app.domain.model.Song
 import elovaire.music.droidbeauty.app.ui.i18n.localizedArtistName
 import elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText
+import elovaire.music.droidbeauty.app.ui.i18n.songFavoriteAccessibilityLabel
 
 const val EXTRA_OPEN_PLAYER_FROM_NOTIFICATION = "elovaire.music.droidbeauty.app.extra.OPEN_PLAYER_FROM_NOTIFICATION"
 
@@ -34,6 +35,24 @@ internal fun localizedNotificationTitle(song: Song?, language: AppLanguage): Str
 
 internal fun localizedNotificationArtist(song: Song?, language: AppLanguage): String =
     song?.artist?.let { if (it == "Unknown Artist") localizedArtistName(it, language) else it }.orEmpty()
+
+internal fun notificationCustomActionIds(
+    currentSongId: Long?,
+    favoriteSongIds: Collection<Long>,
+    supportsFavoriteAction: Boolean,
+): MutableList<String> {
+    val actions = mutableListOf<String>()
+    if (supportsFavoriteAction && currentSongId != null) {
+        val isFavorite = currentSongId in favoriteSongIds
+        actions += if (isFavorite) {
+            PlaybackNotificationController.ACTION_FAVORITE_ON
+        } else {
+            PlaybackNotificationController.ACTION_FAVORITE_OFF
+        }
+    }
+    actions += PlaybackNotificationController.ACTION_SHUFFLE
+    return actions
+}
 
 internal fun shouldKeepPlaybackServiceForeground(
     ongoing: Boolean,
@@ -52,6 +71,8 @@ internal class PlaybackNotificationController(
     private val scope: CoroutineScope,
     private val language: StateFlow<AppLanguage>,
     private val resourceTracker: BackendResourceTracker = BackendResourceRegistry,
+    private val favoriteSongIds: StateFlow<List<Long>>? = null,
+    private val onToggleFavorite: ((Song) -> Unit)? = null,
 ) {
     private val notificationJobs = mutableListOf<Job>()
     private val artworkLoader = NotificationArtworkLoader(context, scope, resourceTracker)
@@ -62,7 +83,7 @@ internal class PlaybackNotificationController(
         NOTIFICATION_CHANNEL_ID,
     )
         .setMediaDescriptionAdapter(NotificationDescriptionAdapter())
-        .setCustomActionReceiver(ShuffleActionReceiver())
+        .setCustomActionReceiver(NotificationCustomActionReceiver())
         .setNotificationListener(
             object : PlayerNotificationManager.NotificationListener {
                 override fun onNotificationPosted(
@@ -125,6 +146,16 @@ internal class PlaybackNotificationController(
         notificationJobs += scope.launch {
             language.collect {
                 if (notificationsEnabled) notificationManager.invalidate()
+            }
+        }
+        favoriteSongIds?.let { favoritesFlow ->
+            notificationJobs += scope.launch {
+                favoritesFlow
+                    .map { it.toSet() }
+                    .distinctUntilChanged()
+                    .collect {
+                        if (notificationsEnabled) notificationManager.invalidate()
+                    }
             }
         }
         notificationJobs += scope.launch {
@@ -290,19 +321,42 @@ internal class PlaybackNotificationController(
         }
     }
 
-    private inner class ShuffleActionReceiver : PlayerNotificationManager.CustomActionReceiver {
+    private inner class NotificationCustomActionReceiver : PlayerNotificationManager.CustomActionReceiver {
         override fun createCustomActions(
             context: Context,
             instanceId: Int,
         ): MutableMap<String, NotificationCompat.Action> {
+            val favoriteOnIntent = Intent(ACTION_FAVORITE_ON).setPackage(context.packageName)
+            val favoriteOffIntent = Intent(ACTION_FAVORITE_OFF).setPackage(context.packageName)
             val shuffleIntent = Intent(ACTION_SHUFFLE).setPackage(context.packageName)
+            val currentLanguage = language.value
             return mutableMapOf(
+                ACTION_FAVORITE_ON to NotificationCompat.Action(
+                    R.drawable.ic_lucide_star_filled,
+                    songFavoriteAccessibilityLabel(true, currentLanguage),
+                    PendingIntent.getBroadcast(
+                        context,
+                        instanceId * 10 + 1,
+                        favoriteOnIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                    ),
+                ),
+                ACTION_FAVORITE_OFF to NotificationCompat.Action(
+                    R.drawable.ic_lucide_star,
+                    songFavoriteAccessibilityLabel(false, currentLanguage),
+                    PendingIntent.getBroadcast(
+                        context,
+                        instanceId * 10 + 2,
+                        favoriteOffIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                    ),
+                ),
                 ACTION_SHUFFLE to NotificationCompat.Action(
                     R.drawable.ic_lucide_shuffle,
                     "Shuffle",
                     PendingIntent.getBroadcast(
                         context,
-                        instanceId,
+                        instanceId * 10 + 3,
                         shuffleIntent,
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                     ),
@@ -311,7 +365,11 @@ internal class PlaybackNotificationController(
         }
 
         override fun getCustomActions(player: Player): MutableList<String> {
-            return mutableListOf(ACTION_SHUFFLE)
+            return notificationCustomActionIds(
+                currentSongId = playbackManager.state.value.currentSong?.id,
+                favoriteSongIds = favoriteSongIds?.value.orEmpty(),
+                supportsFavoriteAction = onToggleFavorite != null,
+            )
         }
 
         override fun onCustomAction(
@@ -319,8 +377,13 @@ internal class PlaybackNotificationController(
             action: String,
             intent: Intent,
         ) {
-            if (action == ACTION_SHUFFLE) {
-                playbackManager.toggleShuffle()
+            when (action) {
+                ACTION_SHUFFLE -> playbackManager.toggleShuffle()
+                ACTION_FAVORITE_ON, ACTION_FAVORITE_OFF -> {
+                    playbackManager.state.value.currentSong?.let { song ->
+                        onToggleFavorite?.invoke(song)
+                    }
+                }
             }
         }
     }
@@ -328,7 +391,9 @@ internal class PlaybackNotificationController(
     companion object {
         internal const val NOTIFICATION_CHANNEL_ID = "elovaire_playback"
         internal const val NOTIFICATION_ID = 1001
-        private const val ACTION_SHUFFLE = "elovaire.music.droidbeauty.app.action.SHUFFLE"
+        internal const val ACTION_SHUFFLE = "elovaire.music.droidbeauty.app.action.SHUFFLE"
+        internal const val ACTION_FAVORITE_ON = "elovaire.music.droidbeauty.app.action.FAVORITE_ON"
+        internal const val ACTION_FAVORITE_OFF = "elovaire.music.droidbeauty.app.action.FAVORITE_OFF"
         private const val PAUSE_NOTIFICATION_TIMEOUT_MS = 180_000L
 
         fun ensureNotificationChannel(context: Context) {

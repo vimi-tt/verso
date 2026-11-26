@@ -355,6 +355,9 @@ internal fun ElovaireRootReadyHost(
                     }
                 },
                 importedCoverUris = importedPlaylistsSnapshot.coverUrisByPlaylistId,
+                onUpdatePlaylistCover = { playlistId, coverUri ->
+                    composition.importedPlaylistStore.updatePlaylistCover(playlistId, coverUri)
+                },
                 viewModelFactory = composition.viewModelFactory,
                 artistImageRepository = composition.artistImageRepository,
                 audiobookChapterReader = composition.audiobookChapterReader,
