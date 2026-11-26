@@ -343,6 +343,8 @@ class MusicBrowse(
                 similarArtists = MusicMetadata.similarArtists(root),
                 featuredOn = MusicMetadata.featuredPlaylists(root),
                 songsPlaylistBrowseId = songsPlaylistBrowseId,
+                isSubscribed = header?.isSubscribed ?: false,
+                channelId = header?.channelId,
             )
         } catch (e: CancellationException) {
             throw e

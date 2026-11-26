@@ -219,6 +219,19 @@ internal class YouTubeStreamClient(
         return musicApi.postMusicApi(endpoint, body) != null
     }
 
+    fun setArtistSubscription(channelId: String, subscribed: Boolean): Boolean {
+        val cleanId = channelId.trim()
+        if (cleanId.isBlank() || !isLoggedIn()) return false
+        val client = org.json.JSONObject()
+            .put("clientName", "WEB_REMIX")
+            .put("clientVersion", "1.20250101.01.00")
+        val body = org.json.JSONObject()
+            .put("context", org.json.JSONObject().put("client", client))
+            .put("channelIds", org.json.JSONArray().put(cleanId))
+        val endpoint = if (subscribed) "subscription/subscribe" else "subscription/unsubscribe"
+        return musicApi.postMusicApi(endpoint, body) != null
+    }
+
     fun fetchAndStoreAccountProfile(): Triple<String?, String?, String?> {
         val profile = musicApi.fetchAccountProfile() ?: return Triple(
             activeAccountName(),

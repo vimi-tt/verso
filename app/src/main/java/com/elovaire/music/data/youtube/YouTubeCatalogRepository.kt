@@ -89,6 +89,8 @@ internal data class YouTubeArtistPage(
     val albums: List<YouTubeCollectionSummary>,
     val singles: List<YouTubeCollectionSummary>,
     val similarArtists: List<YouTubeArtistSummary>,
+    val isSubscribed: Boolean = false,
+    val channelId: String = id,
 )
 
 internal data class YouTubeTrackLinks(
@@ -424,6 +426,34 @@ internal class YouTubeCatalogRepository(
         streamClient.catalog.getArtistPage(artistId)?.toYouTubeArtistPage()
     }
 
+    suspend fun setArtistSubscription(
+        channelId: String,
+        artistSummary: YouTubeArtistSummary?,
+        subscribed: Boolean,
+    ): Boolean = withContext(ioDispatcher) {
+        val cleanId = channelId.trim()
+        if (cleanId.isBlank()) return@withContext false
+        val ok = streamClient.setArtistSubscription(cleanId, subscribed)
+        if (ok && _accountState.value.isLoggedIn) {
+            _accountState.update { current ->
+                val updatedArtists = if (subscribed) {
+                    val summary = artistSummary ?: return@update current
+                    if (current.userArtists.any { it.id == cleanId || it.id == summary.id }) {
+                        current.userArtists
+                    } else {
+                        listOf(summary) + current.userArtists
+                    }
+                } else {
+                    current.userArtists.filterNot {
+                        it.id == cleanId || (artistSummary != null && it.id == artistSummary.id)
+                    }
+                }
+                current.copy(userArtists = updatedArtists)
+            }
+        }
+        ok
+    }
+
     suspend fun resolveTrackLinks(videoId: String): YouTubeTrackLinks? = withContext(ioDispatcher) {
         val ref = runCatching { streamClient.catalog.getSongAlbumRef(videoId) }.getOrNull() ?: return@withContext null
         YouTubeTrackLinks(
@@ -560,4 +590,6 @@ private fun ArtistPage.toYouTubeArtistPage(): YouTubeArtistPage = YouTubeArtistP
     albums = albums.map { it.toCollectionSummary() },
     singles = singles.map { it.toCollectionSummary() },
     similarArtists = similarArtists.map { it.toArtistSummary() },
+    isSubscribed = isSubscribed,
+    channelId = channelId?.takeIf(String::isNotBlank) ?: id,
 )

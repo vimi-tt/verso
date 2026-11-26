@@ -32,6 +32,8 @@ data class ArtistPage(
     val featuredOn: List<FeaturedPlaylist> = emptyList(),
     /** The top-songs shelf's full-list playlist, for callers paging further. */
     val songsPlaylistBrowseId: String? = null,
+    val isSubscribed: Boolean = false,
+    val channelId: String? = null,
 ) {
     /** Top songs in shelf order (roughly popularity). */
     val topSongs: List<Song>
@@ -49,6 +51,8 @@ internal data class ArtistHeader(
     val bio: String?,
     val monthlyAudience: String?,
     val bannerUrl: String?,
+    val isSubscribed: Boolean = false,
+    val channelId: String? = null,
 )
 
 /** One entry of the "Fans might also like" shelf. */
