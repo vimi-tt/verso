@@ -148,22 +148,43 @@ internal data class SharedTopBarRegistration(
     val id: Any,
     val spec: SharedTopBarSpec,
     val priority: Int,
+    val sequence: Long = 0L,
 )
 
 internal class SharedTopBarController {
+    private val registrations = mutableListOf<SharedTopBarRegistration>()
+    private var nextSequence = 0L
+
     var registration by mutableStateOf<SharedTopBarRegistration?>(null)
+        private set
 
     fun register(registration: SharedTopBarRegistration) {
-        val current = this.registration
-        if (current == null || registration.priority >= current.priority) {
-            this.registration = registration
+        val existingIndex = registrations.indexOfFirst { it.id == registration.id }
+        val entry = if (existingIndex >= 0) {
+            registration.copy(sequence = registrations[existingIndex].sequence)
+        } else {
+            registration.copy(sequence = nextSequence++)
         }
+        if (existingIndex >= 0) {
+            registrations[existingIndex] = entry
+        } else {
+            registrations.add(entry)
+        }
+        recomputeActiveRegistration()
     }
 
     fun unregister(registrationId: Any) {
-        if (registration?.id == registrationId) {
-            registration = null
+        if (registrations.removeAll { it.id == registrationId }) {
+            recomputeActiveRegistration()
         }
+    }
+
+    private fun recomputeActiveRegistration() {
+        registration = registrations.maxWithOrNull(
+            compareBy<SharedTopBarRegistration> { it.priority }
+                .thenBy { it.spec.topBarDepth() }
+                .thenBy { it.sequence },
+        )
     }
 }
 

@@ -199,4 +199,35 @@ class RootChromePolicyTest {
         assertEquals(TopBarMotionDirection.Back, topBarMotionDirection(back, unified))
         assertEquals(TopBarMotionDirection.Lateral, topBarMotionDirection(back, back.copy(title = "About")))
     }
+
+    @Test
+    fun sharedTopBarController_keepsDetailBackButtonWhenOutgoingUnifiedRecomposesOrDisposes() {
+        val controller = SharedTopBarController()
+        val homeId = Any()
+        val albumId = Any()
+        val homeSpec = SharedTopBarSpec.Unified(
+            title = "Home",
+            showSettings = true,
+            onOpenMenu = {},
+        )
+        val albumSpec = SharedTopBarSpec.Detail(
+            title = "Album",
+            subtitle = null,
+            onBack = {},
+        )
+
+        controller.register(SharedTopBarRegistration(id = homeId, spec = homeSpec, priority = 0))
+        controller.register(SharedTopBarRegistration(id = albumId, spec = albumSpec, priority = 0))
+        // Simulate outgoing Unified screen recomposing during exit transition
+        controller.register(SharedTopBarRegistration(id = homeId, spec = homeSpec, priority = 0))
+        assertEquals(albumSpec, controller.registration?.spec)
+
+        // Simulate outgoing Unified screen disposing after exit transition
+        controller.unregister(homeId)
+        assertEquals(albumSpec, controller.registration?.spec)
+
+        // Navigating back from Album restores nothing when empty, or Home if still registered
+        controller.unregister(albumId)
+        assertEquals(null, controller.registration)
+    }
 }
