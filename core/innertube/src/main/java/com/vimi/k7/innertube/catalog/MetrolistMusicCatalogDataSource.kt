@@ -719,7 +719,7 @@ class MetrolistMusicCatalogDataSource(
                     metrolistClient.playlist(cleanId)
                 } ?: return@withContext null
                 val allSongs = initial.songs.toMutableList()
-                var continuation = initial.songsContinuation ?: initial.continuation
+                var continuation = initial.songsContinuation
                 var pageCount = 0
                 while (!continuation.isNullOrBlank() && pageCount < 8) {
                     val token = continuation
