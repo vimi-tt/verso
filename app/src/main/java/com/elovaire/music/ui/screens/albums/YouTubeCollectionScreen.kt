@@ -959,15 +959,21 @@ internal fun YouTubeCollectionScreen(
                                 Text(if (isSearching) "..." else commonCopy.search)
                             }
                         }
+                        var isAddingTrack by remember { mutableStateOf(false) }
                         searchResults.forEach { candidate ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
-                                    .elovaireClickable {
+                                    .elovaireClickable(enabled = !isAddingTrack) {
                                         val vid = YouTubeUri.videoId(candidate.uri) ?: return@elovaireClickable
+                                        isAddingTrack = true
                                         scope.launch {
-                                            val ok = youTubeCatalog.addVideoToYouTubePlaylist(collectionId, vid)
+                                            val ok = try {
+                                                youTubeCatalog.addVideoToYouTubePlaylist(collectionId, vid)
+                                            } finally {
+                                                isAddingTrack = false
+                                            }
                                             if (ok) {
                                                 if (songs.none { it.id == candidate.id }) {
                                                     songs = songs + candidate

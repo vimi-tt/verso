@@ -761,6 +761,9 @@ internal fun PlaylistSelectionDialog(
     LaunchedEffect(visible) {
         if (visible) {
             mounted = true
+            if (selectedYouTubePlaylistId != null && effectiveYouTubePlaylists.none { it.id == selectedYouTubePlaylistId }) {
+                selectedYouTubePlaylistId = null
+            }
             if (onYouTubePlaylistSelected != null &&
                 menuActions.isYouTubeLoggedIn &&
                 effectiveYouTubePlaylists.isEmpty() &&
@@ -768,6 +771,10 @@ internal fun PlaylistSelectionDialog(
             ) {
                 menuActions.onRefreshYouTubePlaylists?.invoke()
             }
+        } else {
+            selectedPlaylistId = null
+            selectedYouTubePlaylistId = null
+            isAddingToPlaylist = false
         }
     }
     if (mounted) Dialog(onDismissRequest = onDismiss) {
@@ -1000,6 +1007,7 @@ internal fun PlaylistSelectionDialog(
                                 showPlaylistCreator = true
                                 playlistCreatorMounted = true
                                 selectedPlaylistId = null
+                                selectedYouTubePlaylistId = null
                             },
                             shape = RoundedCornerShape(ElovaireRadii.pill),
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),

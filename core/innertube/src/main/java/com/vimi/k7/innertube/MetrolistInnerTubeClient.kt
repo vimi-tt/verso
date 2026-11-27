@@ -1219,7 +1219,6 @@ open class MetrolistInnerTubeClient(
                     ?.contents
                     ?.mapNotNull { content: SectionListRenderer.Content ->
                         content.musicPlaylistShelfRenderer?.contents
-                            ?: content.musicShelfRenderer?.contents
                     }
                     ?.flatten()
                     ?: emptyList()
@@ -1227,15 +1226,12 @@ open class MetrolistInnerTubeClient(
             val shelfContents: List<MusicShelfRenderer.Content> =
                 response.continuationContents?.musicPlaylistShelfContinuation?.contents ?: emptyList()
 
-            val musicShelfContinuationContents: List<MusicShelfRenderer.Content> =
-                response.continuationContents?.musicShelfContinuation?.contents ?: emptyList()
-
             val appendedContents: List<MusicShelfRenderer.Content> =
                 response.onResponseReceivedActions
                     .orEmpty()
                     .flatMap { it.appendContinuationItemsAction?.continuationItems.orEmpty() }
 
-            val allContents = mainContents + shelfContents + musicShelfContinuationContents + appendedContents
+            val allContents = mainContents + shelfContents + appendedContents
 
             val songs =
                 allContents
@@ -1244,17 +1240,9 @@ open class MetrolistInnerTubeClient(
 
             val nextContinuation =
                 response.continuationContents
-                    ?.sectionListContinuation
+                    ?.musicPlaylistShelfContinuation
                     ?.continuations
                     ?.getContinuation()
-                    ?: response.continuationContents
-                        ?.musicPlaylistShelfContinuation
-                        ?.continuations
-                        ?.getContinuation()
-                    ?: response.continuationContents
-                        ?.musicShelfContinuation
-                        ?.continuations
-                        ?.getContinuation()
                     ?: appendedContents.getContinuation()
 
             return PlaylistContinuationPage(
