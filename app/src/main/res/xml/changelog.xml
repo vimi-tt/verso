@@ -6,6 +6,11 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
+    <release version="Cavaquinho 4">
+        <item>Fixed YouTube Music playlists showing changing suggested tracks as if they were part of the playlist</item>
+        <item>Cleared previous playlist picker selections on dismiss and prevented duplicate taps when adding songs to YouTube playlists</item>
+        <item>Added client-side safeguards blocking accidental mutations on system playlists like Liked Music</item>
+    </release>
     <release version="Cavaquinho 3">
         <item>Added full YouTube Music playlist editing: reorder tracks, edit descriptions, delete playlists, upload square-cropped covers, and export app playlists to YouTube</item>
         <item>Added custom square cover image cropping and replacement for both YouTube Music and app-created playlists</item>
