@@ -40,6 +40,16 @@ private data class PlaybackTrackingUrls(
     val watchtimeUrl: String,
 )
 
+internal fun isEditableYouTubePlaylistId(playlistId: String): Boolean {
+    val cleanId = playlistId.removePrefix("VL").trim()
+    return cleanId.isNotBlank() &&
+        !cleanId.equals("LM", ignoreCase = true) &&
+        !cleanId.equals("VLLM", ignoreCase = true)
+}
+
+internal fun canMutateYouTubePlaylist(isLoggedIn: Boolean, playlistId: String): Boolean =
+    isLoggedIn && isEditableYouTubePlaylistId(playlistId)
+
 /**
  * Coordinates InnerTube catalog browsing and stream URL resolution/caching for
  * YouTube streaming inside Elovaire's playback and data layers.
@@ -295,8 +305,8 @@ internal class YouTubeStreamClient(
     }
 
     private fun editYouTubePlaylist(playlistId: String, actions: org.json.JSONArray): Boolean {
+        if (!canMutateYouTubePlaylist(isLoggedIn(), playlistId)) return false
         val cleanId = playlistId.removePrefix("VL").trim()
-        if (cleanId.isBlank()) return false
         val body = org.json.JSONObject()
             .put("context", musicApi.musicContext())
             .put("playlistId", cleanId)
