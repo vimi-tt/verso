@@ -6,6 +6,12 @@
       2. Edit the bullet points inside that release.
       3. Add newer releases above older ones.
     -->
+    <release version="Djembe 1">
+        <item>Upgraded to official Google Material 3 Compose 1.5.0 with a complete semantic tonal surface, typography, and shape system</item>
+        <item>Remodeled bottom navigation, Home, Search, Settings, collection and artist headers, mini-player, and dialogs with Material 3 components while preserving Verso's visual identity</item>
+        <item>Added full-screen animated canvas support in Now Playing powered by BetterLyrics with low-overhead muted playback and automatic lifecycle pausing</item>
+        <item>Added immersive canvas mode that fades out the square cover and smoothly collapses player buttons to highlight song info and progress, revealing controls on tap</item>
+    </release>
     <release version="Cavaquinho 4">
         <item>Fixed YouTube Music playlists showing changing suggested tracks as if they were part of the playlist</item>
         <item>Cleared previous playlist picker selections on dismiss and prevented duplicate taps when adding songs to YouTube playlists</item>
