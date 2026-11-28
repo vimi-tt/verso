@@ -25,7 +25,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -1078,27 +1081,37 @@ private fun CollectionFilterSearchBar(
     clearCd: String,
     onQueryChange: (String) -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(ElovaireRadii.pill))
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .background(colorScheme.surfaceContainerHigh)
+            .border(
+                width = 1.dp,
+                color = colorScheme.outlineVariant.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(ElovaireRadii.pill),
+            )
+            .padding(start = 16.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Icon(
             painter = painterResource(id = R.drawable.ic_lucide_search),
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-            modifier = Modifier.size(16.dp),
+            tint = colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
         )
-        Box(modifier = Modifier.weight(1f)) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(vertical = 8.dp),
+        ) {
             if (query.isEmpty()) {
                 Text(
                     text = placeholder,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    color = colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1108,21 +1121,24 @@ private fun CollectionFilterSearchBar(
                 onValueChange = onQueryChange,
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = colorScheme.onSurface,
                 ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(colorScheme.primary),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
         if (query.isNotEmpty()) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_lucide_x),
-                contentDescription = clearCd,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                modifier = Modifier
-                    .size(16.dp)
-                    .elovaireClickable { onQueryChange("") },
-            )
+            IconButton(
+                onClick = { onQueryChange("") },
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_lucide_x),
+                    contentDescription = clearCd,
+                    tint = colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
     }
 }
@@ -1135,52 +1151,45 @@ private fun CollectionQuickAction(
     isLoading: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
-            .width(62.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .semantics(mergeDescendants = true) { role = Role.Button }
-            .elovaireClickable(onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 6.dp),
+            .width(64.dp)
+            .padding(horizontal = 2.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(
-                    if (highlighted) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-                    },
-                ),
-            contentAlignment = Alignment.Center,
+        FilledTonalIconButton(
+            onClick = onClick,
+            enabled = !isLoading,
+            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                containerColor = if (highlighted) colorScheme.primaryContainer else colorScheme.surfaceContainerHigh,
+                contentColor = if (highlighted) colorScheme.onPrimaryContainer else colorScheme.onSurface,
+                disabledContainerColor = colorScheme.surfaceContainerHigh,
+                disabledContentColor = colorScheme.onSurfaceVariant,
+            ),
+            modifier = Modifier.size(48.dp),
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(18.dp),
                     strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = colorScheme.primary,
                 )
             } else {
                 Icon(
                     painter = painterResource(id = iconResId),
                     contentDescription = label,
-                    tint = if (highlighted) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
-                    },
-                    modifier = Modifier.size(19.dp),
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (highlighted) MaterialTheme.colorScheme.primary else readableSecondaryTextColor(),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium,
+            ),
+            color = if (highlighted) colorScheme.primary else readableSecondaryTextColor(),
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
