@@ -120,9 +120,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -2876,19 +2879,27 @@ internal fun SleepTimerDialog(
             DynamicBackdropSurface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(
-                    topStart = ElovaireRadii.dialog,
-                    topEnd = ElovaireRadii.dialog,
+                    topStart = ElovaireRadii.sheet,
+                    topEnd = ElovaireRadii.sheet,
                 ),
-                overlayAlpha = 0.6f,
+                overlayAlpha = 0.72f,
                 borderColor = null,
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 28.dp),
+                        .padding(start = 20.dp, top = 12.dp, end = 20.dp, bottom = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .width(32.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(ElovaireRadii.pill))
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2910,19 +2921,18 @@ internal fun SleepTimerDialog(
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                                .elovaireClickable(onClick = onDismiss),
-                            contentAlignment = Alignment.Center,
+                        FilledTonalIconButton(
+                            onClick = onDismiss,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            modifier = Modifier.size(40.dp),
                         ) {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_lucide_x),
                                 contentDescription = copy.close,
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(18.dp),
                             )
                         }
                     }
@@ -3696,26 +3706,23 @@ internal fun AlbumHeaderActionButton(
 ) {
     val interactionSource = rememberElovaireInteractionSource()
 
-    Box(
+    FilledTonalIconButton(
+        onClick = onClick,
+        interactionSource = interactionSource,
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = backgroundColor,
+            contentColor = tint,
+        ),
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .elovaireActionBump(
                 interactionSource = interactionSource,
                 label = "${contentDescription}_album_header_bump",
-            )
-            .clip(CircleShape)
-            .background(backgroundColor)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
             ),
-        contentAlignment = Alignment.Center,
     ) {
         Icon(
             painter = painterResource(id = iconResId),
             contentDescription = contentDescription,
-            tint = tint,
             modifier = Modifier.size(iconSize),
         )
     }
@@ -3730,36 +3737,35 @@ internal fun AlbumHeaderPlayButton(
     val language = LocalAppLanguage.current
     val interactionSource = rememberElovaireInteractionSource()
 
-    Surface(
-        modifier = Modifier.elovaireActionBump(
-            interactionSource = interactionSource,
-            label = "album_play_button_bump",
-        ),
+    Button(
         onClick = onClick,
-        shape = RoundedCornerShape(ElovaireRadii.pill),
-        color = backgroundColor,
         interactionSource = interactionSource,
+        shape = RoundedCornerShape(ElovaireRadii.pill),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = backgroundColor,
+            contentColor = tint,
+        ),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .elovaireActionBump(
+                interactionSource = interactionSource,
+                label = "album_play_button_bump",
+            ),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_lucide_circle_play),
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(
-                text = playLabel(language),
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = elovaireScaledSp(16f),
-                    fontWeight = FontWeight.SemiBold,
-                ),
-                color = tint,
-            )
-        }
+        Icon(
+            painter = painterResource(id = R.drawable.ic_lucide_circle_play),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = playLabel(language),
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = elovaireScaledSp(16f),
+                fontWeight = FontWeight.SemiBold,
+            ),
+        )
     }
 }
 

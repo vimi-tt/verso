@@ -42,6 +42,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.activity.compose.BackHandler
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -270,17 +272,17 @@ internal fun PlaylistNameDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .consumePointersWithoutSemantics(),
-                    shape = RoundedCornerShape(ElovaireRadii.card),
-                    overlayAlpha = 0.6f,
+                    shape = RoundedCornerShape(ElovaireRadii.dialog),
+                    overlayAlpha = 0.72f,
                     borderColor = blurSurfaceBorderColor(),
                 ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp),
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
                     Text(
                         text = displayTitle,
-                        style = MaterialTheme.typography.displayLarge.copy(fontSize = elovaireScaledSp(24f)),
+                        style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     PlaylistNameInputField(
@@ -302,35 +304,28 @@ internal fun PlaylistNameDialog(
                         TextButton(onClick = onDismiss) {
                             Text(
                                 text = uiPhrase(language, UiPhrase.Cancel),
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         val confirmInteractionSource = rememberElovaireInteractionSource()
-                        Surface(
+                        Button(
+                            onClick = { onConfirm(name.trim()) },
+                            enabled = canConfirm,
+                            interactionSource = confirmInteractionSource,
+                            shape = RoundedCornerShape(ElovaireRadii.pill),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
                             modifier = Modifier.elovaireActionBump(
                                 enabled = canConfirm,
                                 interactionSource = confirmInteractionSource,
                                 label = "playlist_create_confirm_bump",
                             ),
-                            onClick = { onConfirm(name.trim()) },
-                            enabled = canConfirm,
-                            interactionSource = confirmInteractionSource,
-                            shape = RoundedCornerShape(ElovaireRadii.pill),
-                            color = if (canConfirm) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
-                            } else {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                            },
-                            contentColor = if (canConfirm) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.52f)
-                            },
                         ) {
                             Text(
                                 text = displayConfirmLabel,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                             )
                         }
