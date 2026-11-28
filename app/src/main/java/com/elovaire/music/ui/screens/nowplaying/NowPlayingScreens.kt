@@ -739,12 +739,46 @@ internal fun NowPlayingScreen(
                 artwork.value != null
         val reduceMotion = LocalMotionRuntime.current.reduceMotion
         var isCanvasRendered by remember(currentSong?.id) { mutableStateOf(false) }
+        var canvasControlsRevealed by remember(currentSong?.id) { mutableStateOf(false) }
+        var canvasControlsInteractionNonce by remember(currentSong?.id) { mutableStateOf(0) }
         val allowFullScreenCanvas = currentSong != null &&
             isPlayerVisible &&
             !showQueueSheet &&
             !showLyricsSheet &&
             !reduceMotion &&
             !transitionInFlight
+        val anyPlayerOverlayOpen = showQueueSheet ||
+            showLyricsSheet ||
+            showExploreSheet ||
+            showCreditsSheet ||
+            showMoreSheet ||
+            showSleepTimerDialog ||
+            showDestinationPopup ||
+            showShareCardSheet
+        val shouldCollapseCanvasControls = isCanvasRendered &&
+            allowFullScreenCanvas &&
+            playerUiState.isPlaying &&
+            !canvasControlsRevealed &&
+            !anyPlayerOverlayOpen
+        LaunchedEffect(
+            canvasControlsRevealed,
+            canvasControlsInteractionNonce,
+            isCanvasRendered,
+            allowFullScreenCanvas,
+            playerUiState.isPlaying,
+            anyPlayerOverlayOpen,
+        ) {
+            if (
+                canvasControlsRevealed &&
+                isCanvasRendered &&
+                allowFullScreenCanvas &&
+                playerUiState.isPlaying &&
+                !anyPlayerOverlayOpen
+            ) {
+                delay(4_000L)
+                canvasControlsRevealed = false
+            }
+        }
         val canvasImmersionProgress by animateFloatAsState(
             targetValue = if (isCanvasRendered && allowFullScreenCanvas) 1f else 0f,
             animationSpec = motionSpecs.tween(
@@ -753,6 +787,17 @@ internal fun NowPlayingScreen(
             ),
             label = "player_canvas_immersion_progress",
         )
+        val canvasControlsCollapseProgress by animateFloatAsState(
+            targetValue = if (shouldCollapseCanvasControls) 1f else 0f,
+            animationSpec = motionSpecs.tween(
+                durationMillis = 420,
+                easing = FastOutSlowInEasing,
+            ),
+            label = "player_canvas_controls_collapse_progress",
+        )
+        val canvasDockedTranslationYPx = with(density) { 126.dp.toPx() } * canvasControlsCollapseProgress
+        val canvasControlsExitTranslationYPx = with(density) { 164.dp.toPx() } * canvasControlsCollapseProgress
+        val canvasControlsAlpha = (1f - canvasControlsCollapseProgress * 1.45f).coerceIn(0f, 1f)
 
         Box(
             modifier = Modifier
@@ -1044,6 +1089,18 @@ internal fun NowPlayingScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(
+                                if (isCanvasRendered && allowFullScreenCanvas && !anyPlayerOverlayOpen) {
+                                    Modifier.pointerInput(currentSong.id, isCanvasRendered, allowFullScreenCanvas) {
+                                        detectTapGestures {
+                                            canvasControlsRevealed = !canvasControlsRevealed
+                                            canvasControlsInteractionNonce++
+                                        }
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .then(
                                 if (showQueueSheet || showSleepTimerDialog) {
                                     Modifier
                                 } else {
@@ -1255,7 +1312,8 @@ internal fun NowPlayingScreen(
                         .padding(top = 14.dp)
                         .then(playerSwipePushModifier)
                         .graphicsLayer {
-                            alpha = metadataSectionProgress
+                            alpha = metadataSectionProgress * canvasControlsAlpha
+                            translationY = canvasDockedTranslationYPx * 0.45f
                         },
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1287,6 +1345,7 @@ internal fun NowPlayingScreen(
                         .then(playerSwipePushModifier)
                         .graphicsLayer {
                             alpha = if (showQueueSheet) 0f else metadataSectionProgress
+                            translationY = if (showQueueSheet) 0f else canvasDockedTranslationYPx
                         },
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1366,7 +1425,7 @@ internal fun NowPlayingScreen(
                     }
                     Row(
                         modifier = Modifier
-                            .alpha(favoriteAlpha * if (showQueueSheet) 0f else metadataSectionProgress),
+                            .alpha(favoriteAlpha * if (showQueueSheet) 0f else metadataSectionProgress * canvasControlsAlpha),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -1433,7 +1492,11 @@ internal fun NowPlayingScreen(
                                 quality = displaySong?.audioQuality ?: currentSong.audioQuality,
                                 contentColor = contentColor,
                                 secondaryContentColor = secondaryContentColor,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .graphicsLayer {
+                                        translationY = if (showQueueSheet) 0f else canvasDockedTranslationYPx
+                                    },
                             )
 
                             Box(
@@ -1444,7 +1507,8 @@ internal fun NowPlayingScreen(
                             ) {
                                 Column(
                                     modifier = Modifier.graphicsLayer {
-                                        alpha = if (showQueueSheet) 0f else transportSectionProgress * transportAlpha
+                                        alpha = if (showQueueSheet) 0f else transportSectionProgress * transportAlpha * canvasControlsAlpha
+                                        translationY = if (showQueueSheet) 0f else canvasControlsExitTranslationYPx
                                     },
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(22.dp),
@@ -1533,7 +1597,8 @@ internal fun NowPlayingScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .graphicsLayer {
-                                alpha = if (showQueueSheet) 0f else actionsSectionProgress
+                                alpha = if (showQueueSheet) 0f else actionsSectionProgress * canvasControlsAlpha
+                                translationY = if (showQueueSheet) 0f else canvasControlsExitTranslationYPx
                             },
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
@@ -1618,7 +1683,8 @@ internal fun NowPlayingScreen(
                 modifier = Modifier
                     .then(playerSwipePushModifier)
                     .graphicsLayer {
-                        alpha = volumeSectionProgress
+                        alpha = volumeSectionProgress * canvasControlsAlpha
+                        translationY = canvasControlsExitTranslationYPx
                     }
                     .fillMaxWidth(centeredInfoWidth)
                     .align(Alignment.CenterHorizontally),
