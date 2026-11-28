@@ -28,11 +28,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -44,6 +51,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -358,11 +366,13 @@ internal fun EditorialHeroCard(
     val playLabel = if (isPlayingLoading) copy.loadingPlay else copy.play
     val playCd = copy.playCd(item.title)
 
+    val heroCornerRadius = ElovaireRadii.dialog
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1.06f)
-            .clip(RoundedCornerShape(ElovaireRadii.card))
+            .clip(RoundedCornerShape(heroCornerRadius))
             .semantics {
                 role = Role.Button
                 contentDescription = openCd
@@ -373,7 +383,7 @@ internal fun EditorialHeroCard(
             uri = item.artUri,
             title = item.title,
             modifier = Modifier.fillMaxSize(),
-            cornerRadius = ElovaireRadii.card,
+            cornerRadius = heroCornerRadius,
             requestedSizePx = 640,
             showArtworkGlow = false,
         )
@@ -416,19 +426,22 @@ internal fun EditorialHeroCard(
                         )
                     }
                 }
-                Row(
+                Button(
+                    onClick = onPlay,
+                    enabled = !isPlayingLoading,
+                    shape = RoundedCornerShape(ElovaireRadii.pill),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = InkText,
+                        disabledContainerColor = Color.White.copy(alpha = 0.84f),
+                        disabledContentColor = InkText.copy(alpha = 0.72f),
+                    ),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
                     modifier = Modifier
                         .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(ElovaireRadii.pill))
-                        .background(Color.White)
                         .semantics {
-                            role = Role.Button
                             contentDescription = playCd
-                        }
-                        .elovaireClickable(enabled = !isPlayingLoading, onClick = onPlay)
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        },
                 ) {
                     if (isPlayingLoading) {
                         CircularProgressIndicator(
@@ -440,14 +453,13 @@ internal fun EditorialHeroCard(
                         Icon(
                             painter = painterResource(id = R.drawable.ic_lucide_play),
                             contentDescription = null,
-                            tint = InkText,
                             modifier = Modifier.size(16.dp),
                         )
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = playLabel,
                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = InkText,
                         maxLines = 1,
                     )
                 }
@@ -725,48 +737,50 @@ internal fun EditorialMoodChip(
     val language = LocalAppLanguage.current
     val copy = remember(language) { editorialHomeCopy(language) }
     val chipCd = copy.moodsChipCd(title)
-    val containerColor = if (selected) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
-    }
-    val textColor = if (selected) {
-        MaterialTheme.colorScheme.surface
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    Box(
+    val colorScheme = MaterialTheme.colorScheme
+
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
         modifier = modifier
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(ElovaireRadii.pill))
-            .background(containerColor)
-            .then(
-                if (selected) {
-                    Modifier
-                } else {
-                    Modifier.border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
-                        shape = RoundedCornerShape(ElovaireRadii.pill),
-                    )
-                },
-            )
+            .heightIn(min = 44.dp)
             .semantics {
-                role = Role.Button
                 contentDescription = chipCd
+            },
+        shape = RoundedCornerShape(ElovaireRadii.tile),
+        leadingIcon = if (selected) {
+            {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_lucide_check),
+                    contentDescription = null,
+                    modifier = Modifier.size(FilterChipDefaults.IconSize),
+                )
             }
-            .elovaireClickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-            color = textColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+        } else {
+            null
+        },
+        label = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = colorScheme.surfaceContainerLow,
+            labelColor = colorScheme.onSurface,
+            selectedContainerColor = colorScheme.secondaryContainer,
+            selectedLabelColor = colorScheme.onSecondaryContainer,
+            selectedLeadingIconColor = colorScheme.onSecondaryContainer,
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = selected,
+            borderColor = colorScheme.outlineVariant,
+            selectedBorderColor = Color.Transparent,
+        ),
+    )
 }
 
 @Composable
@@ -843,24 +857,29 @@ internal fun EditorialSectionHeader(
                 )
             }
             if (showSeeAll) {
-                Box(
+                TextButton(
+                    onClick = onSeeAllClick,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier
                         .heightIn(min = 48.dp)
-                        .widthIn(min = 48.dp)
-                        .clip(RoundedCornerShape(ElovaireRadii.pill))
                         .semantics {
-                            role = Role.Button
                             contentDescription = seeAllCd
-                        }
-                        .elovaireClickable(onClick = onSeeAllClick)
-                        .padding(horizontal = 8.dp),
-                    contentAlignment = Alignment.CenterEnd,
+                        },
                 ) {
                     Text(
                         text = seeAllLabel,
                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_lucide_chevron_left),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .size(16.dp)
+                            .rotate(180f),
                     )
                 }
             }
@@ -898,41 +917,40 @@ internal fun EditorialSectionErrorState(
     val language = LocalAppLanguage.current
     val copy = remember(language) { editorialHomeCopy(language) }
     val retryLabel = copy.retry
-    Column(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = ElovaireSpacing.screenHorizontalPadding, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        horizontalAlignment = Alignment.Start,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
     ) {
-        Text(
-            text = copy.sectionError,
-            style = MaterialTheme.typography.bodyLarge,
-            color = readableSecondaryTextColor(),
-        )
-        Box(
+        Column(
             modifier = Modifier
-                .heightIn(min = 48.dp)
-                .clip(RoundedCornerShape(ElovaireRadii.pill))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
-                    shape = RoundedCornerShape(ElovaireRadii.pill),
-                )
-                .semantics {
-                    role = Role.Button
-                    contentDescription = retryLabel
-                }
-                .elovaireClickable(onClick = onRetry)
-                .padding(horizontal = 18.dp, vertical = 10.dp),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                .padding(horizontal = ElovaireSpacing.lg, vertical = ElovaireSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(ElovaireSpacing.md),
+            horizontalAlignment = Alignment.Start,
         ) {
             Text(
-                text = retryLabel,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurface,
+                text = copy.sectionError,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onErrorContainer,
             )
+            FilledTonalButton(
+                onClick = onRetry,
+                shape = RoundedCornerShape(ElovaireRadii.pill),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                modifier = Modifier.heightIn(min = 44.dp),
+            ) {
+                Text(
+                    text = retryLabel,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                )
+            }
         }
     }
 }
