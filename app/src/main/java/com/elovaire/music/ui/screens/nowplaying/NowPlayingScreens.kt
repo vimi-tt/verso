@@ -288,6 +288,7 @@ import elovaire.music.droidbeauty.app.domain.search.searchAlbumsForPicker
 import elovaire.music.droidbeauty.app.domain.search.searchArtistsForPicker
 import elovaire.music.droidbeauty.app.domain.search.searchPlaylists
 import elovaire.music.droidbeauty.app.domain.search.searchSongsForPicker
+import elovaire.music.droidbeauty.app.ui.components.AnimatedArtworkOverlay
 import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
 import elovaire.music.droidbeauty.app.ui.components.invalidateArtworkCaches
 import elovaire.music.droidbeauty.app.ui.components.rememberArtworkBitmap
@@ -1039,14 +1040,12 @@ internal fun NowPlayingScreen(
                                         label = "player_artwork_content",
                                     ) { songId ->
                                         val animatedSong = playerUiState.queue.firstOrNull { it.id == songId } ?: currentSong
-                                        ArtworkImage(
-                                            uri = animatedSong.artUri,
-                                            title = elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText(animatedSong.title, animatedSong.id, language),
-                                            placeholderIconResId = if (animatedSong.mediaKind == AudioMediaKind.Audiobook) {
-                                                R.drawable.ic_lucide_book_headphones
-                                            } else {
-                                                R.drawable.ic_lucide_music
-                                            },
+                                        val allowAnimatedArtwork = isPlayerVisible &&
+                                            !showQueueSheet &&
+                                            !showLyricsSheet &&
+                                            !LocalMotionRuntime.current.reduceMotion &&
+                                            animatedSong.id == currentSong.id
+                                        Box(
                                             modifier = Modifier
                                                 .width(animatedArtworkWidth)
                                                 .aspectRatio(1f)
@@ -1063,14 +1062,32 @@ internal fun NowPlayingScreen(
                                                     scaleY = scale
                                                     transformOrigin = TransformOrigin(0.5f, 0.5f)
                                                 }
+                                                .clip(RoundedCornerShape(animatedArtworkCornerRadius))
                                                 .border(
                                                     width = 1.dp,
                                                     color = contentColor.copy(alpha = 0.14f),
                                                     shape = RoundedCornerShape(animatedArtworkCornerRadius),
                                                 ),
-                                            cornerRadius = animatedArtworkCornerRadius,
-                                            requestedSizePx = 1024,
-                                        )
+                                        ) {
+                                            ArtworkImage(
+                                                uri = animatedSong.artUri,
+                                                title = elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText(animatedSong.title, animatedSong.id, language),
+                                                placeholderIconResId = if (animatedSong.mediaKind == AudioMediaKind.Audiobook) {
+                                                    R.drawable.ic_lucide_book_headphones
+                                                } else {
+                                                    R.drawable.ic_lucide_music
+                                                },
+                                                modifier = Modifier.fillMaxSize(),
+                                                cornerRadius = animatedArtworkCornerRadius,
+                                                requestedSizePx = 1024,
+                                            )
+                                            AnimatedArtworkOverlay(
+                                                song = animatedSong,
+                                                isPlaying = playerUiState.isPlaying,
+                                                isActive = allowAnimatedArtwork,
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                        }
                                     }
                                 }
                                 androidx.compose.animation.AnimatedVisibility(

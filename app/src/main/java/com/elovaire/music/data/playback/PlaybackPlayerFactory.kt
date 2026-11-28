@@ -8,9 +8,11 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.common.util.UnstableApi
 import elovaire.music.droidbeauty.app.core.performance.ElovaireTrace
@@ -119,4 +121,44 @@ private fun TrackSelectionParameters.withAudioOffloadPreferences(
     return buildUpon()
         .setAudioOffloadPreferences(audioOffloadPreferences)
         .build()
+}
+
+/**
+ * Lightweight, muted ExoPlayer configured strictly for looping animated album artwork / canvas.
+ * Disables audio & text tracks, caps video resolution at 720p, and bounds buffering to 4 MB.
+ */
+@UnstableApi
+internal fun createMutedCanvasExoPlayer(context: Context): ExoPlayer {
+    val loadControl = DefaultLoadControl.Builder()
+        .setBufferDurationsMs(
+            /* minBufferMs = */ 1_500,
+            /* maxBufferMs = */ 4_000,
+            /* bufferForPlaybackMs = */ 500,
+            /* bufferForPlaybackAfterRebufferMs = */ 1_000,
+        )
+        .setTargetBufferBytes(4 * 1024 * 1024)
+        .setPrioritizeTimeOverSizeThresholds(false)
+        .build()
+
+    val trackSelector = DefaultTrackSelector(context).apply {
+        setParameters(
+            buildUponParameters()
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .setMaxVideoSize(720, 720)
+                .setForceLowestBitrate(false),
+        )
+    }
+
+    return ExoPlayer.Builder(context.applicationContext)
+        .setLoadControl(loadControl)
+        .setTrackSelector(trackSelector)
+        .setAudioAttributes(AudioAttributes.DEFAULT, false)
+        .setHandleAudioBecomingNoisy(false)
+        .build()
+        .apply {
+            volume = 0f
+            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+            videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+        }
 }
