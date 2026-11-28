@@ -121,11 +121,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import elovaire.music.droidbeauty.app.BuildConfig
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -625,7 +630,7 @@ private fun SearchScreen(
                 .onFocusChanged { focusState ->
                     isFieldFocused = focusState.isFocused
                 },
-            shape = RoundedCornerShape(ElovaireRadii.input),
+            shape = RoundedCornerShape(ElovaireRadii.pill),
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(
@@ -675,13 +680,13 @@ private fun SearchScreen(
                 }
             },
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color.Transparent,
-                unfocusedBorderColor = Color.Transparent,
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                cursorColor = MaterialTheme.colorScheme.onSurface,
-                focusedPlaceholderColor = searchBarContentColor.copy(alpha = 0.5f),
-                unfocusedPlaceholderColor = searchBarContentColor.copy(alpha = 0.5f),
+                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                cursorColor = MaterialTheme.colorScheme.primary,
+                focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
             ),
         )
     }
@@ -970,35 +975,44 @@ private fun SearchScreen(
                             ) {
                                 filters.forEach { (filter, label) ->
                                     val selected = state.selectedYouTubeFilter == filter
-                                    Surface(
-                                        shape = RoundedCornerShape(ElovaireRadii.pill),
-                                        color = if (selected) {
-                                            MaterialTheme.colorScheme.onSurface
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = { onSelectYouTubeFilter(filter) },
+                                        shape = RoundedCornerShape(ElovaireRadii.tile),
+                                        leadingIcon = if (selected) {
+                                            {
+                                                Icon(
+                                                    painter = painterResource(id = R.drawable.ic_lucide_check),
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(FilterChipDefaults.IconSize),
+                                                )
+                                            }
                                         } else {
-                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                                        },
-                                        border = if (selected) {
                                             null
-                                        } else {
-                                            androidx.compose.foundation.BorderStroke(
-                                                1.dp,
-                                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                                        },
+                                        label = {
+                                            Text(
+                                                text = label,
+                                                style = MaterialTheme.typography.labelLarge.copy(
+                                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                                ),
+                                                maxLines = 1,
                                             )
                                         },
-                                        modifier = Modifier.elovaireClickable { onSelectYouTubeFilter(filter) },
-                                    ) {
-                                        Text(
-                                            text = label,
-                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-                                            color = if (selected) {
-                                                MaterialTheme.colorScheme.surface
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurface
-                                            },
-                                            maxLines = 1,
-                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                        )
-                                    }
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                            labelColor = MaterialTheme.colorScheme.onSurface,
+                                            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            selectedLeadingIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        ),
+                                        border = FilterChipDefaults.filterChipBorder(
+                                            enabled = true,
+                                            selected = selected,
+                                            borderColor = MaterialTheme.colorScheme.outlineVariant,
+                                            selectedBorderColor = Color.Transparent,
+                                        ),
+                                    )
                                 }
                             }
                         }
@@ -2042,25 +2056,40 @@ internal fun LibraryModeToggle(
 ) {
     val language = LocalAppLanguage.current
     val copy = remember(language) { viewModeAccessibilityCopy(language) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ToggleIconChip(
-            iconResId = R.drawable.ic_lucide_list,
-            selected = layoutMode == AlbumLayoutMode.Compact,
-            contentDescription = copy.compactList,
-            onClick = { onLayoutModeChanged(AlbumLayoutMode.Compact) },
-        )
-        ToggleIconChip(
-            iconResId = R.drawable.ic_lucide_grid_2x2,
-            selected = layoutMode == AlbumLayoutMode.Grid,
-            contentDescription = copy.grid,
-            onClick = { onLayoutModeChanged(AlbumLayoutMode.Grid) },
-        )
-        ToggleIconChip(
-            iconResId = R.drawable.ic_lucide_grid_3x3,
-            selected = layoutMode == AlbumLayoutMode.DenseGrid,
-            contentDescription = copy.denseGrid,
-            onClick = { onLayoutModeChanged(AlbumLayoutMode.DenseGrid) },
-        )
+    val colorScheme = MaterialTheme.colorScheme
+    val modes = listOf(
+        Triple(AlbumLayoutMode.Compact, R.drawable.ic_lucide_list, copy.compactList),
+        Triple(AlbumLayoutMode.Grid, R.drawable.ic_lucide_grid_2x2, copy.grid),
+        Triple(AlbumLayoutMode.DenseGrid, R.drawable.ic_lucide_grid_3x3, copy.denseGrid),
+    )
+    SingleChoiceSegmentedButtonRow {
+        modes.forEachIndexed { index, (mode, iconResId, contentDescription) ->
+            val selected = layoutMode == mode
+            SegmentedButton(
+                selected = selected,
+                onClick = { onLayoutModeChanged(mode) },
+                shape = SegmentedButtonDefaults.itemShape(
+                    index = index,
+                    count = modes.size,
+                ),
+                colors = SegmentedButtonDefaults.colors(
+                    activeContainerColor = colorScheme.secondaryContainer,
+                    activeContentColor = colorScheme.onSecondaryContainer,
+                    activeBorderColor = colorScheme.outlineVariant,
+                    inactiveContainerColor = colorScheme.surfaceContainerLow,
+                    inactiveContentColor = colorScheme.onSurfaceVariant,
+                    inactiveBorderColor = colorScheme.outlineVariant,
+                ),
+                icon = {},
+                label = {
+                    Icon(
+                        painter = painterResource(id = iconResId),
+                        contentDescription = contentDescription,
+                        modifier = Modifier.size(16.dp),
+                    )
+                },
+            )
+        }
     }
 }
 
