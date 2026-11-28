@@ -737,6 +737,22 @@ internal fun NowPlayingScreen(
                 targetArtworkBounds.isValidTransitionBounds &&
                 sharedArtworkBounds.isValidTransitionBounds &&
                 artwork.value != null
+        val reduceMotion = LocalMotionRuntime.current.reduceMotion
+        var isCanvasRendered by remember(currentSong?.id) { mutableStateOf(false) }
+        val allowFullScreenCanvas = currentSong != null &&
+            isPlayerVisible &&
+            !showQueueSheet &&
+            !showLyricsSheet &&
+            !reduceMotion &&
+            !transitionInFlight
+        val canvasImmersionProgress by animateFloatAsState(
+            targetValue = if (isCanvasRendered && allowFullScreenCanvas) 1f else 0f,
+            animationSpec = motionSpecs.tween(
+                durationMillis = 360,
+                easing = FastOutSlowInEasing,
+            ),
+            label = "player_canvas_immersion_progress",
+        )
 
         Box(
             modifier = Modifier
@@ -813,34 +829,64 @@ internal fun NowPlayingScreen(
                         }
                     }
                 }
+                if (currentSong != null) {
+                    AnimatedArtworkOverlay(
+                        song = currentSong,
+                        isPlaying = playerUiState.isPlaying,
+                        isActive = allowFullScreenCanvas,
+                        onCanvasReadyChange = { ready -> isCanvasRendered = ready },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                tintColor.copy(alpha = 0.38f),
-                                baseSurface.copy(alpha = 0.44f),
-                                baseSurface.copy(alpha = 0.7f),
-                                baseSurface.copy(alpha = 0.9f),
+            val staticBackdropScrimAlpha = (1f - canvasImmersionProgress).coerceIn(0f, 1f)
+            if (staticBackdropScrimAlpha > 0.01f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = staticBackdropScrimAlpha }
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    tintColor.copy(alpha = 0.38f),
+                                    baseSurface.copy(alpha = 0.44f),
+                                    baseSurface.copy(alpha = 0.7f),
+                                    baseSurface.copy(alpha = 0.9f),
+                                ),
                             ),
                         ),
-                    ),
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                gradient.first().copy(alpha = 0.18f),
-                                Color.Transparent,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = staticBackdropScrimAlpha }
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    gradient.first().copy(alpha = 0.18f),
+                                    Color.Transparent,
+                                ),
+                                radius = 1200f,
                             ),
-                            radius = 1200f,
                         ),
-                    ),
-            )
+                )
+            }
+            if (canvasImmersionProgress > 0.01f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = canvasImmersionProgress }
+                        .background(
+                            Brush.verticalGradient(
+                                0.0f to Color.Black.copy(alpha = 0.46f),
+                                0.18f to Color.Transparent,
+                                0.50f to Color.Transparent,
+                                0.72f to Color.Black.copy(alpha = 0.62f),
+                                1.0f to Color.Black.copy(alpha = 0.90f),
+                            ),
+                        ),
+                )
+            }
 
         }
         CompositionLocalProvider(LocalPlayerHazeState provides playerBackdropHazeState) {
@@ -1040,12 +1086,16 @@ internal fun NowPlayingScreen(
                                         label = "player_artwork_content",
                                     ) { songId ->
                                         val animatedSong = playerUiState.queue.firstOrNull { it.id == songId } ?: currentSong
-                                        val allowAnimatedArtwork = isPlayerVisible &&
-                                            !showQueueSheet &&
-                                            !showLyricsSheet &&
-                                            !LocalMotionRuntime.current.reduceMotion &&
-                                            animatedSong.id == currentSong.id
-                                        Box(
+                                        val squareVisibility = if (showQueueSheet) 1f else (1f - canvasImmersionProgress).coerceIn(0f, 1f)
+                                        val squareExpandScale = if (showQueueSheet) 1f else 1f + (0.06f * canvasImmersionProgress)
+                                        ArtworkImage(
+                                            uri = animatedSong.artUri,
+                                            title = elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText(animatedSong.title, animatedSong.id, language),
+                                            placeholderIconResId = if (animatedSong.mediaKind == AudioMediaKind.Audiobook) {
+                                                R.drawable.ic_lucide_book_headphones
+                                            } else {
+                                                R.drawable.ic_lucide_music
+                                            },
                                             modifier = Modifier
                                                 .width(animatedArtworkWidth)
                                                 .aspectRatio(1f)
@@ -1053,41 +1103,25 @@ internal fun NowPlayingScreen(
                                                 .graphicsLayer {
                                                     val artworkWidthPx = size.width
                                                     val insetPx = pausedArtworkInset.toPx()
-                                                    val scale = if (artworkWidthPx > 0f) {
+                                                    val pausedScale = if (artworkWidthPx > 0f) {
                                                         ((artworkWidthPx - insetPx) / artworkWidthPx).coerceAtLeast(0f)
                                                     } else {
                                                         1f
                                                     }
-                                                    scaleX = scale
-                                                    scaleY = scale
+                                                    val finalScale = pausedScale * squareExpandScale
+                                                    scaleX = finalScale
+                                                    scaleY = finalScale
+                                                    alpha = squareVisibility
                                                     transformOrigin = TransformOrigin(0.5f, 0.5f)
                                                 }
-                                                .clip(RoundedCornerShape(animatedArtworkCornerRadius))
                                                 .border(
                                                     width = 1.dp,
                                                     color = contentColor.copy(alpha = 0.14f),
                                                     shape = RoundedCornerShape(animatedArtworkCornerRadius),
                                                 ),
-                                        ) {
-                                            ArtworkImage(
-                                                uri = animatedSong.artUri,
-                                                title = elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText(animatedSong.title, animatedSong.id, language),
-                                                placeholderIconResId = if (animatedSong.mediaKind == AudioMediaKind.Audiobook) {
-                                                    R.drawable.ic_lucide_book_headphones
-                                                } else {
-                                                    R.drawable.ic_lucide_music
-                                                },
-                                                modifier = Modifier.fillMaxSize(),
-                                                cornerRadius = animatedArtworkCornerRadius,
-                                                requestedSizePx = 1024,
-                                            )
-                                            AnimatedArtworkOverlay(
-                                                song = animatedSong,
-                                                isPlaying = playerUiState.isPlaying,
-                                                isActive = allowAnimatedArtwork,
-                                                modifier = Modifier.fillMaxSize(),
-                                            )
-                                        }
+                                            cornerRadius = animatedArtworkCornerRadius,
+                                            requestedSizePx = 1024,
+                                        )
                                     }
                                 }
                                 androidx.compose.animation.AnimatedVisibility(

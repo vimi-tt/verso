@@ -46,12 +46,19 @@ internal fun AnimatedArtworkOverlay(
     isPlaying: Boolean,
     isActive: Boolean,
     modifier: Modifier = Modifier,
+    onCanvasReadyChange: (Boolean) -> Unit = {},
 ) {
-    if (!isActive) return
+    if (!isActive) {
+        LaunchedEffect(Unit) {
+            onCanvasReadyChange(false)
+        }
+        return
+    }
 
     var resolvedMedia by remember(song.id) { mutableStateOf<AnimatedArtworkMedia?>(null) }
 
     LaunchedEffect(song.id, song.title, song.artist, song.album) {
+        onCanvasReadyChange(false)
         resolvedMedia = AnimatedArtworkCache.resolve(song)
     }
 
@@ -78,6 +85,15 @@ internal fun AnimatedArtworkOverlay(
     var hasFailed by remember(media.videoUrl) { mutableStateOf(false) }
     var videoWidth by remember(media.videoUrl) { mutableIntStateOf(0) }
     var videoHeight by remember(media.videoUrl) { mutableIntStateOf(0) }
+
+    LaunchedEffect(firstFrameRendered, hasFailed) {
+        onCanvasReadyChange(firstFrameRendered && !hasFailed)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            onCanvasReadyChange(false)
+        }
+    }
 
     if (hasFailed) return
 

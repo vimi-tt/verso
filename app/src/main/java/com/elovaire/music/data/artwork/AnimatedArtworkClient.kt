@@ -109,12 +109,12 @@ internal class AnimatedArtworkClient(
         val json = runCatching { JSONObject(raw) }.getOrNull()
             ?: return AnimatedArtworkLookupResult.Unavailable
 
-        // Prefer square direct MP4 (lowest decode/network overhead), then HLS, then vertical canvas.
+        // Prefer full-screen vertical streams first, then square MP4/HLS (center-cropped cleanly).
         val candidates = listOf(
-            Triple(json.optHttpsUrl("videoUrl"), false, false),
-            Triple(json.optHttpsUrl("animated"), true, false),
             Triple(json.optHttpsUrl("videoUrlVertical"), false, true),
             Triple(json.optHttpsUrl("animatedVertical"), true, true),
+            Triple(json.optHttpsUrl("videoUrl"), false, false),
+            Triple(json.optHttpsUrl("animated"), true, false),
         )
         val match = candidates.firstOrNull { (url, _, _) -> url != null }
             ?: return AnimatedArtworkLookupResult.NotFound
