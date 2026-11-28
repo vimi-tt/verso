@@ -120,9 +120,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -285,6 +288,7 @@ import elovaire.music.droidbeauty.app.domain.search.searchAlbumsForPicker
 import elovaire.music.droidbeauty.app.domain.search.searchArtistsForPicker
 import elovaire.music.droidbeauty.app.domain.search.searchPlaylists
 import elovaire.music.droidbeauty.app.domain.search.searchSongsForPicker
+import elovaire.music.droidbeauty.app.ui.components.AnimatedArtworkOverlay
 import elovaire.music.droidbeauty.app.ui.components.ArtworkImage
 import elovaire.music.droidbeauty.app.ui.components.invalidateArtworkCaches
 import elovaire.music.droidbeauty.app.ui.components.rememberArtworkBitmap
@@ -733,6 +737,67 @@ internal fun NowPlayingScreen(
                 targetArtworkBounds.isValidTransitionBounds &&
                 sharedArtworkBounds.isValidTransitionBounds &&
                 artwork.value != null
+        val reduceMotion = LocalMotionRuntime.current.reduceMotion
+        var isCanvasRendered by remember(currentSong?.id) { mutableStateOf(false) }
+        var canvasControlsRevealed by remember(currentSong?.id) { mutableStateOf(false) }
+        var canvasControlsInteractionNonce by remember(currentSong?.id) { mutableStateOf(0) }
+        val allowFullScreenCanvas = currentSong != null &&
+            isPlayerVisible &&
+            !showQueueSheet &&
+            !showLyricsSheet &&
+            !reduceMotion &&
+            !transitionInFlight
+        val anyPlayerOverlayOpen = showQueueSheet ||
+            showLyricsSheet ||
+            showExploreSheet ||
+            showCreditsSheet ||
+            showMoreSheet ||
+            showSleepTimerDialog ||
+            showDestinationPopup ||
+            showShareCardSheet
+        val shouldCollapseCanvasControls = isCanvasRendered &&
+            allowFullScreenCanvas &&
+            playerUiState.isPlaying &&
+            !canvasControlsRevealed &&
+            !anyPlayerOverlayOpen
+        LaunchedEffect(
+            canvasControlsRevealed,
+            canvasControlsInteractionNonce,
+            isCanvasRendered,
+            allowFullScreenCanvas,
+            playerUiState.isPlaying,
+            anyPlayerOverlayOpen,
+        ) {
+            if (
+                canvasControlsRevealed &&
+                isCanvasRendered &&
+                allowFullScreenCanvas &&
+                playerUiState.isPlaying &&
+                !anyPlayerOverlayOpen
+            ) {
+                delay(4_000L)
+                canvasControlsRevealed = false
+            }
+        }
+        val canvasImmersionProgress by animateFloatAsState(
+            targetValue = if (isCanvasRendered && allowFullScreenCanvas) 1f else 0f,
+            animationSpec = motionSpecs.tween(
+                durationMillis = 360,
+                easing = FastOutSlowInEasing,
+            ),
+            label = "player_canvas_immersion_progress",
+        )
+        val canvasControlsCollapseProgress by animateFloatAsState(
+            targetValue = if (shouldCollapseCanvasControls) 1f else 0f,
+            animationSpec = motionSpecs.tween(
+                durationMillis = 420,
+                easing = FastOutSlowInEasing,
+            ),
+            label = "player_canvas_controls_collapse_progress",
+        )
+        val canvasDockedTranslationYPx = with(density) { 126.dp.toPx() } * canvasControlsCollapseProgress
+        val canvasControlsExitTranslationYPx = with(density) { 164.dp.toPx() } * canvasControlsCollapseProgress
+        val canvasControlsAlpha = (1f - canvasControlsCollapseProgress * 1.45f).coerceIn(0f, 1f)
 
         Box(
             modifier = Modifier
@@ -809,34 +874,64 @@ internal fun NowPlayingScreen(
                         }
                     }
                 }
+                if (currentSong != null) {
+                    AnimatedArtworkOverlay(
+                        song = currentSong,
+                        isPlaying = playerUiState.isPlaying,
+                        isActive = allowFullScreenCanvas,
+                        onCanvasReadyChange = { ready -> isCanvasRendered = ready },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                tintColor.copy(alpha = 0.38f),
-                                baseSurface.copy(alpha = 0.44f),
-                                baseSurface.copy(alpha = 0.7f),
-                                baseSurface.copy(alpha = 0.9f),
+            val staticBackdropScrimAlpha = (1f - canvasImmersionProgress).coerceIn(0f, 1f)
+            if (staticBackdropScrimAlpha > 0.01f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = staticBackdropScrimAlpha }
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    tintColor.copy(alpha = 0.38f),
+                                    baseSurface.copy(alpha = 0.44f),
+                                    baseSurface.copy(alpha = 0.7f),
+                                    baseSurface.copy(alpha = 0.9f),
+                                ),
                             ),
                         ),
-                    ),
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                gradient.first().copy(alpha = 0.18f),
-                                Color.Transparent,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = staticBackdropScrimAlpha }
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    gradient.first().copy(alpha = 0.18f),
+                                    Color.Transparent,
+                                ),
+                                radius = 1200f,
                             ),
-                            radius = 1200f,
                         ),
-                    ),
-            )
+                )
+            }
+            if (canvasImmersionProgress > 0.01f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = canvasImmersionProgress }
+                        .background(
+                            Brush.verticalGradient(
+                                0.0f to Color.Black.copy(alpha = 0.46f),
+                                0.18f to Color.Transparent,
+                                0.50f to Color.Transparent,
+                                0.72f to Color.Black.copy(alpha = 0.62f),
+                                1.0f to Color.Black.copy(alpha = 0.90f),
+                            ),
+                        ),
+                )
+            }
 
         }
         CompositionLocalProvider(LocalPlayerHazeState provides playerBackdropHazeState) {
@@ -994,6 +1089,18 @@ internal fun NowPlayingScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(
+                                if (isCanvasRendered && allowFullScreenCanvas && !anyPlayerOverlayOpen) {
+                                    Modifier.pointerInput(currentSong.id, isCanvasRendered, allowFullScreenCanvas) {
+                                        detectTapGestures {
+                                            canvasControlsRevealed = !canvasControlsRevealed
+                                            canvasControlsInteractionNonce++
+                                        }
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .then(
                                 if (showQueueSheet || showSleepTimerDialog) {
                                     Modifier
                                 } else {
@@ -1036,6 +1143,8 @@ internal fun NowPlayingScreen(
                                         label = "player_artwork_content",
                                     ) { songId ->
                                         val animatedSong = playerUiState.queue.firstOrNull { it.id == songId } ?: currentSong
+                                        val squareVisibility = if (showQueueSheet) 1f else (1f - canvasImmersionProgress).coerceIn(0f, 1f)
+                                        val squareExpandScale = if (showQueueSheet) 1f else 1f + (0.06f * canvasImmersionProgress)
                                         ArtworkImage(
                                             uri = animatedSong.artUri,
                                             title = elovaire.music.droidbeauty.app.ui.i18n.localizedExternalAudioText(animatedSong.title, animatedSong.id, language),
@@ -1051,13 +1160,15 @@ internal fun NowPlayingScreen(
                                                 .graphicsLayer {
                                                     val artworkWidthPx = size.width
                                                     val insetPx = pausedArtworkInset.toPx()
-                                                    val scale = if (artworkWidthPx > 0f) {
+                                                    val pausedScale = if (artworkWidthPx > 0f) {
                                                         ((artworkWidthPx - insetPx) / artworkWidthPx).coerceAtLeast(0f)
                                                     } else {
                                                         1f
                                                     }
-                                                    scaleX = scale
-                                                    scaleY = scale
+                                                    val finalScale = pausedScale * squareExpandScale
+                                                    scaleX = finalScale
+                                                    scaleY = finalScale
+                                                    alpha = squareVisibility
                                                     transformOrigin = TransformOrigin(0.5f, 0.5f)
                                                 }
                                                 .border(
@@ -1201,7 +1312,8 @@ internal fun NowPlayingScreen(
                         .padding(top = 14.dp)
                         .then(playerSwipePushModifier)
                         .graphicsLayer {
-                            alpha = metadataSectionProgress
+                            alpha = metadataSectionProgress * canvasControlsAlpha
+                            translationY = canvasDockedTranslationYPx * 0.45f
                         },
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1233,6 +1345,7 @@ internal fun NowPlayingScreen(
                         .then(playerSwipePushModifier)
                         .graphicsLayer {
                             alpha = if (showQueueSheet) 0f else metadataSectionProgress
+                            translationY = if (showQueueSheet) 0f else canvasDockedTranslationYPx
                         },
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1312,7 +1425,7 @@ internal fun NowPlayingScreen(
                     }
                     Row(
                         modifier = Modifier
-                            .alpha(favoriteAlpha * if (showQueueSheet) 0f else metadataSectionProgress),
+                            .alpha(favoriteAlpha * if (showQueueSheet) 0f else metadataSectionProgress * canvasControlsAlpha),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -1379,7 +1492,11 @@ internal fun NowPlayingScreen(
                                 quality = displaySong?.audioQuality ?: currentSong.audioQuality,
                                 contentColor = contentColor,
                                 secondaryContentColor = secondaryContentColor,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .graphicsLayer {
+                                        translationY = if (showQueueSheet) 0f else canvasDockedTranslationYPx
+                                    },
                             )
 
                             Box(
@@ -1390,7 +1507,8 @@ internal fun NowPlayingScreen(
                             ) {
                                 Column(
                                     modifier = Modifier.graphicsLayer {
-                                        alpha = if (showQueueSheet) 0f else transportSectionProgress * transportAlpha
+                                        alpha = if (showQueueSheet) 0f else transportSectionProgress * transportAlpha * canvasControlsAlpha
+                                        translationY = if (showQueueSheet) 0f else canvasControlsExitTranslationYPx
                                     },
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(22.dp),
@@ -1479,7 +1597,8 @@ internal fun NowPlayingScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .graphicsLayer {
-                                alpha = if (showQueueSheet) 0f else actionsSectionProgress
+                                alpha = if (showQueueSheet) 0f else actionsSectionProgress * canvasControlsAlpha
+                                translationY = if (showQueueSheet) 0f else canvasControlsExitTranslationYPx
                             },
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
@@ -1564,7 +1683,8 @@ internal fun NowPlayingScreen(
                 modifier = Modifier
                     .then(playerSwipePushModifier)
                     .graphicsLayer {
-                        alpha = volumeSectionProgress
+                        alpha = volumeSectionProgress * canvasControlsAlpha
+                        translationY = canvasControlsExitTranslationYPx
                     }
                     .fillMaxWidth(centeredInfoWidth)
                     .align(Alignment.CenterHorizontally),
@@ -2876,19 +2996,27 @@ internal fun SleepTimerDialog(
             DynamicBackdropSurface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(
-                    topStart = ElovaireRadii.dialog,
-                    topEnd = ElovaireRadii.dialog,
+                    topStart = ElovaireRadii.sheet,
+                    topEnd = ElovaireRadii.sheet,
                 ),
-                overlayAlpha = 0.6f,
+                overlayAlpha = 0.72f,
                 borderColor = null,
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 28.dp),
+                        .padding(start = 20.dp, top = 12.dp, end = 20.dp, bottom = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .width(32.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(ElovaireRadii.pill))
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2910,19 +3038,18 @@ internal fun SleepTimerDialog(
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                                .elovaireClickable(onClick = onDismiss),
-                            contentAlignment = Alignment.Center,
+                        FilledTonalIconButton(
+                            onClick = onDismiss,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            modifier = Modifier.size(40.dp),
                         ) {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_lucide_x),
                                 contentDescription = copy.close,
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(18.dp),
                             )
                         }
                     }
@@ -3696,26 +3823,23 @@ internal fun AlbumHeaderActionButton(
 ) {
     val interactionSource = rememberElovaireInteractionSource()
 
-    Box(
+    FilledTonalIconButton(
+        onClick = onClick,
+        interactionSource = interactionSource,
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = backgroundColor,
+            contentColor = tint,
+        ),
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .elovaireActionBump(
                 interactionSource = interactionSource,
                 label = "${contentDescription}_album_header_bump",
-            )
-            .clip(CircleShape)
-            .background(backgroundColor)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
             ),
-        contentAlignment = Alignment.Center,
     ) {
         Icon(
             painter = painterResource(id = iconResId),
             contentDescription = contentDescription,
-            tint = tint,
             modifier = Modifier.size(iconSize),
         )
     }
@@ -3730,36 +3854,35 @@ internal fun AlbumHeaderPlayButton(
     val language = LocalAppLanguage.current
     val interactionSource = rememberElovaireInteractionSource()
 
-    Surface(
-        modifier = Modifier.elovaireActionBump(
-            interactionSource = interactionSource,
-            label = "album_play_button_bump",
-        ),
+    Button(
         onClick = onClick,
-        shape = RoundedCornerShape(ElovaireRadii.pill),
-        color = backgroundColor,
         interactionSource = interactionSource,
+        shape = RoundedCornerShape(ElovaireRadii.pill),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = backgroundColor,
+            contentColor = tint,
+        ),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .elovaireActionBump(
+                interactionSource = interactionSource,
+                label = "album_play_button_bump",
+            ),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_lucide_circle_play),
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(
-                text = playLabel(language),
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = elovaireScaledSp(16f),
-                    fontWeight = FontWeight.SemiBold,
-                ),
-                color = tint,
-            )
-        }
+        Icon(
+            painter = painterResource(id = R.drawable.ic_lucide_circle_play),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = playLabel(language),
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = elovaireScaledSp(16f),
+                fontWeight = FontWeight.SemiBold,
+            ),
+        )
     }
 }
 

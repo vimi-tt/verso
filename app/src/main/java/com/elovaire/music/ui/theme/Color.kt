@@ -46,6 +46,61 @@ val LightSelectionPill = Color(0xFFE4E4E0)
 val BrandBlueLight = Color(0xFF1162DB)
 val BrandBlueDark = Color(0xFF4D91F5)
 
+// Material 3 tonal container roles derived from Brand Blue and neutral slate harmony.
+val BrandBlueContainerLight = Color(0xFFD8E6FF)
+val BrandBlueOnContainerLight = Color(0xFF082F6E)
+val BrandBlueContainerDark = Color(0xFF143366)
+val BrandBlueOnContainerDark = Color(0xFFD8E6FF)
+val BrandBlueOnPrimaryDark = Color(0xFF061B3A)
+
+val SecondaryLight = Color(0xFF4B586E)
+val OnSecondaryLight = Color(0xFFFFFFFF)
+val SecondaryContainerLight = Color(0xFFE1E8F4)
+val OnSecondaryContainerLight = Color(0xFF182436)
+val SecondaryDark = Color(0xFFB4C3DC)
+val OnSecondaryDark = Color(0xFF1B283C)
+val SecondaryContainerDark = Color(0xFF252D3B)
+val OnSecondaryContainerDark = Color(0xFFDAE3F2)
+
+val TertiaryLight = Color(0xFF6E44A8)
+val OnTertiaryLight = Color(0xFFFFFFFF)
+val TertiaryContainerLight = Color(0xFFEDE0FF)
+val OnTertiaryContainerLight = Color(0xFF2A0E52)
+val TertiaryDark = Color(0xFFB38FF0)
+val OnTertiaryDark = Color(0xFF240D47)
+val TertiaryContainerDark = Color(0xFF3B2362)
+val OnTertiaryContainerDark = Color(0xFFEDE0FF)
+
+// Material 3 tonal surface container ladder (neutral with subtle cool harmony, never purple).
+val LightSurfaceDim = Color(0xFFE4E5E8)
+val LightSurfaceBright = Snow
+val LightSurfaceContainerLowest = Snow
+val LightSurfaceContainerLow = Color(0xFFF3F4F6)
+val LightSurfaceContainer = Color(0xFFECEEF1)
+val LightSurfaceContainerHigh = Color(0xFFE4E7EC)
+val LightSurfaceContainerHighest = Color(0xFFDCE0E6)
+
+val DarkSurfaceDim = Night
+val DarkSurfaceBright = Color(0xFF2B2C32)
+val DarkSurfaceContainerLowest = Color(0xFF050506)
+val DarkSurfaceContainerLow = Carbon
+val DarkSurfaceContainer = Color(0xFF17181C)
+val DarkSurfaceContainerHigh = Graphite
+val DarkSurfaceContainerHighest = Color(0xFF25262B)
+
+val LightInverseSurface = Color(0xFF1E1F23)
+val LightInverseOnSurface = BoneText
+val LightInversePrimary = Color(0xFF8BB6FF)
+val DarkInverseSurface = Color(0xFFF2F2F4)
+val DarkInverseOnSurface = Carbon
+val DarkInversePrimary = BrandBlueLight
+
+val ErrorContainerLight = Color(0xFFFDE2E2)
+val OnErrorContainerLight = Color(0xFF5C0B0B)
+val ErrorContainerDark = Color(0xFF5C1414)
+val OnErrorContainerDark = Color(0xFFFDE2E2)
+val OnErrorDark = Color(0xFF3B0606)
+
 // Legacy symbol alias mapped to the brand accent blue.
 val RoseAccent = BrandBlueLight
 

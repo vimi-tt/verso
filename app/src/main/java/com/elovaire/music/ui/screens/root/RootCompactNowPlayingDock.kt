@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -311,17 +313,16 @@ private fun CompactNowPlayingBar(
                         .height(60.dp)
                         .background(albumTint),
                 )
-                Box(
+                LinearProgressIndicator(
+                    progress = { progressState.floatValue.coerceIn(0f, 1f) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(2.dp)
-                        .background(controlIconTint.copy(alpha = 0.18f)),
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(progressState.floatValue.coerceIn(0f, 1f))
-                        .height(2.dp)
-                        .background(controlIconTint),
+                        .height(2.5.dp),
+                    color = controlIconTint,
+                    trackColor = controlIconTint.copy(alpha = 0.18f),
+                    strokeCap = StrokeCap.Butt,
+                    gapSize = 0.dp,
+                    drawStopIndicator = {},
                 )
                 Box(
                     modifier = Modifier
@@ -433,23 +434,19 @@ private fun CompactNowPlayingBar(
                                 maxLines = 1,
                             )
                         }
-                        Box(
+                        IconButton(
+                            onClick = onTogglePlayback,
+                            enabled = visible,
+                            interactionSource = interactionSource,
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(48.dp)
                                 .elovairePressScale(
                                     enabled = visible,
                                     pressedScale = 0.88f,
                                     animationSpec = motionSpecs.chromeRelease(),
                                     interactionSource = interactionSource,
                                     label = "CompactMiniPlayerButtonScale",
-                                )
-                                .clickable(
-                                    enabled = visible,
-                                    interactionSource = interactionSource,
-                                    indication = null,
-                                    onClick = onTogglePlayback,
                                 ),
-                            contentAlignment = Alignment.Center,
                         ) {
                             AnimatedContent(
                                 targetState = isPlaying,
@@ -484,23 +481,19 @@ private fun CompactNowPlayingBar(
                             }
                         }
                         val nextInteraction = rememberElovaireInteractionSource()
-                        Box(
+                        IconButton(
+                            onClick = onSkipNext,
+                            enabled = visible,
+                            interactionSource = nextInteraction,
                             modifier = Modifier
-                                .size(38.dp)
+                                .size(44.dp)
                                 .elovairePressScale(
                                     enabled = visible,
                                     pressedScale = 0.88f,
                                     animationSpec = motionSpecs.chromeRelease(),
                                     interactionSource = nextInteraction,
                                     label = "CompactMiniPlayerNextButtonScale",
-                                )
-                                .clickable(
-                                    enabled = visible,
-                                    interactionSource = nextInteraction,
-                                    indication = null,
-                                    onClick = onSkipNext,
                                 ),
-                            contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_elovaire_forward_filled),

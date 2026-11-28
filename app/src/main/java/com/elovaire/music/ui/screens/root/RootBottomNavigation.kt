@@ -1,6 +1,8 @@
 package elovaire.music.droidbeauty.app.ui.screens
 
 import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -21,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -28,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -47,7 +51,6 @@ import elovaire.music.droidbeauty.app.ui.motion.MotionDuration
 import elovaire.music.droidbeauty.app.ui.motion.rememberMotionSpecs
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireRadii
 import elovaire.music.droidbeauty.app.ui.theme.ElovaireSpacing
-import elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors
 
 @OptIn(ExperimentalHazeApi::class)
 @Composable
@@ -58,7 +61,6 @@ internal fun BottomNavigationBar(
     onNavigate: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val versoColors = LocalVersoColors.current
     val navigationInset = navigationBarInsetDp()
     val language = LocalAppLanguage.current
     val copy = remember(language) { commonUiCopy(language) }
@@ -76,12 +78,13 @@ internal fun BottomNavigationBar(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 64.dp)
+                .heightIn(min = 68.dp)
                 .consumePointersWithoutSemantics(),
-            shape = RoundedCornerShape(ElovaireRadii.dock),
-            color = versoColors.navBarSurface,
-            border = BorderStroke(1.dp, versoColors.navBarBorder),
-            shadowElevation = 0.dp,
+            shape = RoundedCornerShape(ElovaireRadii.sheet),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 3.dp,
+            shadowElevation = 2.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)),
         ) {
             Row(
                 modifier = Modifier
@@ -126,7 +129,7 @@ private fun BottomNavigationItemButton(
     onClickAction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val versoColors = LocalVersoColors.current
+    val colorScheme = MaterialTheme.colorScheme
     val motionSpecs = rememberMotionSpecs()
     val interactionSource = rememberElovaireInteractionSource()
     val transitionDuration = if (suppressEnterAnimation) 0 else MotionDuration.Fast
@@ -134,17 +137,35 @@ private fun BottomNavigationItemButton(
         targetState = selected,
         label = "BottomNavItemSelection",
     )
-    val contentTint by selectionTransition.animateColor(
+    val iconTint by selectionTransition.animateColor(
         transitionSpec = { motionSpecs.tween(durationMillis = transitionDuration) },
-        label = "BottomNavItemContentTint",
+        label = "BottomNavItemIconTint",
     ) { isSelected ->
-        if (isSelected) versoColors.navPillContent else versoColors.navInactiveContent
+        if (isSelected) colorScheme.onPrimaryContainer else colorScheme.onSurfaceVariant
     }
-    val pillBackground by selectionTransition.animateColor(
+    val labelTint by selectionTransition.animateColor(
         transitionSpec = { motionSpecs.tween(durationMillis = transitionDuration) },
-        label = "BottomNavItemPillBackground",
+        label = "BottomNavItemLabelTint",
     ) { isSelected ->
-        if (isSelected) versoColors.navPillContainer else Color.Transparent
+        if (isSelected) colorScheme.onSurface else colorScheme.onSurfaceVariant
+    }
+    val indicatorWidth by selectionTransition.animateDp(
+        transitionSpec = {
+            if (suppressEnterAnimation) {
+                motionSpecs.tween(durationMillis = 0)
+            } else {
+                motionSpecs.spring(dampingRatio = 0.8f, stiffness = 520f)
+            }
+        },
+        label = "BottomNavIndicatorWidth",
+    ) { isSelected ->
+        if (isSelected) 64.dp else 0.dp
+    }
+    val indicatorAlpha by selectionTransition.animateFloat(
+        transitionSpec = { motionSpecs.tween(durationMillis = transitionDuration) },
+        label = "BottomNavIndicatorAlpha",
+    ) { isSelected ->
+        if (isSelected) 1f else 0f
     }
 
     Column(
@@ -156,11 +177,11 @@ private fun BottomNavigationItemButton(
                 interactionSource = interactionSource,
                 label = "${contentDescription}_bottom_nav_scale",
             )
-            .clip(RoundedCornerShape(ElovaireRadii.tile))
+            .clip(RoundedCornerShape(ElovaireRadii.card))
             .selectable(
                 selected = selected,
                 interactionSource = interactionSource,
-                indication = null,
+                indication = ripple(bounded = true, color = colorScheme.primary),
                 role = Role.Tab,
                 onClick = onClickAction,
             )
@@ -175,17 +196,23 @@ private fun BottomNavigationItemButton(
     ) {
         Box(
             modifier = Modifier
-                .width(52.dp)
-                .height(30.dp)
-                .clip(RoundedCornerShape(ElovaireRadii.pill))
-                .background(pillBackground),
+                .width(64.dp)
+                .height(32.dp),
             contentAlignment = Alignment.Center,
         ) {
+            Box(
+                modifier = Modifier
+                    .width(indicatorWidth)
+                    .height(32.dp)
+                    .graphicsLayer { alpha = indicatorAlpha }
+                    .clip(RoundedCornerShape(ElovaireRadii.pill))
+                    .background(colorScheme.primaryContainer),
+            )
             Icon(
                 painter = painterResource(id = iconResId),
                 contentDescription = null,
-                tint = contentTint,
-                modifier = Modifier.size(20.dp),
+                tint = iconTint,
+                modifier = Modifier.size(21.dp),
             )
         }
         Text(
@@ -193,7 +220,7 @@ private fun BottomNavigationItemButton(
             style = MaterialTheme.typography.labelMedium.copy(
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             ),
-            color = contentTint,
+            color = labelTint,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,

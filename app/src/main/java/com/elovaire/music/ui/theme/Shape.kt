@@ -18,7 +18,8 @@ object ElovaireRadii {
     val artwork: Dp = 16.dp
     val artworkSmall: Dp = 8.dp
     val input: Dp = 16.dp
-    val dialog: Dp = 20.dp
+    val dialog: Dp = 24.dp
+    val sheet: Dp = 28.dp
     val pill: Dp = 999.dp
 }
 
@@ -28,6 +29,6 @@ fun elovaireShapes(): Shapes {
         small = RoundedCornerShape(ElovaireRadii.tile),
         medium = RoundedCornerShape(ElovaireRadii.card),
         large = RoundedCornerShape(ElovaireRadii.dialog),
-        extraLarge = RoundedCornerShape(ElovaireRadii.dock),
+        extraLarge = RoundedCornerShape(ElovaireRadii.sheet),
     )
 }

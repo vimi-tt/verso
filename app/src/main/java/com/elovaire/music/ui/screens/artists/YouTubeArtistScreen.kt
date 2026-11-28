@@ -22,7 +22,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -375,27 +381,26 @@ internal fun YouTubeArtistScreen(
                                     iconResId = R.drawable.ic_lucide_shuffle,
                                     onClick = { onShuffleSongs(playableSongs, page.name) },
                                 )
-                                Surface(
+                                FloatingActionButton(
+                                    onClick = { onPlaySongs(playableSongs.first(), playableSongs, page.name) },
+                                    shape = CircleShape,
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    elevation = FloatingActionButtonDefaults.elevation(
+                                        defaultElevation = 4.dp,
+                                        pressedElevation = 6.dp,
+                                    ),
                                     modifier = Modifier
                                         .size(62.dp)
                                         .semantics {
-                                            role = Role.Button
                                             contentDescription = ytCopy.playAll
-                                        }
-                                        .elovaireClickable { onPlaySongs(playableSongs.first(), playableSongs, page.name) },
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    shadowElevation = 10.dp,
-                                    tonalElevation = 0.dp,
+                                        },
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        androidx.compose.material3.Icon(
-                                            painter = painterResource(id = R.drawable.ic_lucide_play),
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.size(24.dp),
-                                        )
-                                    }
+                                    androidx.compose.material3.Icon(
+                                        painter = painterResource(id = R.drawable.ic_lucide_play),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp),
+                                    )
                                 }
                                 ArtistCircularQuickAction(
                                     label = ytCopy.radioLabel,
@@ -437,19 +442,20 @@ internal fun YouTubeArtistScreen(
                                         ),
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
-                                    Surface(
-                                        shape = RoundedCornerShape(ElovaireRadii.pill),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
-                                        modifier = Modifier.elovaireClickable {
+                                    FilledTonalButton(
+                                        onClick = {
                                             onPlaySongs(page.topSongs.first(), playableSongs, page.name)
                                         },
+                                        shape = RoundedCornerShape(ElovaireRadii.pill),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                                     ) {
                                         Text(
                                             text = ytCopy.playAll,
-                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                                         )
                                     }
                                 }
@@ -597,31 +603,27 @@ private fun ArtistCircularQuickAction(
     iconResId: Int,
     onClick: () -> Unit,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
             .width(68.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .semantics(mergeDescendants = true) { role = Role.Button }
-            .elovaireClickable(onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 6.dp),
+            .padding(horizontal = 4.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Surface(
+        FilledTonalIconButton(
+            onClick = onClick,
+            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                containerColor = colorScheme.surfaceContainerHigh,
+                contentColor = colorScheme.onSurface,
+            ),
             modifier = Modifier.size(48.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
-            tonalElevation = 0.dp,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                androidx.compose.material3.Icon(
-                    painter = painterResource(id = iconResId),
-                    contentDescription = label,
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+            androidx.compose.material3.Icon(
+                painter = painterResource(id = iconResId),
+                contentDescription = label,
+                modifier = Modifier.size(20.dp),
+            )
         }
         Text(
             text = label,

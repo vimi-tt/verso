@@ -27,7 +27,7 @@ private val GeistFamily = FontFamily(
     Font(R.font.geist_semibold, FontWeight.SemiBold),
 )
 
-// Base typography tokens before the user text-size multiplier is applied.
+// Base typography tokens covering all 15 Material 3 roles before the user text-size multiplier is applied.
 private val BaseTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = OutfitFamily,
@@ -36,12 +36,40 @@ private val BaseTypography = Typography(
         lineHeight = 38.sp,
         letterSpacing = (-0.6).sp,
     ),
+    displayMedium = TextStyle(
+        fontFamily = OutfitFamily,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
+        letterSpacing = (-0.5).sp,
+    ),
+    displaySmall = TextStyle(
+        fontFamily = OutfitFamily,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 26.sp,
+        lineHeight = 32.sp,
+        letterSpacing = (-0.4).sp,
+    ),
+    headlineLarge = TextStyle(
+        fontFamily = OutfitFamily,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
+        letterSpacing = (-0.4).sp,
+    ),
     headlineMedium = TextStyle(
         fontFamily = OutfitFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 24.sp,
         lineHeight = 30.sp,
         letterSpacing = (-0.4).sp,
+    ),
+    headlineSmall = TextStyle(
+        fontFamily = OutfitFamily,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 21.sp,
+        lineHeight = 27.sp,
+        letterSpacing = (-0.3).sp,
     ),
     titleLarge = TextStyle(
         fontFamily = OutfitFamily,
@@ -57,6 +85,13 @@ private val BaseTypography = Typography(
         lineHeight = 22.sp,
         letterSpacing = (-0.1).sp,
     ),
+    titleSmall = TextStyle(
+        fontFamily = OutfitFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.sp,
+    ),
     bodyLarge = TextStyle(
         fontFamily = GeistFamily,
         fontWeight = FontWeight.Normal,
@@ -68,6 +103,12 @@ private val BaseTypography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         lineHeight = 18.sp,
+    ),
+    bodySmall = TextStyle(
+        fontFamily = GeistFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
     ),
     labelLarge = TextStyle(
         fontFamily = GeistFamily,
@@ -83,22 +124,36 @@ private val BaseTypography = Typography(
         lineHeight = 14.sp,
         letterSpacing = 0.2.sp,
     ),
+    labelSmall = TextStyle(
+        fontFamily = GeistFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 10.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 0.25.sp,
+    ),
 )
 
 // App-wide multiplier used by the text-size slider in settings.
 val LocalTextScale = staticCompositionLocalOf { 1f }
 
 fun elovaireTypography(scaleFactor: Float): Typography {
-    // Central place that scales all core text styles with the current text-size setting.
+    // Central place that scales all 15 Material 3 text styles with the current text-size setting.
     return BaseTypography.copy(
         displayLarge = BaseTypography.displayLarge.scaled(scaleFactor),
+        displayMedium = BaseTypography.displayMedium.scaled(scaleFactor),
+        displaySmall = BaseTypography.displaySmall.scaled(scaleFactor),
+        headlineLarge = BaseTypography.headlineLarge.scaled(scaleFactor),
         headlineMedium = BaseTypography.headlineMedium.scaled(scaleFactor),
+        headlineSmall = BaseTypography.headlineSmall.scaled(scaleFactor),
         titleLarge = BaseTypography.titleLarge.scaled(scaleFactor),
         titleMedium = BaseTypography.titleMedium.scaled(scaleFactor),
+        titleSmall = BaseTypography.titleSmall.scaled(scaleFactor),
         bodyLarge = BaseTypography.bodyLarge.scaled(scaleFactor),
         bodyMedium = BaseTypography.bodyMedium.scaled(scaleFactor),
+        bodySmall = BaseTypography.bodySmall.scaled(scaleFactor),
         labelLarge = BaseTypography.labelLarge.scaled(scaleFactor),
         labelMedium = BaseTypography.labelMedium.scaled(scaleFactor),
+        labelSmall = BaseTypography.labelSmall.scaled(scaleFactor),
     )
 }
 

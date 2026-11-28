@@ -44,10 +44,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -1887,7 +1894,6 @@ internal fun SettingActionRow(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1905,45 +1911,33 @@ internal fun SettingActionRow(
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Spacer(modifier = Modifier.width(18.dp))
-        Surface(
-            modifier = Modifier.elovairePillActionMotion(
-                interactionSource = interactionSource,
-                pressedScale = 0.9f,
-                label = "${actionLabel}_setting_action_scale",
-            ),
+        FilledTonalButton(
+            onClick = onAction,
+            enabled = enabled,
             shape = RoundedCornerShape(ElovaireRadii.pill),
-            color = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.45f),
-            contentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = if (enabled) 1f else 0.65f),
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(ElovaireRadii.pill))
-                        .clickable(
-                            interactionSource = interactionSource,
-                            indication = null,
-                            enabled = enabled,
-                            onClick = onAction,
-                    )
-                    .padding(horizontal = 16.dp, vertical = 9.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                actionIconResId?.let { iconResId ->
-                    Icon(
-                        painter = painterResource(id = iconResId),
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
-                Text(
-                    text = actionLabel,
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            actionIconResId?.let { iconResId ->
+                Icon(
+                    painter = painterResource(id = iconResId),
+                    contentDescription = null,
+                    modifier = Modifier.size(15.dp),
                 )
+                Spacer(modifier = Modifier.width(6.dp))
             }
+            Text(
+                text = actionLabel,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+            )
         }
     }
 }
@@ -2057,50 +2051,30 @@ private fun SettingsToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    val motionSpecs = rememberMotionSpecs()
-    val knobColor by animateColorAsState(targetValue = if (checked) {
-        Color.White
-    } else if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
-        InkText
-    } else {
-        Color.White
-    }, animationSpec = motionSpecs.tween(MotionDuration.Standard), label = "settings_toggle_thumb_color")
-    val trackColor by animateColorAsState(
-        targetValue = if (checked) {
-            elovaire.music.droidbeauty.app.ui.theme.LocalVersoColors.current.toggleEnabled
+    val colorScheme = MaterialTheme.colorScheme
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        thumbContent = if (checked) {
+            {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_lucide_check),
+                    contentDescription = null,
+                    modifier = Modifier.size(SwitchDefaults.IconSize),
+                )
+            }
         } else {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) 0.16f else 0.2f)
+            null
         },
-        animationSpec = motionSpecs.tween(MotionDuration.Standard),
-        label = "settings_toggle_track",
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = colorScheme.onPrimary,
+            checkedTrackColor = colorScheme.primary,
+            checkedIconColor = colorScheme.primary,
+            uncheckedThumbColor = colorScheme.outline,
+            uncheckedTrackColor = colorScheme.surfaceContainerHighest,
+            uncheckedBorderColor = colorScheme.outline,
+        ),
     )
-    val thumbOffset by animateDpAsState(
-        targetValue = if (checked) 18.dp else 2.dp,
-        animationSpec = motionSpecs.spring(dampingRatio = 0.82f, stiffness = 420f),
-        label = "settings_toggle_thumb_offset",
-    )
-    Surface(
-        modifier = Modifier
-            .elovaireClickable(role = androidx.compose.ui.semantics.Role.Switch) { onCheckedChange(!checked) }
-            .semantics { toggleableState = androidx.compose.ui.state.ToggleableState(checked) },
-        shape = RoundedCornerShape(percent = 50),
-        color = trackColor,
-        contentColor = knobColor,
-    ) {
-        Box(
-            modifier = Modifier
-                .width(40.dp)
-                .height(24.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .offset { IntOffset(x = thumbOffset.roundToPx(), y = 2.dp.roundToPx()) }
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .background(knobColor),
-            )
-        }
-    }
 }
 
 @Composable
@@ -2109,95 +2083,61 @@ internal fun ThemeModeSegmentedPicker(
     onModeSelected: (ThemeMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val motionSpecs = rememberMotionSpecs()
     val language = LocalAppLanguage.current
     val common = remember(language) { commonUiCopy(language) }
+    val colorScheme = MaterialTheme.colorScheme
     val options = listOf(ThemeMode.Light, ThemeMode.Dark, ThemeMode.System)
-    BoxWithConstraints(
+
+    SingleChoiceSegmentedButtonRow(
         modifier = modifier
-            .height(46.dp)
-            .horizontalGestureSafe()
-            .clip(RoundedCornerShape(percent = 50))
-            .background(
-                if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+            .fillMaxWidth()
+            .horizontalGestureSafe(),
+    ) {
+        options.forEachIndexed { index, option ->
+            val selected = option == selectedMode
+            val iconResId = when (option) {
+                ThemeMode.Light -> R.drawable.ic_lucide_sun
+                ThemeMode.Dark -> R.drawable.ic_lucide_moon
+                ThemeMode.System -> R.drawable.ic_lucide_smartphone
+            }
+            val label = when (option) {
+                ThemeMode.Light -> common.light
+                ThemeMode.Dark -> common.dark
+                ThemeMode.System -> common.system
+            }
+            SegmentedButton(
+                selected = selected,
+                onClick = { onModeSelected(option) },
+                shape = SegmentedButtonDefaults.itemShape(
+                    index = index,
+                    count = options.size,
+                ),
+                colors = SegmentedButtonDefaults.colors(
+                    activeContainerColor = colorScheme.primaryContainer,
+                    activeContentColor = colorScheme.onPrimaryContainer,
+                    activeBorderColor = colorScheme.outlineVariant,
+                    inactiveContainerColor = colorScheme.surfaceContainerLow,
+                    inactiveContentColor = colorScheme.onSurfaceVariant,
+                    inactiveBorderColor = colorScheme.outlineVariant,
+                ),
+                icon = {
+                    Icon(
+                        painter = painterResource(id = iconResId),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                },
+                label = {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 },
             )
-            .padding(5.dp),
-    ) {
-        val selectedIndex = options.indexOf(selectedMode).coerceAtLeast(0)
-        val segmentWidth = maxWidth / options.size
-        val indicatorOffset by animateDpAsState(
-            targetValue = segmentWidth * selectedIndex,
-            animationSpec = motionSpecs.spring(
-                dampingRatio = 0.82f,
-                stiffness = 420f,
-            ),
-            label = "theme_picker_offset",
-        )
-        val indicatorColor = MaterialTheme.colorScheme.primary
-
-        Box(
-            modifier = Modifier
-                .offset { IntOffset(x = indicatorOffset.roundToPx(), y = 0) }
-                .width(segmentWidth)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(percent = 50))
-                .background(indicatorColor),
-        )
-
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            options.forEach { option ->
-                val selected = option == selectedMode
-                val contentTint by animateColorAsState(
-                    targetValue = if (selected) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
-                    animationSpec = motionSpecs.tween(MotionDuration.Standard),
-                    label = "theme_picker_content_tint",
-                )
-                val iconResId = when (option) {
-                    ThemeMode.Light -> R.drawable.ic_lucide_sun
-                    ThemeMode.Dark -> R.drawable.ic_lucide_moon
-                    ThemeMode.System -> R.drawable.ic_lucide_smartphone
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(percent = 50))
-                        .elovaireClickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            onClick = { onModeSelected(option) },
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            painter = painterResource(id = iconResId),
-                            contentDescription = null,
-                            tint = contentTint,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Text(
-                            text = when (option) {
-                                ThemeMode.Light -> common.light
-                                ThemeMode.Dark -> common.dark
-                                ThemeMode.System -> common.system
-                            },
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-                            color = contentTint,
-                        )
-                    }
-                }
-            }
         }
     }
 }

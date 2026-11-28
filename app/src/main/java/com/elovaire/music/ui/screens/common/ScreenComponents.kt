@@ -441,7 +441,7 @@ internal fun readableMutedIconColor(): Color {
 
 @Composable
 internal fun readableCardSurfaceColor(): Color {
-    return MaterialTheme.colorScheme.surface
+    return MaterialTheme.colorScheme.surfaceContainerLow
 }
 
 @Composable
