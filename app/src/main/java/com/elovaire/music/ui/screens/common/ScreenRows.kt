@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,12 +40,12 @@ import elovaire.music.droidbeauty.app.ui.theme.elovaireScaledSp
 internal fun DividerLine(
     modifier: Modifier = Modifier,
 ) {
-    Box(
+    HorizontalDivider(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = ElovaireSpacing.lg)
-            .height(1.dp)
-            .background(LocalVersoColors.current.divider),
+            .padding(horizontal = ElovaireSpacing.lg),
+        thickness = 1.dp,
+        color = MaterialTheme.colorScheme.outlineVariant,
     )
 }
 
